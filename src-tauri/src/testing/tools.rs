@@ -1,16 +1,12 @@
 //! Unit tests' stand-in for the tools: while a test holds a [`Tools`] guard, the test's machine
 //! runs them through [`AsRunner`], a runner answering every call on its thread from the test's
 //! script instead of starting a process, so code that drives docker, vagrant or terraform runs
-//! without them (and never touches real ones). The
-//! install and removal steps (`platform::steps`) answer from it too: an install test never runs
-//! a package manager.
+//! without them (and never touches real ones).
 //! Async tests run on one thread (`#[tokio::test]`), so the script is per thread: parallel tests
 //! don't see each other's.
 
 use std::cell::RefCell;
 use std::rc::Rc;
-
-use crate::error::{Error, Result};
 
 /// A scripted tool's answer: its stdout (each line streamed, for `stream`), or its failure.
 #[derive(Clone)]
@@ -315,26 +311,15 @@ impl Drop for Tools {
     }
 }
 
-/// The tool set of the script on this thread, when a test scripts the tools.
+/// The tool set of the script on this thread, when a test scripts the tools, else of the machine
+/// the test set (`runtime::providers::testing::Machine`).
 pub fn set() -> Option<u64> {
-    SET.with(std::cell::Cell::get)
+    SET.with(std::cell::Cell::get).or_else(crate::runtime::providers::testing::tool_set)
 }
 
 /// Whether a test scripts the tools on this thread (so nothing real would run).
 pub fn scripted() -> bool {
     STATE.with(|s| s.borrow().is_some())
-}
-
-/// A scripted answer for an install or removal step, its lines to `on_line` (`platform::steps`), whose program is any
-/// path: a missing tool and a failure say what `run_step` says for them.
-pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(String)) -> Option<Result<()>> {
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let scripted = reply(program, &args, &[])?;
-    Some(scripted.streamed(
-        on_line,
-        |_| Error::Invalid(format!("`{program}` exited with exit status: 1")),
-        || Error::Invalid(format!("{program} is not available on this machine.")),
-    ))
 }
 
 /// The runner `platform::exec` starts a test's tools through: the test's machine's
@@ -372,24 +357,6 @@ impl isothrum_runner::ProcessRunner for AsRunner {
                 None => Err(isothrum_runner::ProcessError::Missing { program }),
             }
         })
-    }
-}
-
-impl Scripted {
-    /// The scripted run as a stream: its output lines (stderr too, on a failure) go to
-    /// `on_line`, then its end; a failure as `failed` says it, a missing tool as `missing` does.
-    fn streamed(self, on_line: &mut impl FnMut(String), failed: impl FnOnce(String) -> Error, missing: impl FnOnce() -> Error) -> Result<()> {
-        match self {
-            Scripted::Reply(Reply::Out(text)) => {
-                text.lines().for_each(|l| on_line(l.to_string()));
-                Ok(())
-            }
-            Scripted::Reply(Reply::Fail(text)) => {
-                text.lines().for_each(|l| on_line(l.to_string()));
-                Err(failed(text))
-            }
-            Scripted::Missing => Err(missing()),
-        }
     }
 }
 

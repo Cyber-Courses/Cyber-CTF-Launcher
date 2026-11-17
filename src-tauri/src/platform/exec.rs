@@ -18,7 +18,8 @@ pub use docker::{ImageRef, docker_denied_error, valid_image};
 use crate::error::{Error, Result};
 
 /// Which tools answer this thread's calls: the machine's own, or a unit test's scripted ones
-/// (`testing::tools::Tools`, each with a set of its own). A cache of the tools' answers keys by
+/// (`testing::tools::Tools`, or the machine a test set: `runtime::providers::testing::Machine`,
+/// each with a set of its own). A cache of the tools' answers keys by
 /// it, so one test's scripted answer never stands for another's while the tests run the cache the
 /// app runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

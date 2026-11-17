@@ -1,4 +1,7 @@
 use isothrum_machine::install::step;
+use isothrum_runner::fake::{FakeProcesses, Reply};
+
+use crate::runtime::providers::testing::fake;
 
 use super::*;
 
@@ -10,20 +13,30 @@ async fn what_a_check_read_while_a_step_ran_is_forgotten_once_it_ends() {
     use crate::platform::remembered::{is_kept, keep};
     let key = format!("vagrant plugin list {}", rand::random::<u32>());
     let during = key.clone();
-    let _tools = crate::testing::tools::Tools::new(move |_, _| {
+    let _tools = fake(FakeProcesses::model(move |call| {
+        if call.program != "vagrant" {
+            // A Linux host's package manager, looked up before the step runs: none here.
+            return Reply::missing();
+        }
+        // A machine check reading the plugin list while the step runs.
         keep(&during, "vagrant-qemu (0.8.0, global)");
-        crate::testing::tools::ok("Installed the plugin 'vagrant-vmware-desktop (3.0.5)'!")
-    });
+        Reply::ok("Installed the plugin 'vagrant-vmware-desktop (3.0.5)'!")
+    }));
     run_step(&step("vagrant", &["plugin", "install", "vagrant-vmware-desktop"]), &mut |_| {}).await.unwrap();
     assert!(!is_kept(&key), "what the check read during the step is forgotten");
 }
 
 #[tokio::test]
 async fn a_plan_streams_its_lines_says_its_notes_and_stops_at_its_first_failure() {
-    let _tools = crate::testing::tools::Tools::new(|program, _| match program {
-        "first" => crate::testing::tools::ok("out-1\nout-2"),
-        _ => crate::testing::tools::fail("broken"),
-    });
+    let _tools = fake(
+        FakeProcesses::script()
+            .expect("first a", Reply::ok("out-1\nout-2"))
+            .expect("second", Reply::fail(1, "broken"))
+            // A Linux host's package manager, looked up before each step: none here.
+            .allow("apt-get --version", Reply::missing())
+            .allow("dnf --version", Reply::missing())
+            .build(),
+    );
     let mut noted = step("first", &["a"]);
     noted.note = Some(Note::QemuUpdatingHomebrewFirst);
     let mut lines = Vec::new();

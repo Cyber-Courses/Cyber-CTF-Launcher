@@ -111,10 +111,26 @@ const FAILS_WITHIN: Duration = Duration::from_secs(5);
 /// background).
 pub(crate) async fn run(program: &Path, args: &[String]) -> Result<()> {
     #[cfg(test)]
-    if let Some(scripted) = crate::testing::tools::answer_step(&program.to_string_lossy(), args, &mut |_| {}) {
-        return scripted;
+    if crate::testing::tools::set().is_some() {
+        return on_test_machine(program, args).await;
     }
     run_within(program, args, FAILS_WITHIN).await
+}
+
+/// [`run`] in a unit test that scripts its tools (`runtime::providers::testing::fake`): the
+/// program run by the test's scripted tools, never this machine's; a failure said as
+/// [`run_within`] says it.
+#[cfg(test)]
+async fn on_test_machine(program: &Path, args: &[String]) -> Result<()> {
+    let name = program.file_name().map_or_else(|| program.display().to_string(), |n| n.to_string_lossy().into_owned());
+    let spec = isothrum_runner::ProcessSpec::new(&program.to_string_lossy(), args.iter().map(String::as_str));
+    let runner = crate::runtime::providers::machine().runner;
+    let ran = isothrum_runner::capture(runner.as_ref(), &spec).await.map_err(|e| Error::Invalid(format!("couldn't open {name}: {e}")))?;
+    if ran.success() {
+        return Ok(());
+    }
+    let said = ran.stderr_tail.iter().map(|l| l.trim()).rfind(|l| !l.is_empty()).unwrap_or("it failed").to_owned();
+    Err(Error::Invalid(format!("{name} couldn't open the VM: {said}")))
 }
 
 /// [`run`], the program given `within` to fail.
@@ -228,15 +244,16 @@ mod tests {
 
     #[tokio::test]
     async fn a_program_that_fails_at_once_says_why_and_one_that_stays_open_is_left_running() {
-        let tools = crate::testing::tools::Tools::strict_rules(&[(
-            "startvm",
-            crate::testing::tools::fail("VBoxManage: error: The machine is already locked for a session"),
-        )]);
+        use crate::runtime::providers::testing::fake;
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        let tools = fake(
+            FakeProcesses::script().expect("/bin/VBoxManage startvm", Reply::fail(1, "VBoxManage: error: The machine is already locked for a session")).build(),
+        );
         let err = run(Path::new("/bin/VBoxManage"), &["startvm".into(), "web".into(), "--type".into(), "separate".into()]).await.unwrap_err();
-        assert!(err.to_string().contains("VBoxManage"), "{err}");
-        assert_eq!(tools.calls(), ["/bin/VBoxManage startvm web --type separate"]);
+        assert!(err.to_string().contains("VBoxManage: error: The machine is already locked"), "{err}");
+        assert_eq!(tools.calls().iter().map(isothrum_runner::ProcessSpec::line).collect::<Vec<_>>(), ["/bin/VBoxManage startvm web --type separate"]);
         drop(tools);
-        let _ok = crate::testing::tools::Tools::strict_rules(&[("virt-viewer lab_web", crate::testing::tools::ok(""))]);
+        let _ok = fake(FakeProcesses::script().expect("/bin/virt-viewer lab_web", Reply::ok("")).build());
         run(Path::new("/bin/virt-viewer"), &["lab_web".into()]).await.unwrap();
     }
     /// Regression: a viewer left running had its error output's pipe closed under it, so the
