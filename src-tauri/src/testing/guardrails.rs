@@ -211,11 +211,6 @@ const SLEEP_ALLOWED: &[(&str, &str, &str)] = &[
     ("run_service/tests.rs", "tokio::time::sleep(Duration::from_millis(10)).await;", "polls for an operation's end and its first statuses, bounded"),
     ("runtime/inflight/lock.rs", "std::thread::sleep(Duration::from_millis(25));", "eventually's poll, bounded to 40 looks"),
     ("runtime/inflight/lock.rs", "std::thread::sleep(Duration::from_millis(20));", "a lock held a moment, so the threads overlap"),
-    (
-        "runtime/isothrum/vm_tests.rs",
-        "tokio::time::sleep(std::time::Duration::from_secs(148)).await;",
-        "Tokio's paused clock: the page read while the start provisions",
-    ),
     ("runtime/server/store.rs", "std::thread::sleep(std::time::Duration::from_millis(5));", "an update held a moment, so the threads overlap"),
     ("screen.rs", "tokio::time::sleep(std::time::Duration::from_millis(50)).await;", "a poll, bounded, for a viewer's pid to be reaped"),
     (

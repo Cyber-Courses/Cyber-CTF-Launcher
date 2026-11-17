@@ -2,6 +2,10 @@
 //! hypervisor runs. The lab's files are the ones Isoloom generates for the `vagrant` target.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use isothrum_runner::fake::FakeProcesses;
+use isothrum_runner::{BoxFuture, Exit, OnLine, ProcessError, ProcessRunner};
 
 use super::test_lab::prelude::*;
 use super::*;
@@ -122,29 +126,25 @@ fn up_args<'a>(rest: &[&'a str]) -> (Vec<&'a str>, bool) {
     (machines, !rest.contains(&"--no-provision"))
 }
 
-/// The VMs' states, and until when the start's `vagrant up` holds their locks (booting and
-/// provisioning them).
+/// The VMs' states, whether the start's `vagrant up` holds their locks (booting and provisioning
+/// them), and the `vagrant` calls made while it did.
 #[derive(Default)]
 struct Provisioning {
     states: BTreeMap<String, String>,
-    held_until: Option<tokio::time::Instant>,
+    held: bool,
     /// The `vagrant` calls made while the start's `vagrant up` held the VMs.
     while_held: Vec<String>,
 }
-
-/// How long the start's `vagrant up` takes.
-const UP_TAKES: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// The fake Vagrant's answer to `call`, refusing `vagrant status` as Vagrant does while the
 /// start's `vagrant up` provisions the VMs (`MachineActionLockedError`).
 fn provisioning(model: &Mutex<Provisioning>, call: &Call) -> Reply {
     let mut m = locked(model);
-    let held = m.held_until.is_some_and(|until| tokio::time::Instant::now() < until);
-    if held {
+    if m.held {
         m.while_held.push(format!("{} {}", call.program, call.args.join(" ")));
     }
     match call.args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-        ["status", ..] if held => {
+        ["status", ..] if m.held => {
             let mut refused = Reply::fail(1, "");
             refused.stdout = vec![
                 "1794331884,,ui,error,An action 'read_state' was attempted on the machine 'web'%!(VAGRANT_COMMA)\\nbut another process is already executing an action on the machine.".into(),
@@ -153,12 +153,34 @@ fn provisioning(model: &Mutex<Provisioning>, call: &Call) -> Reply {
             refused
         }
         ["up", rest @ ..] if up_args(rest).1 => {
-            m.held_until = Some(tokio::time::Instant::now() + UP_TAKES);
-            let mut up = vagrant(&mut m.states, call);
-            up.delay = UP_TAKES;
-            up
+            m.held = true;
+            vagrant(&mut m.states, call)
         }
         _ => vagrant(&mut m.states, call),
+    }
+}
+
+/// The scripted tools, the start's provisioning `vagrant up` running until the test ends it: the
+/// page reads while it holds the VMs, whatever time each side takes to get there.
+struct Provisions {
+    fake: Arc<FakeProcesses>,
+    /// Told once the `vagrant up` holds the VMs.
+    holds: Arc<tokio::sync::Notify>,
+    /// Ends the `vagrant up`.
+    ends: Arc<tokio::sync::Notify>,
+}
+
+impl ProcessRunner for Provisions {
+    fn run<'a>(&'a self, spec: &'a Call, on_line: OnLine<'a>) -> BoxFuture<'a, std::result::Result<Exit, ProcessError>> {
+        Box::pin(async move {
+            let exit = self.fake.run(spec, on_line).await;
+            let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+            if spec.program == "vagrant" && matches!(args.as_slice(), ["up", rest @ ..] if up_args(rest).1) {
+                self.holds.notify_one();
+                self.ends.notified().await;
+            }
+            exit
+        })
     }
 }
 
@@ -170,21 +192,39 @@ fn provisioning(model: &Mutex<Provisioning>, call: &Call) -> Reply {
 /// was provisioning, and took their locks in Vagrant's index from under the start's own Vagrant
 /// calls: neither the lab page's nor the attack box's read runs any Vagrant while the start holds
 /// the run, only the start does.
-#[tokio::test(start_paused = true)]
+///
+/// On the real clock, each side waiting on the other: on Tokio's paused one, the clock skipped to
+/// the next timer (the page's read, the end of the `vagrant up`, the runner's ceiling on a step)
+/// whenever the test's runtime waited on its runner service, and the page read before the
+/// `vagrant up` held the VMs, or after it had ended.
+#[tokio::test]
 async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_process() {
     let f: Scripted<Provisioning> = Scripted::answered_by(Home::new("-vm-busy", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), provisioning);
+    let (holds, ends) = (Arc::new(tokio::sync::Notify::new()), Arc::new(tokio::sync::Notify::new()));
+    let mut config = f.home.config(&f.fake, []);
+    config.processes = Arc::new(Provisions { fake: Arc::clone(&f.fake), holds: Arc::clone(&holds), ends: Arc::clone(&ends) });
     // The deploy worker's runner, which starts the lab, and the app's, which the page reads it
     // through: the lab's status, and the attack box's (the run's status, the box one of its
     // machines).
-    let worker = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let worker = Deployment::here_with(config, &f.home.dir, "web", Kind::Vm).unwrap();
     let app = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
-    let page = async {
-        tokio::time::sleep(std::time::Duration::from_secs(148)).await;
-        tokio::join!(app.status(), app.run_status())
-    };
     let mut log = |_| {};
-    let (started, (read, boxed)) =
-        tokio::join!(worker.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut log), page);
+    let start = worker.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut log);
+    tokio::pin!(start);
+    // The page reads once the start's `vagrant up` holds the VMs (two minutes into it, in the
+    // regression), then the `vagrant up` ends.
+    let ended = tokio::select! {
+        () = holds.notified() => None,
+        started = &mut start => Some(started),
+    };
+    assert!(ended.is_none(), "the start ended before its `vagrant up` held the VMs: {ended:?}");
+    let page = async {
+        let read = tokio::join!(app.status(), app.run_status());
+        f.model().held = false;
+        ends.notify_one();
+        read
+    };
+    let (started, (read, boxed)) = tokio::join!(start, page);
     started.unwrap();
     let read = read.unwrap();
     assert!(!read.running, "not up yet");
