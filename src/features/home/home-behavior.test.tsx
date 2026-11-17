@@ -160,6 +160,33 @@ describe("HomeScreen", () => {
     expect(commands(calls)).toContain("lab_resume");
     expect(commands(calls)).not.toContain("lab_launch");
   });
+
+  it("starts a stopped lab again from Jump back in where it was last started", async () => {
+    // Last started as one VM per machine on QEMU, though the saved preference is containers.
+    seedSettings({ lastRuns: { "lab-kube": Date.now() - 3_600_000 }, lastPlaces: { "lab-kube": { kind: "vms", provider: "qemu" } } });
+    const down = {
+      running: false,
+      parked: null,
+      url: null,
+      host: null,
+      expiresAt: null,
+      place: null,
+      provider: null,
+      networks: [],
+      machines: [],
+      outputs: [],
+      message: null,
+    };
+    const calls = installTauri({ active_operations: () => [], lab_status: () => down, running_labs: () => [] });
+    const { user } = await renderHome();
+    const panel = must(must(screen.getByText(/jump back in/i).closest("section, div"), "the Jump back in panel").parentElement, "its parent");
+    await user.click(within(panel).getByRole("button", { name: /resume/i }));
+    await flush(50);
+    const asked = calls.find((c) => c.cmd === "lab_placement");
+    expect(asked?.args?.id).toBe("lab-kube");
+    expect(asked?.args?.choice).toEqual({ here: true, host: null, provider: "qemu", perMachineVm: true, engine: null, defaultPorts: null });
+    expect(commands(calls)).toContain("lab_launch");
+  });
 });
 
 describe("DeployPanel", () => {

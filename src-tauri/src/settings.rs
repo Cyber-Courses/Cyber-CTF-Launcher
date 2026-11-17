@@ -1,7 +1,7 @@
 //! The player's settings and what the launcher remembers of this machine for them: the attack
 //! box's options, where labs run here (the hypervisor, the Docker engine, the host ports, a
-//! dual-form lab's VM form), the last self-tests and server VM tests, and when each lab was last
-//! started. One typed set ([`Settings`]), each setting with its default here and nowhere else,
+//! dual-form lab's VM form), the last self-tests and server VM tests, and when and where each lab
+//! was last started. One typed set ([`Settings`]), each setting with its default here and nowhere else,
 //! kept in the launcher's store (`crate::store`, one key each), so the app, its command line and
 //! its background work read the same values without a window. The webview reads them whole
 //! (`settings_get`) and changes them one by one (`settings_change`).
@@ -15,6 +15,7 @@ use ts_rs::TS;
 use crate::error::{Error, Result};
 use crate::machine::system::docker::Engine;
 use crate::platform::AppDirs;
+use crate::runtime::placement::Placement;
 use crate::runtime::providers::Provider;
 use crate::store::{self, settings as kv};
 
@@ -83,6 +84,9 @@ pub struct Settings {
     pub server_tests: BTreeMap<String, TestRecord>,
     /// When each lab was last started here, in milliseconds since the Unix epoch, by lab id.
     pub last_runs: BTreeMap<String, u64>,
+    /// Where each lab was last started here, by lab id: the placement its launch was sent with,
+    /// the player's own earlier choice, which starting it again with nothing newly picked repeats.
+    pub last_places: BTreeMap<String, Placement>,
 }
 
 impl Default for Settings {
@@ -99,6 +103,7 @@ impl Default for Settings {
             self_tests: BTreeMap::new(),
             server_tests: BTreeMap::new(),
             last_runs: BTreeMap::new(),
+            last_places: BTreeMap::new(),
         }
     }
 }
@@ -135,12 +140,15 @@ pub enum Change {
         /// How and when it ended.
         record: TestRecord,
     },
-    /// When a lab was last started here; none forgets it (the lab was removed).
+    /// When and where a lab was last started here; none forgets both (the lab was removed).
     LastRun {
         /// The lab's id.
         lab: String,
         /// When, in milliseconds since the Unix epoch.
         at: Option<u64>,
+        /// Where: the placement its launch was sent with; none keeps the one noted before (a
+        /// resume brings the lab back where it was).
+        place: Option<Placement>,
     },
 }
 
@@ -156,6 +164,7 @@ mod key {
     pub(super) const SELF_TESTS: &str = "self_tests";
     pub(super) const SERVER_TESTS: &str = "server_tests";
     pub(super) const LAST_RUNS: &str = "last_runs";
+    pub(super) const LAST_PLACES: &str = "last_places";
 }
 
 /// The settings kept in the store of `dirs`.
@@ -197,6 +206,7 @@ pub(crate) fn load(conn: &Connection) -> Result<Settings> {
         self_tests: lenient(conn, key::SELF_TESTS)?.unwrap_or_default(),
         server_tests: lenient(conn, key::SERVER_TESTS)?.unwrap_or_default(),
         last_runs: lenient(conn, key::LAST_RUNS)?.unwrap_or_default(),
+        last_places: lenient(conn, key::LAST_PLACES)?.unwrap_or_default(),
     })
 }
 
@@ -232,7 +242,14 @@ fn apply(conn: &Connection, change: &Change) -> Result<()> {
         Change::VmForm(form) => kv::set(conn, key::VM_FORM, form.as_ref()),
         Change::SelfTest { key: test, record } => update_map(conn, key::SELF_TESTS, test, Some(record.clone())),
         Change::ServerTest { host, record } => update_map(conn, key::SERVER_TESTS, host, Some(record.clone())),
-        Change::LastRun { lab, at } => update_map(conn, key::LAST_RUNS, lab, *at),
+        Change::LastRun { lab, at, place } => {
+            update_map(conn, key::LAST_RUNS, lab, *at)?;
+            match (at, place) {
+                (None, _) => update_map::<Placement>(conn, key::LAST_PLACES, lab, None),
+                (Some(_), Some(place)) => update_map(conn, key::LAST_PLACES, lab, Some(place.clone())),
+                (Some(_), None) => Ok(()),
+            }
+        }
     }
 }
 

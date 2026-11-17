@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use super::{Change, PortMode, Settings, TestRecord, TestResult, VmForm, settings_change, settings_get};
 use crate::machine::system::docker::Engine;
+use crate::runtime::placement::Placement;
 use crate::runtime::providers::Provider;
 use crate::testing::test_app::TestApp;
 
@@ -75,7 +76,7 @@ fn a_server_or_a_cloud_is_no_hypervisor_of_this_machine_and_a_refused_batch_chan
 }
 
 #[test]
-fn the_tests_and_last_runs_are_kept_by_key_and_a_last_run_is_forgotten() {
+fn the_tests_and_last_runs_are_kept_by_key_and_a_last_run_is_forgotten_with_its_place() {
     let t = TestApp::new();
     let dirs = t.dirs();
     let failed = record(TestResult::Fail, 2, Some("no KVM"));
@@ -85,16 +86,24 @@ fn the_tests_and_last_runs_are_kept_by_key_and_a_last_run_is_forgotten() {
             Change::SelfTest { key: "vm.utm".into(), record: record(TestResult::Ok, 1, None) },
             Change::SelfTest { key: "vm".into(), record: failed.clone() },
             Change::ServerTest { host: "pve1".into(), record: record(TestResult::Ok, 3, None) },
-            Change::LastRun { lab: "web".into(), at: Some(10) },
-            Change::LastRun { lab: "kube".into(), at: Some(20) },
+            Change::LastRun { lab: "web".into(), at: Some(10), place: Some(Placement::Server { host: "pve1".into() }) },
+            Change::LastRun { lab: "kube".into(), at: Some(20), place: Some(Placement::Server { host: "pve1".into() }) },
         ],
     )
     .unwrap();
-    let s = settings_change(&dirs, &[Change::LastRun { lab: "web".into(), at: None }, Change::LastRun { lab: "kube".into(), at: Some(30) }]).unwrap();
+    let here = Placement::Vms { provider: Provider::Qemu };
+    let s = settings_change(
+        &dirs,
+        &[Change::LastRun { lab: "web".into(), at: None, place: None }, Change::LastRun { lab: "kube".into(), at: Some(30), place: Some(here.clone()) }],
+    )
+    .unwrap();
+    // A resume: a later time, the place kept.
+    let s = settings_change(&dirs, &[Change::LastRun { lab: "kube".into(), at: Some(40), place: None }]).unwrap();
     assert_eq!(s.self_tests.get("vm"), Some(&failed));
     assert_eq!(s.self_tests.get("vm.utm").map(|r| r.result), Some(TestResult::Ok));
     assert_eq!(s.server_tests.get("pve1").map(|r| r.at), Some(3));
-    assert_eq!(s.last_runs, BTreeMap::from([("kube".to_owned(), 30)]), "web forgotten, kube's later start kept");
+    assert_eq!(s.last_runs, BTreeMap::from([("kube".to_owned(), 40)]), "web forgotten, kube's later start kept");
+    assert_eq!(s.last_places, BTreeMap::from([("kube".to_owned(), here)]), "web's place forgotten with it, kube's the later start's, kept by the resume");
 }
 
 #[test]
@@ -122,7 +131,10 @@ fn a_change_reaches_the_webview_in_the_shape_it_reads() {
     let change: Change = serde_json::from_str(r#"{ "setting": "vmProvider", "value": "utm" }"#).unwrap();
     assert_eq!(change, Change::VmProvider(Some(Provider::Utm)));
     let change: Change = serde_json::from_str(r#"{ "setting": "lastRun", "value": { "lab": "web", "at": null } }"#).unwrap();
-    assert_eq!(change, Change::LastRun { lab: "web".into(), at: None });
+    assert_eq!(change, Change::LastRun { lab: "web".into(), at: None, place: None });
+    let change: Change =
+        serde_json::from_str(r#"{ "setting": "lastRun", "value": { "lab": "web", "at": 5, "place": { "kind": "vms", "provider": "qemu" } } }"#).unwrap();
+    assert_eq!(change, Change::LastRun { lab: "web".into(), at: Some(5), place: Some(Placement::Vms { provider: Provider::Qemu }) });
     let json = serde_json::to_value(Settings::default()).unwrap();
     assert_eq!(json["attackAuto"], true);
     assert!(json["lastRuns"].as_object().is_some_and(serde_json::Map::is_empty));
