@@ -307,7 +307,7 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
         crate::platform::redact::register(value);
     }
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
-    start_recorded(dirs, lab, to, &env, log).await?;
+    runtime::start_locked(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(dirs, &dir, &launch.lab_id, launch.runtime).await)
 }
@@ -506,23 +506,8 @@ pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: imp
     let _lock = runtime::lock_lab(dirs, lab_id).await?;
     let dir = install_local(dirs, lab_id, src, &log).await?;
     let lab = runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker };
-    start_recorded(dirs, lab, runtime::Destination::default(), &[], log).await?;
+    runtime::start_locked(dirs, lab, runtime::Destination::default(), &[], log).await?;
     Ok(runtime::primary_url(dirs, &dir, lab_id, Runtime::Docker).await)
-}
-
-/// Starts an installed lab ([`runtime::start_locked`]), recording as the app's what the start
-/// downloaded to this machine (Storage cleans it later), whether or not the start went through.
-async fn start_recorded(
-    dirs: &AppDirs,
-    lab: runtime::LabRef<'_>,
-    to: runtime::Destination<'_>,
-    env: &[(String, String)],
-    log: impl FnMut(String),
-) -> Result<()> {
-    let before = crate::machine::storage::owned::Before::take(runtime::downloads(lab.runtime, &to)).await;
-    let started = runtime::start_locked(dirs, lab, to, env, log).await;
-    crate::machine::storage::claim_lab(dirs.clone(), lab.dir, lab.id, &before).await;
-    started
 }
 
 /// An update and an import as a launch and the import run them, for the integration tests.

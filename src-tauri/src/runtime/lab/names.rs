@@ -17,7 +17,8 @@ pub fn out(dir: &Path) -> PathBuf {
     dir.join(isoloom_spec::instance::output_dir(instance(dir)))
 }
 
-/// The lab's Compose file (local Docker).
+/// The lab's Compose file (local Docker), as the tests read it.
+#[cfg(test)]
 pub fn compose_file(dir: &Path) -> PathBuf {
     out(dir).join("docker/compose.yml")
 }
