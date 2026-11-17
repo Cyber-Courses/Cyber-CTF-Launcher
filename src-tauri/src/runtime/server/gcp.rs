@@ -150,11 +150,22 @@ mod tests {
 
     use super::*;
     use crate::testing::test_app::TestApp;
-    use crate::testing::tools::{Tools, fail, ok};
+    use isothrum_runner::fake::{FakeProcesses, Reply, Script};
+
+    use crate::runtime::providers::testing::fake;
 
     /// A GCP account `gcp1` whose labs project is `project`, if any.
     fn account(t: &TestApp, project: Option<&str>) -> String {
         t.host("gcp1", "gcp", serde_json::json!({ "username": "0X0X0X-0X0X0X-0X0X0X", "gcpProject": project }))
+    }
+
+    /// `script`, then a new labs project made: created, linked to billing, Compute enabled.
+    fn project_made(script: Script) -> FakeProcesses {
+        script
+            .expect("gcloud projects create", Reply::ok(""))
+            .expect("gcloud billing projects link", Reply::ok(""))
+            .expect("gcloud services enable", Reply::ok(""))
+            .build()
     }
 
     fn saved_project(t: &TestApp) -> Option<String> {
@@ -174,10 +185,10 @@ mod tests {
             "ERROR: (gcloud.projects.describe) User [other@example.com] does not have permission to access projects instance [cyberctf-labs-aaaaaa] (or it may not exist)",
             "timed out after 60s (the tool or its backend may be stuck)",
         ] {
-            let tools = Tools::strict_rules(&[("projects describe", fail(stderr))]);
+            let tools = fake(FakeProcesses::script().expect("gcloud projects describe", Reply::fail(1, stderr)).build());
             let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
             assert!(err.starts_with("couldn't check the Cyber CTF labs project cyberctf-labs-aaaaaa:"), "{err}");
-            assert!(!tools.called("projects create"), "{:?}", tools.calls());
+            assert!(tools.made("gcloud projects create").is_empty(), "{:?}", tools.lines());
             assert_eq!(saved_project(&t).as_deref(), Some("cyberctf-labs-aaaaaa"));
         }
     }
@@ -186,20 +197,16 @@ mod tests {
     async fn an_active_project_is_kept_and_a_deleted_one_replaced() {
         let t = TestApp::new();
         let id = account(&t, Some("cyberctf-labs-aaaaaa"));
-        let tools = Tools::strict_rules(&[("projects describe", ok("ACTIVE\n"))]);
+        let tools = fake(FakeProcesses::script().expect("gcloud projects describe", Reply::ok("ACTIVE\n")).build());
         assert_eq!(labs_project(&t.dirs(), &id).await.unwrap(), "cyberctf-labs-aaaaaa");
-        assert!(!tools.called("projects create") && !tools.called("services enable"));
+        assert!(tools.made("gcloud projects create").is_empty() && tools.made("gcloud services enable").is_empty());
         drop(tools);
-        let tools = Tools::strict_rules(&[
-            ("projects describe", fail("ERROR: NOT_FOUND: project not found")),
-            ("projects create", ok("")),
-            ("projects link", ok("")),
-            ("services enable", ok("")),
-        ]);
+        let tools = fake(project_made(FakeProcesses::script().expect("gcloud projects describe", Reply::fail(1, "ERROR: NOT_FOUND: project not found"))));
         let made = labs_project(&t.dirs(), &id).await.unwrap();
         assert!(made.starts_with("cyberctf-labs-") && made != "cyberctf-labs-aaaaaa", "{made}");
-        assert!(tools.called("billing projects link") && tools.called("--billing-account 0X0X0X-0X0X0X-0X0X0X"));
-        assert!(tools.called(&format!("services enable compute.googleapis.com --project {made}")));
+        assert_eq!(tools.made("gcloud billing projects link").len(), 1);
+        assert!(!tools.made(&format!("gcloud billing projects link {made} --billing-account 0X0X0X-0X0X0X-0X0X0X")).is_empty(), "{:?}", tools.lines());
+        assert!(!tools.made(&format!("gcloud services enable compute.googleapis.com --project {made}")).is_empty(), "{:?}", tools.lines());
         assert_eq!(saved_project(&t), Some(made));
     }
 
@@ -212,30 +219,30 @@ mod tests {
     async fn a_project_being_made_by_another_process_is_waited_for_then_used() {
         let t = TestApp::new();
         let id = account(&t, None);
-        let tools = Tools::rules(&[("projects describe", ok("ACTIVE\n"))]);
+        let tools = fake(FakeProcesses::script().expect("gcloud projects describe", Reply::ok("ACTIVE\n")).build());
         let other = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(creating_lock(&t.dirs()).unwrap()).unwrap();
         other.lock().unwrap();
         let waited = tokio::time::timeout(Duration::from_millis(600), labs_project(&t.dirs(), &id)).await;
         assert!(waited.is_err(), "waits while another process makes the project");
-        assert!(!tools.called("projects create"), "{:?}", tools.calls());
+        assert!(tools.made("gcloud projects create").is_empty(), "{:?}", tools.lines());
         // The other process saved its project and let go.
         save_project(&t.dirs(), &id, "cyberctf-labs-bbbbbb").unwrap();
         drop(other);
         assert_eq!(labs_project(&t.dirs(), &id).await.unwrap(), "cyberctf-labs-bbbbbb");
-        assert!(!tools.called("projects create"), "{:?}", tools.calls());
+        assert!(tools.made("gcloud projects create").is_empty(), "{:?}", tools.lines());
     }
 
     #[tokio::test]
     async fn a_project_being_deleted_is_replaced_one_that_isnt_active_is_said() {
-        assert_eq!(state_of(ok("DELETE_REQUESTED")).await.unwrap(), ProjectState::Gone);
-        assert_eq!(state_of(ok("ACTIVE")).await.unwrap(), ProjectState::Active);
-        let err = state_of(ok("SUSPENDED")).await.unwrap_err().to_string();
+        assert_eq!(state_of(Reply::ok("DELETE_REQUESTED")).await.unwrap(), ProjectState::Gone);
+        assert_eq!(state_of(Reply::ok("ACTIVE")).await.unwrap(), ProjectState::Active);
+        let err = state_of(Reply::ok("SUSPENDED")).await.unwrap_err().to_string();
         assert!(err.contains("is SUSPENDED"), "{err}");
     }
 
     /// What `project_state` makes of a `describe` answering `describe`.
-    async fn state_of(describe: Option<crate::testing::tools::Reply>) -> Result<ProjectState> {
-        let _tools = Tools::strict_rules(&[("projects describe", describe)]);
+    async fn state_of(describe: Reply) -> Result<ProjectState> {
+        let _tools = fake(FakeProcesses::script().expect("gcloud projects describe", describe).build());
         project_state("p").await
     }
 
@@ -245,27 +252,30 @@ mod tests {
         // neither saved nor deleted: a billing slot leaked on every try.
         let t = TestApp::new();
         let id = account(&t, None);
-        for (step, stderr) in [("services enable", "ERROR: quota exceeded"), ("billing projects link", "Cloud billing quota exceeded")] {
-            // The steps before the failing one succeed; each step's rule is longer than these,
-            // so it answers its own call.
-            let tools = Tools::strict_rules(&[
-                ("projects create", ok("")),
-                ("projects link", ok("")),
-                ("services", ok("")),
-                ("projects delete", ok("")),
-                (step, fail(stderr)),
-            ]);
+        for (step, stderr) in [("gcloud services enable", "ERROR: quota exceeded"), ("gcloud billing projects link", "Cloud billing quota exceeded")] {
+            // The steps before the failing one succeed (none runs after it but the deletion).
+            let answer = |call: &str| if call == step { Reply::fail(1, stderr) } else { Reply::ok("") };
+            let tools = fake(
+                FakeProcesses::script()
+                    .expect("gcloud projects create", Reply::ok(""))
+                    .expect("gcloud billing projects link", answer("gcloud billing projects link"))
+                    .allow("gcloud services enable", answer("gcloud services enable"))
+                    .expect("gcloud projects delete", Reply::ok(""))
+                    .build(),
+            );
             assert!(labs_project(&t.dirs(), &id).await.is_err());
-            assert!(tools.called("projects delete"), "{step}: {:?}", tools.calls());
+            assert!(!tools.made("gcloud projects delete").is_empty(), "{step}: {:?}", tools.lines());
             assert_eq!(saved_project(&t), None);
         }
         // Not even deletable: the error names it, to delete by hand.
-        let _tools = Tools::strict_rules(&[
-            ("projects create", ok("")),
-            ("projects link", ok("")),
-            ("services enable", fail("quota")),
-            ("projects delete", fail("permission denied")),
-        ]);
+        let _tools = fake(
+            FakeProcesses::script()
+                .expect("gcloud projects create", Reply::ok(""))
+                .expect("gcloud billing projects link", Reply::ok(""))
+                .expect("gcloud services enable", Reply::fail(1, "quota"))
+                .expect("gcloud projects delete", Reply::fail(1, "permission denied"))
+                .build(),
+        );
         let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
         assert!(err.contains("couldn't be deleted either: delete it in the Google Cloud console"), "{err}");
         assert_eq!(saved_project(&t), None);
@@ -275,9 +285,15 @@ mod tests {
     async fn the_labs_project_is_created_under_the_organization_when_set() {
         let t = TestApp::new();
         let id = t.host("gcp1", "gcp", serde_json::json!({ "username": "0X0X0X-0X0X0X-0X0X0X", "node": "42" }));
-        let tools = Tools::strict_rules(&[("projects create", ok("")), ("projects link", ok("")), ("services enable", ok(""))]);
+        let tools = fake(project_made(FakeProcesses::script()));
         let made = labs_project(&t.dirs(), &id).await.unwrap();
-        assert!(tools.called(&format!("gcloud projects create {made} --name Cyber CTF labs --organization=42")), "{:?}", tools.calls());
+        let created = tools.made("gcloud projects create");
+        assert_eq!(
+            created.iter().map(|c| c.args.clone()).collect::<Vec<_>>(),
+            [["projects", "create", made.as_str(), "--name", "Cyber CTF labs", "--organization=42"]],
+            "{:?}",
+            tools.lines()
+        );
     }
 
     /// gcloud refusing, saying `said`, read as isothrum-machine reads it.

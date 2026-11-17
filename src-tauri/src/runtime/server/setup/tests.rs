@@ -62,7 +62,9 @@ async fn placement_choices_need_a_proxmox_server_and_its_secret() {
 #[cfg(debug_assertions)]
 #[tokio::test]
 async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
-    use crate::testing::tools::{Tools, fail, ok};
+    use crate::runtime::providers::testing::fake;
+    use crate::runtime::test_support::node_over_ssh;
+    use isothrum_runner::fake::Reply;
     let t = crate::testing::test_app::TestApp::new();
     crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
     // The launcher's key, already made; the player's own key (never read, only its path used).
@@ -74,23 +76,23 @@ async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
     std::fs::write(&mine, "PRIVATE KEY CONTENTS").unwrap();
 
     // The node refuses the key: nothing is saved, and the message says which part failed.
-    let tools = Tools::strict_rules(&[("authorized_keys", fail("root@10.0.0.50: Permission denied (publickey)."))]);
+    let tools = fake(node_over_ssh(vec![("authorized_keys", Reply::fail(1, "root@10.0.0.50: Permission denied (publickey)."))]));
     let err = save_with_ssh_key(&t.dirs(), ssh_key_input(&mine)).await.unwrap_err().to_string();
     assert!(err.starts_with("Couldn't sign in to the node over SSH with your key"), "{err}");
-    assert!(!tools.called("pveum"), "no token is made when SSH fails");
+    assert!(!tools.lines().iter().any(|l| l.contains("pveum")), "no token is made when SSH fails");
     assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
     drop(tools);
 
     let name = ssh_key::token_name("ssh-ed25519 AAAA cyberctf-launcher");
     let answer = format!(r#"{{"full-tokenid":"root@pam!{name}","info":{{"privsep":"0"}},"value":"6f1d2c3b-aaaa-bbbb-cccc-0123456789ab"}}"#);
-    let tools = Tools::strict_rules(&[("authorized_keys", ok("added")), ("pveum user token", ok(answer))]);
+    let tools = fake(node_over_ssh(vec![("authorized_keys", Reply::ok("added")), ("pveum user token", Reply::ok(&answer))]));
     let saved = save_with_ssh_key(&t.dirs(), ssh_key_input(&mine)).await.unwrap();
     assert_eq!(saved.username, format!("root@pam!{name}"), "a token setup from here on");
     assert!(crate::runtime::proxmox::is_token(&saved.username));
     assert_eq!(saved.ssh_key.as_ref().map(|k| k.path.clone()), Some(mine.display().to_string()));
     assert_eq!(get_secret(&saved.id).unwrap(), "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab", "the token's secret is in the keychain");
     assert_eq!(tools.calls().len(), 2);
-    assert!(tools.calls().iter().all(|c| !c.contains("PRIVATE KEY CONTENTS")), "the key's contents are never passed on");
+    assert!(tools.lines().iter().all(|c| !c.contains("PRIVATE KEY CONTENTS")), "the key's contents are never passed on");
     assert!(made_with_key(&saved.id).is_some_and(|m| m.contains(&name) && m.contains("added to root's authorized_keys")), "kept for its Test connection");
     drop(tools);
 
