@@ -1,5 +1,5 @@
-//! libc: process-group signals, a process's start (macOS), and the password
-//! database.
+//! libc: process-group signals, a process's start (macOS), the password database, and a test
+//! binary's limit on open files.
 
 /// Whether process `pid` exists, by signal 0 (nothing is sent): it does when the signal could be
 /// sent, or was refused (another user's process). An id that would name a group (0, or past
@@ -97,6 +97,34 @@ pub fn boot_session() -> Option<String> {
     std::ffi::CStr::from_bytes_until_nul(text).ok().and_then(|s| s.to_str().ok()).map(str::to_owned)
 }
 
+/// How many files a test binary may hold open at once: a run of the unit tests under `cargo test`
+/// peaks at 230 to 250 with 16 tests at once (one per core), and macOS starts a process with a soft
+/// limit of 256. Four times the peak, and still low enough that a leak of what a test opened (a
+/// service, a connection, a store left open for the rest of the run: about 1,200 by the end of a
+/// run before #530) fails the run rather than hiding in it. The tests of `testing::service` catch
+/// such a leak first.
+#[cfg(test)]
+const TEST_OPEN_FILES: libc::rlim_t = 1024;
+
+// A test binary raises its soft limit on open files to [`TEST_OPEN_FILES`] (never past the hard
+// limit, never lowering it) once, as it loads, before any test runs: in tests only, never in the
+// app. A limit that can't be read or raised is left as it is.
+#[cfg(test)]
+ctor::declarative::ctor! {
+    #[ctor(unsafe)]
+    fn more_open_files_for_the_tests() {
+        let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        // SAFETY: getrlimit writes the one rlimit `limit` points to.
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) } != 0 || limit.rlim_cur >= TEST_OPEN_FILES {
+            return;
+        }
+        limit.rlim_cur = TEST_OPEN_FILES.min(limit.rlim_max);
+        // SAFETY: setrlimit reads the one rlimit `limit` points to; a soft limit up to the hard one
+        // needs no privilege, and only this process's limit changes.
+        unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &raw const limit) };
+    }
+}
+
 /// Whether this process runs as root (its effective user is 0).
 pub fn is_root() -> bool {
     // SAFETY: geteuid takes nothing, can't fail, and touches no memory of ours.
@@ -106,6 +134,16 @@ pub fn is_root() -> bool {
 #[cfg(test)]
 mod tests {
     use std::os::unix::process::CommandExt as _;
+
+    /// The tests run with room for the files they open at once, whatever soft limit they were
+    /// started with (macOS's 256).
+    #[test]
+    fn a_test_binary_may_hold_open_the_files_its_tests_open_at_once() {
+        let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        // SAFETY: getrlimit writes the one rlimit `limit` points to.
+        assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) }, 0);
+        assert!(limit.rlim_cur >= super::TEST_OPEN_FILES.min(limit.rlim_max), "{} open files at most", limit.rlim_cur);
+    }
 
     /// A process or group that is gone already is no failure (the stop it was for is done); an id
     /// that names more than one process is refused, never signalled.

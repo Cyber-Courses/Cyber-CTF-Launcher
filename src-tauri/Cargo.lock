@@ -1011,6 +1011,7 @@ dependencies = [
  "base64 0.23.1",
  "clap",
  "clap_complete",
+ "ctor",
  "flate2",
  "isoloom-spec",
  "isoloom-targets",
