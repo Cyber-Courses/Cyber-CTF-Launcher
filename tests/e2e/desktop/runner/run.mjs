@@ -260,14 +260,19 @@ if (SESSION) {
 }
 
 // --- Fixtures --------------------------------------------------------------------------------
-/** The lab folder the local specs import: CYBERCTF_TEST_LOCAL_LAB, else the fixture lab checked
- *  out under tests/e2e/desktop/.state, pulled when it is there already. */
+/** The lab folder the local specs import: CYBERCTF_TEST_LOCAL_LAB, else the fixture lab's
+ *  FIXTURE_LAB_BRANCH checked out under tests/e2e/desktop/.state, brought up to date when it is
+ *  there already. That branch is the lab's Isoloom 3.0 spec, whose inputs have defaults. */
+const FIXTURE_LAB_BRANCH = "isoloom-3.0";
 function fixtureLab() {
   if (process.env.CYBERCTF_TEST_LOCAL_LAB) return process.env.CYBERCTF_TEST_LOCAL_LAB;
   const dir = join(DESKTOP, ".state", "labs", "invoice-portal-api");
+  const git = (args, timeout) => execFileSync("git", args, { stdio: "ignore", timeout });
   try {
-    if (existsSync(join(dir, ".git"))) execFileSync("git", ["-C", dir, "pull", "-q"], { stdio: "ignore", timeout: 120000 });
-    else execFileSync("git", ["clone", "-q", "https://github.com/CyberCTF/invoice-portal-api", dir], { stdio: "ignore", timeout: 300000 });
+    if (existsSync(join(dir, ".git"))) {
+      git(["-C", dir, "fetch", "-q", "origin", FIXTURE_LAB_BRANCH], 120000);
+      git(["-C", dir, "checkout", "-q", "-f", "-B", FIXTURE_LAB_BRANCH, "FETCH_HEAD"], 60000);
+    } else git(["clone", "-q", "--branch", FIXTURE_LAB_BRANCH, "https://github.com/CyberCTF/invoice-portal-api", dir], 300000);
   } catch (e) {
     console.log(`(the fixture lab couldn't be checked out: ${e.message})`);
   }
