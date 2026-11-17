@@ -25,16 +25,18 @@ checks the needs, runs the specs and writes the results). Without `--app` or `--
 serves the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
 from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A package must be a
 `tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`
-(the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). On Linux without a display
-(`DISPLAY` and `WAYLAND_DISPLAY` empty: an SSH session, the test rig) the runner starts Xvfb for the
-run on a display number no other X server holds (`:99` and up), with a light window manager on it,
-the first installed of `xfwm4`, `openbox` and `fluxbox`, and a D-Bus session bus of the run's own
-(`dbus-daemon`), gives its `DISPLAY` and that bus's `DBUS_SESSION_BUS_ADDRESS` to the specs and
-their apps, and stops all three however the run ends (their output in `<logs>/xvfb.log`). The
+(the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). On Linux the runner always starts
+Xvfb for the run, whatever display the shell has (an SSH session has none; a desktop's terminal or a
+VNC session's has theirs), on a display number no other X server holds (`:99` and up), with a
+light window manager on it, the first installed of `xfwm4`, `openbox` and `fluxbox`, and a D-Bus
+session bus of the run's own (`dbus-daemon`). It gives its `DISPLAY` and that bus's
+`DBUS_SESSION_BUS_ADDRESS` to the specs and their apps, with `GDK_BACKEND=x11` and without the
+shell's `WAYLAND_DISPLAY` and `AT_SPI_BUS_ADDRESS`, and stops all three however the run ends (their
+output in `<logs>/xvfb.log`): who starts the run, and from where, doesn't change its results. The
 desktop session's bus belongs to another display: a service there that never answers (a broken
 `xdg-desktop-portal`) holds every GTK app's start for D-Bus's 25 s timeouts, long enough that the
-app's page never loads in time; without `dbus-daemon` the run keeps that bus and says so. Without Xvfb
-installed it stops at once and names the package (`xvfb`) rather than letting the app panic. A bare
+app's page never loads in time. Without Xvfb or `dbus-daemon` installed it stops at once and names
+the package (`xvfb`, `dbus-daemon`) rather than letting the app panic or reach the session's bus. A bare
 Xvfb has no window manager to act on a maximize or a minimize: without one installed, the run goes
 on and the `title-bar` case skips those checks, saying why.
 Before the specs, the runner starts the app once and stops with a clear message when no WebDriver
@@ -219,9 +221,9 @@ the app has to do it (`holdsFor`), not at one instant after a pause.
 ## On a test machine
 
 A caller that runs the set on a fresh Linux or Windows machine runs it in the logged-in desktop
-session on Windows (a scheduled task of that account). A Linux machine needs no session: over SSH,
-without a display, the runner starts its own Xvfb, so the machine needs the `xvfb` package, and a
-window manager is recommended (`xfwm4`, `openbox` or `fluxbox`: without one the `title-bar` case's
+session on Windows (a scheduled task of that account). A Linux machine needs no session: the runner
+always starts its own Xvfb and session bus, so the machine needs the `xvfb` and `dbus-daemon`
+packages, and a window manager is recommended (`xfwm4`, `openbox` or `fluxbox`: without one the `title-bar` case's
 maximize and minimize checks are skipped), besides the [Tauri prerequisites](https://tauri.app/start/prerequisites/#linux) (`libwebkit2gtk-4.1-dev`
 and the rest), Node, pnpm and Rust. Its knobs file goes anywhere outside the repository, mode
 600, `~/e2e.env` say:

@@ -1,13 +1,15 @@
-// The display the app opens its window on. On a Linux machine without one (DISPLAY and
-// WAYLAND_DISPLAY empty: an SSH session, the test rig), GTK can't start and the app panics before
-// its WebDriver server answers; the runner starts a virtual one for the run instead (Xvfb, on a
-// display number no other X server holds) with a light window manager on it when one is installed
-// (without one, nothing maximizes or minimizes a window) and a D-Bus session bus of its own (the
-// desktop session's bus belongs to another display: a desktop service there that never answers,
-// such as a broken xdg-desktop-portal, held every app start for D-Bus's 25 s timeouts and the page
-// never loaded in time), exports DISPLAY and DBUS_SESSION_BUS_ADDRESS to the specs and their apps,
-// and stops all three on every way out of the run. Kept apart from the runner, the environment, the files and the
-// process spawner given, so it can be tested without any of them.
+// The display the app opens its window on. On Linux the runner always gives the run a virtual one
+// of its own, whatever the shell it was started from has: Xvfb, on a display number no other X
+// server holds, with a light window manager on it when one is installed (without one, nothing
+// maximizes or minimizes a window) and a D-Bus session bus of its own. A run from an SSH session
+// (no display: GTK can't start and the app panics before its WebDriver server answers), from a
+// desktop's terminal or from a VNC session's (their display and their session's bus: a desktop
+// service there that never answers, such as a broken xdg-desktop-portal, held every app start for
+// D-Bus's 25 s timeouts and the page never loaded in time) is then the same run. It sets DISPLAY
+// and DBUS_SESSION_BUS_ADDRESS for the specs and their apps, leaves out what would take them back
+// to the session's (`runEnv`), and stops all three on every way out of the run. Kept apart from
+// the runner, the environment, the files and the process spawner given, so it can be tested
+// without any of them.
 import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
@@ -36,6 +38,12 @@ export const WINDOW_MANAGERS = [
  *  desktop session (its portal, its accessibility bus, its keyring) is on. No fork, so the runner
  *  holds the process and stops it; listening on a socket of the display's, under `root`. */
 export const SESSION_BUS = "dbus-daemon";
+/** The package that installs it, named when it is missing (Debian's, Ubuntu's and Fedora's). */
+export const SESSION_BUS_PACKAGE = "dbus-daemon";
+/** What the shell may have that would take the specs' apps to the session's display or buses
+ *  instead of the run's: Wayland's display (GTK prefers it to DISPLAY) and the session's
+ *  accessibility bus. Left out of `runEnv`. */
+export const SESSION_VARS = ["WAYLAND_DISPLAY", "AT_SPI_BUS_ADDRESS"];
 /** The session bus's socket for display `n` under `root` (the system's /tmp), with the runner's
  *  `pid`: another run's bus is never this one.
  *  @param {number} n
@@ -48,12 +56,24 @@ export const NO_WINDOW_MANAGER = "CYBERCTF_TEST_DESKTOP_NO_WINDOW_MANAGER";
  *  run on the display exits at once. */
 const WM_SETTLE_MS = 1000;
 
-/** Whether a run on `platform` with `env` needs a display of its own: Linux with neither an X nor
- *  a Wayland one.
+/** Whether a run on `platform` gets a display of its own: on Linux, always, whatever display and
+ *  session bus the shell has (macOS and Windows have one display, the user's, and no D-Bus).
  *  @param {string} platform  process.platform
- *  @param {Record<string, string | undefined>} env
  *  @returns {boolean} */
-export const needsDisplay = (platform, env) => platform === "linux" && !env.DISPLAY && !env.WAYLAND_DISPLAY;
+export const needsDisplay = (platform) => platform === "linux";
+
+/** `env` on the run's `display` and `bus` (startDisplay's): its DISPLAY and its bus's address,
+ *  GTK on X, and nothing of SESSION_VARS, so no app of the run reaches the session's display or
+ *  buses, whatever the shell had.
+ *  @param {Record<string, string | undefined>} env
+ *  @param {string} display
+ *  @param {string} busAddress
+ *  @returns {Record<string, string | undefined>} */
+export function runEnv(env, display, busAddress) {
+  const out = { ...env, DISPLAY: display, DBUS_SESSION_BUS_ADDRESS: busAddress, GDK_BACKEND: "x11" };
+  for (const v of SESSION_VARS) delete out[v];
+  return out;
+}
 
 /** Whether `command` is an executable in one of `path`'s folders.
  *  @param {string} command
@@ -83,14 +103,14 @@ export const displayFiles = (n, root = "/tmp") => ({ lock: `${root}/.X${n}-lock`
  *  or why there is none */
 
 /**
- * The run's display: none to start when there is one already (or not on Linux); otherwise Xvfb on
+ * The run's display: none to start off Linux; on Linux, whatever display the shell has, Xvfb on
  * the first number from FIRST_DISPLAY whose lock and socket are both absent (never `-displayfd`:
  * Xvfb takes a number with it without checking the number's lock), up when its socket is there,
- * then a session bus of its own (SESSION_BUS, when installed) and the first of WINDOW_MANAGERS
- * installed on it, on that bus. `:<n>` returned with its bus's address (or why none: the run goes on
- * with the session's bus), its window manager (or why none: the run goes on without one) and
- * `stop`, which stops all three (idempotent, synchronous: safe in an `exit` handler); why not, when
- * Xvfb isn't installed, no number is free, or it exits or doesn't come up within `timeoutMs`.
+ * then a session bus of its own (SESSION_BUS) and the first of WINDOW_MANAGERS installed on it, on
+ * that bus. `:<n>` returned with its bus's address, its window manager (or why none: the run goes
+ * on without one) and `stop`, which stops all three (idempotent, synchronous: safe in an `exit`
+ * handler); why not, when Xvfb or SESSION_BUS isn't installed, no number is free, or either exits
+ * or doesn't come up within `timeoutMs` (whatever was started stopped).
  * @param {{
  *   platform?: string,
  *   env?: Record<string, string | undefined>,
@@ -106,7 +126,7 @@ export const displayFiles = (n, root = "/tmp") => ({ lock: `${root}/.X${n}-lock`
  *   pid?: number,
  * }} opts  `output` the fd Xvfb's and the window manager's own output goes to (`log` its file,
  *   named in a failure)
- * @returns {Promise<{ display: null } | { display: string, bus: SessionBus, windowManager: WindowManager, stop: () => void } | { error: string }>}
+ * @returns {Promise<{ display: null } | { display: string, bus: { address: string }, windowManager: WindowManager, stop: () => void } | { error: string }>}
  */
 export async function startDisplay({
   platform = process.platform,
@@ -122,10 +142,14 @@ export async function startDisplay({
   settleMs = WM_SETTLE_MS,
   pid = process.pid,
 }) {
-  if (!needsDisplay(platform, env)) return { display: null };
+  if (!needsDisplay(platform)) return { display: null };
   if (!installed("Xvfb"))
     return {
-      error: `no display here (DISPLAY and WAYLAND_DISPLAY are empty) and no Xvfb to start one: install the ${XVFB_PACKAGE} package (apt install ${XVFB_PACKAGE}; xorg-x11-server-Xvfb on Fedora), or run in a desktop session`,
+      error: `no Xvfb to give the run a display of its own: install the ${XVFB_PACKAGE} package (apt install ${XVFB_PACKAGE}; xorg-x11-server-Xvfb on Fedora)`,
+    };
+  if (!installed(SESSION_BUS))
+    return {
+      error: `no ${SESSION_BUS} to give the run a session bus of its own: install the ${SESSION_BUS_PACKAGE} package (apt install ${SESSION_BUS_PACKAGE})`,
     };
   const see = log ? ` (its output: ${log})` : "";
   let why = `no free display number from :${FIRST_DISPLAY} to :${FIRST_DISPLAY + DISPLAYS_TRIED - 1}`;
@@ -136,18 +160,21 @@ export async function startDisplay({
     starts += 1;
     const up = await startOn(n, { spawn, exists, root, output, timeoutMs, pollMs });
     if ("stop" in up) {
-      const bus = await startSessionBus(up.display, busSocket(n, pid, root), { spawn, installed, exists, env, output, timeoutMs, pollMs, see });
-      const onBus = "address" in bus ? { ...env, DBUS_SESSION_BUS_ADDRESS: bus.address } : env;
-      const wm = await startWindowManager(up.display, { spawn, installed, env: onBus, output, settleMs, see });
+      const bus = await startSessionBus(up.display, busSocket(n, pid, root), { spawn, exists, env, output, timeoutMs, pollMs, see });
+      if (!("address" in bus)) {
+        up.stop();
+        return { error: bus.why };
+      }
+      const wm = await startWindowManager({ spawn, installed, env: runEnv(env, up.display, bus.address), output, settleMs, see });
       // The window manager before the bus and the display it runs on.
       const stop = () => {
         if ("stop" in wm) wm.stop();
-        if ("stop" in bus) bus.stop();
+        bus.stop();
         up.stop();
       };
       return {
         display: up.display,
-        bus: "address" in bus ? { address: bus.address } : { why: bus.why },
+        bus: { address: bus.address },
         windowManager: "name" in wm ? { name: wm.name } : { why: wm.why },
         stop,
       };
@@ -184,25 +211,21 @@ async function startOn(n, { spawn, exists, root, output, timeoutMs, pollMs }) {
   return { error: `Xvfb's display :${n} didn't come up within ${Math.round(timeoutMs / 1000)} s`, taken: false };
 }
 
-/** @typedef {{ address: string } | { why: string }} SessionBus  the run's own session bus, or why
- *  there is none */
-
 /** SESSION_BUS started for `display` on `socket`, up once its socket is there; its address and
- *  `stop`, or why there is none (not installed, it ended, or its socket never came: `see` names
- *  its output). The services it starts on demand get the run's display.
+ *  `stop`, or why not (it ended, or its socket never came: `see` names its output). The services
+ *  it starts on demand get the run's display and its bus, never the session's.
  *  @param {string} display
  *  @param {string} socket
- *  @param {{ spawn: Function, installed: (command: string) => boolean, exists: (path: string) => boolean, env: Record<string, string | undefined>, output: number | "ignore", timeoutMs: number, pollMs: number, see: string }} opts
+ *  @param {{ spawn: Function, exists: (path: string) => boolean, env: Record<string, string | undefined>, output: number | "ignore", timeoutMs: number, pollMs: number, see: string }} opts
  *  @returns {Promise<{ address: string, stop: () => void } | { why: string }>} */
-async function startSessionBus(display, socket, { spawn, installed, exists, env, output, timeoutMs, pollMs, see }) {
-  if (!installed(SESSION_BUS)) return { why: `${SESSION_BUS} isn't installed` };
+async function startSessionBus(display, socket, { spawn, exists, env, output, timeoutMs, pollMs, see }) {
   const address = `unix:path=${socket}`;
   // Detached as Xvfb: stopped by the runner, after the apps.
   /** @type {import("node:child_process").ChildProcess} */
   const proc = spawn(SESSION_BUS, ["--session", "--nofork", "--nopidfile", `--address=${address}`], {
     stdio: ["ignore", output, output],
     detached: true,
-    env: { ...env, DISPLAY: display },
+    env: runEnv(env, display, address),
   });
   const stop = stopper(proc);
   /** @type {string | null} */
@@ -218,17 +241,18 @@ async function startSessionBus(display, socket, { spawn, installed, exists, env,
   return { why: `${SESSION_BUS}'s socket didn't come within ${Math.round(timeoutMs / 1000)} s${see}` };
 }
 
-/** The first of WINDOW_MANAGERS installed, started on `display` and still running `settleMs`
- *  later; its `stop`, or why there is none (none installed, or it ended: `see` names its output).
- *  @param {string} display
+/** The first of WINDOW_MANAGERS installed, started with `env` (the run's: its display and bus) and
+ *  still running `settleMs` later; its `stop`, or why there is none (none installed, or it ended:
+ *  `see` names its output).
  *  @param {{ spawn: Function, installed: (command: string) => boolean, env: Record<string, string | undefined>, output: number | "ignore", settleMs: number, see: string }} opts
  *  @returns {Promise<{ name: string, stop: () => void } | { why: string }>} */
-async function startWindowManager(display, { spawn, installed, env, output, settleMs, see }) {
+async function startWindowManager({ spawn, installed, env, output, settleMs, see }) {
+  const display = env.DISPLAY;
   const wm = WINDOW_MANAGERS.find((w) => installed(w.command));
   if (!wm) return { why: `none installed (${WINDOW_MANAGERS.map((w) => w.command).join(", ")})` };
   // Detached as Xvfb: stopped by the runner, after the apps.
   /** @type {import("node:child_process").ChildProcess} */
-  const proc = spawn(wm.command, wm.args, { stdio: ["ignore", output, output], detached: true, env: { ...env, DISPLAY: display } });
+  const proc = spawn(wm.command, wm.args, { stdio: ["ignore", output, output], detached: true, env });
   /** @type {string | null} */
   let failed = null;
   proc.on("error", (e) => (failed = `${wm.command} couldn't be started: ${e.message}`));

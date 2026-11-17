@@ -60,7 +60,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { NO_WINDOW_MANAGER, needsDisplay, startDisplay } from "./display.mjs";
+import { NO_WINDOW_MANAGER, needsDisplay, runEnv, startDisplay } from "./display.mjs";
 import { preflightHint } from "./preflight.mjs";
 import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "../support/host.mjs";
 import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runTool } from "../support/owned.mjs";
@@ -147,31 +147,33 @@ const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
 process.env.TAURI_WEBDRIVER_PORT = String(PORT);
 const LOGS = process.env.CYBERCTF_TEST_DESKTOP_LOGS || join(DESKTOP, ".state", "logs");
 mkdirSync(LOGS, { recursive: true });
-// A Linux machine without a display (an SSH session, the test rig): a virtual one for the run
-// (runner/display.mjs), its DISPLAY and its own session bus's address the specs' and their apps',
-// stopped on every way out (`exit`). Without a bus of its own, the session's is kept, said here.
-// Without a window manager on it, NO_WINDOW_MANAGER tells the specs why: what only a window
-// manager does (a maximize, a minimize) is skipped, not failed.
+// On Linux, a virtual display and a session bus of the run's own (runner/display.mjs), whatever
+// display and bus the shell has (an SSH session, a desktop's terminal, a VNC session's): the specs
+// and their apps get its DISPLAY and its bus's address, and nothing that would take them back to
+// the session's (`runEnv`); stopped on every way out (`exit`). Without a window manager on it,
+// NO_WINDOW_MANAGER tells the specs why: what only a window manager does (a maximize, a minimize)
+// is skipped, not failed.
 const XVFB_LOG = join(LOGS, "xvfb.log");
 delete process.env[NO_WINDOW_MANAGER];
 const display = await startDisplay({
   spawn,
   root: args.xRoot,
-  output: needsDisplay(process.platform, process.env) ? openSync(XVFB_LOG, "w") : "ignore",
+  output: needsDisplay(process.platform) ? openSync(XVFB_LOG, "w") : "ignore",
   log: XVFB_LOG,
 });
 if ("error" in display) die(display.error);
 const stopDisplay = display.display ? display.stop : () => {};
 process.on("exit", stopDisplay);
 if (display.display) {
-  process.env.DISPLAY = display.display;
-  const { bus } = display;
-  if ("address" in bus) process.env.DBUS_SESSION_BUS_ADDRESS = bus.address;
+  const env = runEnv(process.env, display.display, display.bus.address);
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
   const wm = display.windowManager;
   if ("why" in wm) process.env[NO_WINDOW_MANAGER] = wm.why;
   const managed = "name" in wm ? `, ${wm.name} its window manager` : `, no window manager (${wm.why}): maximize and minimize checks are skipped`;
-  const bused = "address" in bus ? ", a session bus of its own" : `, the session's bus (no bus of its own: ${bus.why})`;
-  console.log(`\n==== display: Xvfb on ${display.display}${managed}${bused} (no DISPLAY or WAYLAND_DISPLAY here; its output in ${XVFB_LOG})`);
+  console.log(
+    `\n==== display: Xvfb on ${display.display}${managed}, a session bus of its own (the run's, whatever the shell's display; their output in ${XVFB_LOG})`,
+  );
 }
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || "";
 const KEEP = !!process.env.CYBERCTF_TEST_DESKTOP_KEEP;
