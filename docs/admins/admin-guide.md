@@ -109,8 +109,8 @@ The launcher's own updater checks
 starts and, when a newer version exists, shows a banner. Nothing is installed until the user
 clicks **Update** (or **Install update** in Settings > About). It installs only a package signed
 with the launcher's update key (minisign; the public key is in `src-tauri/tauri.conf.json`), and
-it waits while any lab operation runs (a start, a stop, a pause or a provisioning run, in the app
-or in a deploy worker), because installing quits every Cyber CTF process. On Windows the update
+it waits while any lab operation runs (a start, a stop, a pause or a provisioning run), because
+installing quits every Cyber CTF process. On Windows the update
 runs the same kind of installer as the installed one (NSIS or MSI); the MSI needs administrator
 rights. For a managed fleet, deploy new
 versions with your own tooling and see the [policy reference](policy.md) for turning the
@@ -326,7 +326,6 @@ In the app data folder:
 | `ssh/id_ed25519`            | the launcher's own SSH key (no passphrase), put on the server and cloud machines it creates                                                                                                            |
 | `launcher.sqlite3.v<N>.bak` | the store as it was before an update changed its layout (the last two kept)                                                                                                                            |
 | `offline/`                  | which lab, runtime, repository and commit each lab last started from, for an offline start (no tokens)                                                                                                 |
-| `deploys/`                  | the jobs of the deploy workers (a deploy keeps running if the window closes), each with its output (`<lab>.log`, the run before kept as `<lab>.previous.log`); a job carries the lab's launch token    |
 | `installed-tools.json`      | the tools the launcher installed, so Settings > Maintenance removes only those                                                                                                                         |
 | `terraform-plugins/`        | an older Terraform provider cache, cleanable from the Storage page                                                                                                                                     |
 | `tools/ovftool/`            | VMware's OVF Tool, when the user placed a download of it from the ESXi setup ("Use a downloaded OVF Tool…"): a copy of the unpacked folder, on the app's `PATH`                                        |
@@ -351,7 +350,9 @@ with the password of its player account (`attack-box:<lab>`, deleted when the bo
 the lab is removed; a locked keychain keeps it, and the removal lists it to delete by hand), and
 one per lab running on this computer with the values it was launched with, its launch token and
 flags (`launch-values:cyberctf-<lab>`, so a lab resumed after the app restarts gets them back;
-deleted when the lab is stopped, removed, or the player signs out).
+deleted when the lab is stopped or removed, when the auto-stop ends it, and when the player signs
+out). While a lab runs, the Isothrum runner holds its launch values in memory only. No file on disk
+holds a lab's launch token or flags: not the app data folder, the run's record or a log.
 On Windows the Credential Manager shows them as generic credentials named
 `session.org.cyberctf.desktop`, `server:<id>.org.cyberctf.desktop`; on Linux they are in the Secret Service (GNOME Keyring,
 KWallet), which must be running for the user to stay signed in. Tokens never reach the app's web
@@ -478,10 +479,9 @@ Cyber CTF's privacy policy: <https://www.cyberctf.com/privacy>.
 
 ## Logs and diagnostics
 
-The log folder (table above) holds `cyberctf.log` and one `deploy-<lab>.log` per lab, rotated at
-2 MB with four files kept. What a lab operation's tools printed, and a deploy worker's crash
-message, is in `deploys/<lab>.log` in the data folder, the previous operation's in
-`deploys/<lab>.previous.log`. The level is `info`; set `CYBERCTF_LOG` (`error`, `warn`, `info`,
+The log folder (table above) holds `cyberctf.log`, rotated at 2 MB with four files kept. A lab's
+operations are journaled by the Isothrum runner service; `cyberctf labs logs <lab>` lists them and
+follows one under way. The level is `info`; set `CYBERCTF_LOG` (`error`, `warn`, `info`,
 `debug` or `trace`) in the app's environment for another. Tokens, passwords, credentials in URLs,
 values under secret-sounding names and the attack boxes' passwords are redacted from every line. **Settings > About** has **Diagnostics > Copy** (the
 version, the OS and the machine's setup status, for a support request), **Save diagnostics** (one
