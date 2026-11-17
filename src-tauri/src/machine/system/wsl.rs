@@ -1,49 +1,20 @@
-//! Whether WSL 2 is ready on this Windows machine, and the restart that finishes turning it on.
-//!
-//! No single signal can be trusted: `wsl.exe` ships with Windows whether WSL is set up or not,
-//! `wsl --version` only exists in the Store WSL, `wsl --status` may fail on a machine without a
-//! distribution, and a feature turned on reads as on before the restart that really starts it.
-//! So the check gathers several, none of which needs admin rights or reads localized text, and
-//! [`classify`] (pure, tested on every OS) weighs them:
-//! - `wsl --status` and `wsl --version`, by exit code only;
-//! - the WSL services in the registry: `LxssManager` (the WSL feature) and `WslService` (the
-//!   Store WSL);
-//! - the optional features `VirtualMachinePlatform` and `Microsoft-Windows-Subsystem-Linux`
-//!   (WMI `Win32_OptionalFeature`, readable without admin rights), and whether a hypervisor
-//!   runs (`Win32_ComputerSystem.HypervisorPresent`: the Virtual Machine Platform only starts
-//!   one after the restart);
-//! - the restart Windows' servicing waits for (`Component Based Servicing\RebootPending`), and
-//!   pending file renames, a weak sign (many installers, drivers and antivirus leave some at
-//!   every boot), only heeded right after Cyber CTF's own install;
-//! - whether Cyber CTF's own "Turn on WSL 2" ran since this boot, and whether Cyber CTF already
-//!   restarted Windows for WSL (then it never asks for another restart).
-//!
-//! Every probe is headless and timed, its whole process tree killed on a timeout: a hung
-//! `wsl.exe` costs the check a few seconds, never the setup.
+//! WSL 2 on Windows, as the launcher keeps it: isothrum-machine says where WSL 2 stands
+//! ([`isothrum_machine::wsl`], its readiness classifier over `wsl.exe`, the registry and WMI); the
+//! launcher remembers what it did itself, by boot (its own "Turn on WSL 2", and the restart it made
+//! for it, handed to the check as [`Marks`]), and restarts Windows to finish turning WSL 2 or
+//! Hyper-V on.
 
 #![cfg_attr(not(windows), allow(dead_code, reason = "off Windows only the UI's types and the tests use most of this"))]
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
+pub use isothrum_machine::wsl::WslState;
+use isothrum_machine::wsl::{Marks, Wsl};
 use serde::Serialize;
 
 use crate::error::{Error, Result};
 use crate::machine::setup::WindowsFeature;
 use crate::platform::AppDirs;
-
-/// Where WSL 2 stands on this machine.
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub enum WslState {
-    /// On and running: Docker Desktop can use it.
-    Ready,
-    /// Turned on (or being turned on), but Windows has to restart to finish.
-    NeedsReboot,
-    /// Not set up.
-    Missing,
-    /// The signals don't agree, or couldn't be read.
-    Unknown,
-}
 
 /// The WSL part of the system check (Windows only).
 #[derive(Serialize, Clone, Debug, ts_rs::TS)]
@@ -56,150 +27,6 @@ pub struct WslReport {
     /// The Virtual Machine Platform is on but no hypervisor runs, a restart having (likely)
     /// passed: virtualization is probably off in the firmware (BIOS/UEFI).
     pub virtualization_off: bool,
-}
-
-/// How a probe command went.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Run {
-    /// Exited 0.
-    Ok,
-    /// Exited with another code (or couldn't be started for another reason than missing).
-    Failed,
-    /// Ran out of time and was killed.
-    TimedOut,
-    /// Not on this machine.
-    Missing,
-}
-
-/// An optional feature's `Win32_OptionalFeature.InstallState`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Feature {
-    /// 1
-    Enabled,
-    /// 2
-    Disabled,
-    /// 3: not available on this edition, or not listed at all.
-    Absent,
-}
-
-/// Every signal the check read. `None` is "couldn't tell" (unreadable, or the probe failed).
-#[derive(Clone, Copy, Debug)]
-pub struct Probes {
-    /// `wsl.exe --status`.
-    pub status: Run,
-    /// `wsl.exe --version`: only the Store WSL knows this option.
-    pub version: Run,
-    /// The WSL feature's service (`LxssManager`) is registered.
-    pub lxss_service: Option<bool>,
-    /// The Store WSL's service (`WslService`) is registered.
-    pub wsl_service: Option<bool>,
-    /// The Virtual Machine Platform feature's state.
-    pub vm_platform: Option<Feature>,
-    /// The Windows Subsystem for Linux feature's state.
-    pub wsl_feature: Option<Feature>,
-    /// A hypervisor runs (what the Virtual Machine Platform starts at boot).
-    pub hypervisor: Option<bool>,
-    /// Windows' servicing waits for a restart.
-    pub reboot_pending: Option<bool>,
-    /// Files wait to be replaced at the next restart (weak: many installers leave some).
-    pub renames_pending: Option<bool>,
-    /// Cyber CTF's "Turn on WSL 2" ran since this boot.
-    pub installed_this_boot: bool,
-    /// Cyber CTF restarted Windows for WSL in an earlier boot, with no install since.
-    pub restarted_for_wsl: bool,
-}
-
-/// Where WSL 2 stands, from what the probes found.
-pub fn classify(p: &Probes) -> WslState {
-    // WSL itself: the Store package, or the Windows feature.
-    let store = p.version == Run::Ok || p.wsl_service == Some(true);
-    let inbox = p.lxss_service == Some(true) || p.wsl_feature == Some(Feature::Enabled);
-    let wsl = store || inbox;
-    // WSL 2 runs its VM on the Virtual Machine Platform.
-    let platform_on = p.vm_platform == Some(Feature::Enabled);
-    let platform_off = matches!(p.vm_platform, Some(Feature::Disabled | Feature::Absent));
-    let running = p.hypervisor == Some(true);
-    let hypervisor_running = p.hypervisor != Some(false);
-    let pending = p.reboot_pending == Some(true);
-
-    // Our own install ran this boot and Windows waits for a restart: whatever the features read
-    // meanwhile (they can read as on already), they only start after it. Renames count here
-    // only: right after our install they are likely its own.
-    if p.installed_this_boot && (pending || p.renames_pending == Some(true)) {
-        return WslState::NeedsReboot;
-    }
-    if wsl && platform_on && running {
-        // The platform is on and its hypervisor runs. A restart Windows waits for may be an
-        // update's: then WSL has to answer too, or (without a distribution `wsl --status`
-        // fails) be the Store WSL, which only installs once the platform is set up.
-        if !pending || p.status == Run::Ok || (store && !p.installed_this_boot) {
-            return WslState::Ready;
-        }
-    }
-    // WSL answers and nothing waits for a restart; the features couldn't be read.
-    let answers_with_features_unread = wsl && p.status == Run::Ok && p.reboot_pending == Some(false) && p.vm_platform.is_none();
-    if answers_with_features_unread && hypervisor_running {
-        return WslState::Ready;
-    }
-    if p.installed_this_boot {
-        return WslState::NeedsReboot;
-    }
-    // A restart is pending and WSL is partly there: that restart finishes it. Never a second
-    // time once Cyber CTF restarted for it: what is left isn't a restart's to fix.
-    if (wsl || platform_on) && pending && !p.restarted_for_wsl {
-        return WslState::NeedsReboot;
-    }
-    let wsl_failed = matches!(p.status, Run::Failed | Run::Missing);
-    let no_services = p.lxss_service == Some(false) && p.wsl_service == Some(false);
-    // Nothing of WSL, as both the services and wsl.exe say; or WSL 1 only, without the platform.
-    if (!wsl && !platform_on && wsl_failed && (no_services || platform_off)) || (wsl && platform_off && !pending) {
-        return WslState::Missing;
-    }
-    // Among the rest: on, yet no hypervisor (virtualization off in the firmware, most likely).
-    WslState::Unknown
-}
-
-/// Whether to tell the player virtualization looks off in the firmware: the platform is on, no
-/// hypervisor runs, and no restart is still to come.
-pub fn virtualization_off(p: &Probes, state: WslState) -> bool {
-    state == WslState::Unknown && p.vm_platform == Some(Feature::Enabled) && p.hypervisor == Some(false)
-}
-
-/// The features and the hypervisor, from the output of `windows::CIM_SCRIPT`: `features=ok` once
-/// the feature query answered, then `feature:<name>=<InstallState>` for each feature it lists
-/// (an unlisted one is absent), and `hypervisor=True|False`. Partial output reads as far as it
-/// goes.
-pub fn parse_cim(out: &str) -> (Option<Feature>, Option<Feature>, Option<bool>) {
-    let lines: Vec<&str> = out.lines().map(str::trim).collect();
-    let answered = lines.contains(&"features=ok");
-    let feature = |name: &str| {
-        if !answered {
-            return None;
-        }
-        let prefix = format!("feature:{name}=");
-        match lines.iter().find_map(|l| l.strip_prefix(prefix.as_str())) {
-            None | Some("3") => Some(Feature::Absent),
-            Some("1") => Some(Feature::Enabled),
-            Some("2") => Some(Feature::Disabled),
-            Some(_) => None,
-        }
-    };
-    let hypervisor = lines.iter().find_map(|l| l.strip_prefix("hypervisor=")).and_then(|v| match v {
-        "True" => Some(true),
-        "False" => Some(false),
-        _ => None,
-    });
-    (feature("VirtualMachinePlatform"), feature("Microsoft-Windows-Subsystem-Linux"), hypervisor)
-}
-
-/// How a timed probe went, and its stdout.
-fn outcome(result: &Result<String>) -> (Run, &str) {
-    match result {
-        Ok(out) => (Run::Ok, out.as_str()),
-        Err(Error::ToolMissing { .. }) => (Run::Missing, ""),
-        Err(e) if crate::platform::exec::timed_out(e) => (Run::TimedOut, ""),
-        Err(_) => (Run::Failed, ""),
-    }
 }
 
 // ---------- What Cyber CTF did, by boot ----------
@@ -280,14 +107,25 @@ fn restarted_for_wsl(dirs: &AppDirs, boot: u64) -> bool {
     marked_boot(dirs, RESTART_MARK).is_some_and(|marked| !same_boot(marked, boot))
 }
 
-/// What the check makes of `probes`, and what it remembers: once WSL 2 is ready, the restart
-/// done for it is forgotten.
-fn assess(dirs: &AppDirs, probes: &Probes) -> (WslState, bool) {
-    let state = classify(probes);
+/// What Cyber CTF did itself in this boot and the ones before, for isothrum-machine's check.
+pub fn marks(dirs: &AppDirs) -> Marks {
+    let boot = sysinfo::System::boot_time();
+    Marks { installed_this_boot: installed_this_boot(dirs, boot), restarted_for_wsl: restarted_for_wsl(dirs, boot) }
+}
+
+/// What the check found, as the launcher reports it, and what it remembers: once WSL 2 is ready,
+/// the restart done for it is forgotten.
+pub fn report(dirs: &AppDirs, found: &Wsl) -> WslReport {
+    remember(dirs, found.state);
+    log_if_changed(&format!("WSL check: {:?} -> {:?}", found.probes, found.state));
+    WslReport { state: found.state, reopens_after_restart: reopen_command().is_some(), virtualization_off: found.virtualization_off }
+}
+
+/// Forgets the restart made for WSL once it is ready (`state`).
+fn remember(dirs: &AppDirs, state: WslState) {
     if state == WslState::Ready {
         unmark(dirs, RESTART_MARK);
     }
-    (state, virtualization_off(probes, state))
 }
 
 /// Logs a WSL check's `outcome` at `info` when it differs from the last one, else at `debug`, so
@@ -304,24 +142,6 @@ fn log_if_changed(outcome: &str) -> bool {
         log::debug!("{outcome}");
     }
     new
-}
-
-/// Where WSL 2 stands on this machine: Windows only (`None` elsewhere).
-#[cfg_attr(not(windows), allow(clippy::unused_async, reason = "it awaits the probes on Windows"))]
-pub async fn report(dirs: &AppDirs) -> Option<WslReport> {
-    #[cfg(windows)]
-    {
-        let boot = sysinfo::System::boot_time();
-        let probes = windows::probe(installed_this_boot(dirs, boot), restarted_for_wsl(dirs, boot)).await;
-        let (state, virtualization_off) = assess(dirs, &probes);
-        log_if_changed(&format!("WSL check: {probes:?} -> {state:?}"));
-        Some(WslReport { state, reopens_after_restart: windows::reopen_command().is_some(), virtualization_off })
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = dirs;
-        None
-    }
 }
 
 // ---------- Restart ----------
@@ -444,68 +264,23 @@ fn reopen_line(exe: &str) -> Option<String> {
     Some(format!("\"{exe}\""))
 }
 
+/// The command line that opens this app again at the next sign-in, when there is one (Windows).
+fn reopen_command() -> Option<String> {
+    #[cfg(windows)]
+    {
+        windows::reopen_command()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 #[cfg(windows)]
 mod windows {
-    use std::time::Duration;
-
-    use base64::Engine;
-
-    use crate::platform::sys::{Hive, delete_user_registry_value, registry_key_exists, registry_value_exists, set_user_registry_string};
-
-    use super::{Probes, outcome, parse_cim};
-
-    const WSL_TIMEOUT: Duration = Duration::from_secs(10);
-    const CIM_TIMEOUT: Duration = Duration::from_secs(20);
-
-    /// The features and the hypervisor, through WMI (no admin rights needed), printed as
-    /// language-neutral `key=value` lines (see [`parse_cim`]). Each query fails on its own, and
-    /// the script exits 0 whatever happened, so what it printed is always read.
-    pub const CIM_SCRIPT: &str = "$ProgressPreference = 'SilentlyContinue'
-try {
-  $f = @(Get-CimInstance -ClassName Win32_OptionalFeature -Filter \"Name='VirtualMachinePlatform' OR Name='Microsoft-Windows-Subsystem-Linux'\" -ErrorAction Stop)
-  'features=ok'
-  foreach ($x in $f) { 'feature:' + $x.Name + '=' + [int]$x.InstallState }
-} catch {}
-try { 'hypervisor=' + [bool](Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).HypervisorPresent } catch {}
-exit 0
-";
-
-    /// Every signal, the commands side by side. They run like every timed tool (`exec`):
-    /// headless, and on a timeout killed with whatever they started (the Store `wsl.exe` starts
-    /// a child of its own).
-    pub async fn probe(installed_this_boot: bool, restarted_for_wsl: bool) -> Probes {
-        let encoded = encode(CIM_SCRIPT);
-        let cim_args = ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded.as_str()];
-        // wsl.exe writes UTF-16 unless told otherwise; only exit codes are read, but its output
-        // in a log stays readable.
-        let utf8 = [("WSL_UTF8".to_string(), "1".to_string())];
-        let status = crate::platform::exec::run_env_timed("wsl", &["--status"], None, &utf8, WSL_TIMEOUT);
-        let version = crate::platform::exec::run_env_timed("wsl", &["--version"], None, &utf8, WSL_TIMEOUT);
-        let cim = crate::platform::exec::run_env_timed("powershell", &cim_args, None, &[], CIM_TIMEOUT);
-        let (status, version, cim) = tokio::join!(status, version, cim);
-        let (vm_platform, wsl_feature, hypervisor) = parse_cim(outcome(&cim).1);
-        let services = r"SYSTEM\CurrentControlSet\Services";
-        Probes {
-            status: outcome(&status).0,
-            version: outcome(&version).0,
-            lxss_service: registry_key_exists(Hive::LocalMachine, &format!(r"{services}\LxssManager")),
-            wsl_service: registry_key_exists(Hive::LocalMachine, &format!(r"{services}\WslService")),
-            vm_platform,
-            wsl_feature,
-            hypervisor,
-            reboot_pending: registry_key_exists(Hive::LocalMachine, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"),
-            renames_pending: registry_value_exists(Hive::LocalMachine, r"SYSTEM\CurrentControlSet\Control\Session Manager", "PendingFileRenameOperations"),
-            installed_this_boot,
-            restarted_for_wsl,
-        }
-    }
-
-    /// A script for `powershell -EncodedCommand`: base64 of its UTF-16LE text (no quoting to get
-    /// wrong on the command line).
-    fn encode(script: &str) -> String {
-        let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    }
+    #[cfg(test)]
+    use crate::platform::sys::{Hive, registry_value_exists};
+    use crate::platform::sys::{delete_user_registry_value, set_user_registry_string};
 
     const RUN_ONCE: &str = r"Software\Microsoft\Windows\CurrentVersion\RunOnce";
     const RUN_ONCE_NAME: &str = "CyberCTF";

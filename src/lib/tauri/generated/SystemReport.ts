@@ -6,7 +6,7 @@ import type { DockerEngine } from "./DockerEngine";
 import type { EngineStatus } from "./EngineStatus";
 import type { Os } from "./Os";
 import type { OvftoolLocation } from "./OvftoolLocation";
-import type { PkgManager } from "./PkgManager";
+import type { PackageManager } from "./PackageManager";
 import type { Provider } from "./Provider";
 import type { ProviderStatus } from "./ProviderStatus";
 import type { SetupOptions } from "./SetupOptions";
@@ -29,7 +29,7 @@ arch: Arch,
 /**
  * The OS's package manager.
  */
-pkgManager: PkgManager, 
+pkgManager: PackageManager, 
 /**
  * The Docker CLI.
  */

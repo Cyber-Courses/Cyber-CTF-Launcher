@@ -776,7 +776,10 @@ mod tests {
     async fn a_chosen_engine_with_no_context_here_fails_the_launch_rather_than_use_another() {
         // Regression: an engine whose context couldn't be found pinned nothing, and the lab
         // started on the current context: another engine than the one the player picked.
-        let _tools = crate::platform::exec::fake::Tools::rules(&[("context ls", crate::platform::exec::fake::ok("default *\ncolima-dev\n"))]);
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        let contexts = FakeProcesses::script().allow("docker context ls", Reply::ok("default *\ncolima-dev\n")).build();
+        let host = crate::runtime::providers::testing::host(std::path::Path::new("/nonexistent/cyberctf-test-machine"));
+        let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::new(contexts), host);
         assert_eq!(pinned_context(Some("colima"), None).await.unwrap().as_deref(), Some("colima-dev"));
         assert_eq!(pinned_context(Some("orbstack"), None).await.unwrap_err().to_string(), "no Docker context for orbstack");
         // On a server, or with no engine chosen, nothing is pinned.

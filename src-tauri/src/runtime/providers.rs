@@ -28,6 +28,20 @@ fn machine() -> isothrum_machine::Context {
     }
 }
 
+/// What the machine check reads with ([`crate::machine::system::system_check`]): [`machine`]'s,
+/// with this machine's package manager (as the launcher's host finds it), and outside the tests
+/// the version probes that rarely
+/// change (`vagrant --version`...) kept a while ([`crate::platform::remembered::Remembering`]).
+pub(crate) fn machine_check() -> isothrum_machine::Context {
+    let mut cx = machine();
+    cx.host.packages = crate::platform::host::Host::here().packages.map(crate::platform::host::Packages::isothrum);
+    #[cfg(not(test))]
+    {
+        cx.runner = std::sync::Arc::new(crate::platform::remembered::Remembering::new(cx.runner));
+    }
+    cx
+}
+
 /// This machine: its tools, run by the runner's processes, and its devices.
 fn this_machine() -> isothrum_machine::Context {
     let os = Os::HERE.isothrum();
@@ -44,10 +58,11 @@ fn this_machine() -> isothrum_machine::Context {
 /// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its
 /// plugin (what the Machine page reports as ready), in [`Provider::ALL`]'s order.
 pub async fn ready_here() -> Vec<Provider> {
-    if crate::platform::exec::run_read("vagrant", &["--version"], None).await.is_err() {
+    let cx = machine();
+    if !isothrum_machine::tools::version(&cx, isothrum_machine::tools::probes::VAGRANT).await.installed {
         return Vec::new();
     }
-    ready(&detect(true).await, true)
+    ready(&isothrum_machine::providers::detect(&cx, true).await, true)
 }
 
 /// Of `statuses` ([`detect`]'s), the local hypervisors ready for a lab's VMs: none without
@@ -205,7 +220,12 @@ pub(crate) mod testing {
             return super::this_machine();
         }
         let (runner, host) = set.unwrap_or_else(|| {
-            let nothing: Arc<dyn ProcessRunner> = Arc::new(FakeProcesses::model(|_| Reply::missing()));
+            // A test scripting the launcher's tools answers isothrum-machine's calls too.
+            let nothing: Arc<dyn ProcessRunner> = if crate::platform::exec::fake::scripted() {
+                Arc::new(crate::platform::exec::fake::AsRunner)
+            } else {
+                Arc::new(FakeProcesses::model(|_| Reply::missing()))
+            };
             (nothing, host(std::path::Path::new("/nonexistent/cyberctf-test-machine")))
         });
         isothrum_machine::Context::new(runner, host)

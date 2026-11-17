@@ -5,7 +5,7 @@
 
 use crate::machine::system::docker::{Engine, EngineStatus};
 use crate::machine::system::wsl::{WslReport, WslState};
-use crate::machine::system::{CloudClis, PkgManager, SystemReport, Tool};
+use crate::machine::system::{CloudClis, PackageManager, SystemReport, Tool};
 use crate::platform::host::{Arch, Host, Os};
 use isothrum_machine::providers::{AccountLacks, needs};
 
@@ -69,7 +69,7 @@ pub(crate) fn bare(os: Os, arch: Arch) -> SystemReport {
         Os::Linux => "apt 2.9.8 (amd64)",
         Os::Macos => "Homebrew 4.6.3",
     };
-    let pkg_manager = PkgManager { name: os.usual_packages().into(), installed: true, version: Some(version.into()) };
+    let pkg_manager = PackageManager { name: os.usual_packages().into(), installed: true, version: Some(version.into()) };
     let wsl = (os == Os::Windows).then_some(WslReport { state: WslState::Missing, reopens_after_restart: true, virtualization_off: false });
     let mut r = SystemReport {
         os,
@@ -251,12 +251,12 @@ fn awaits_relogin(provider: Provider, plugin: bool, groups: &[&str], group: &str
 
 /// Fedora: Linux with dnf, which the guided setup installs through as it does through apt.
 pub(crate) fn bare_fedora() -> SystemReport {
-    with(bare_debian(), false, |r| r.pkg_manager = PkgManager { name: "dnf".into(), installed: true, version: Some("4.24.0".into()) })
+    with(bare_debian(), false, |r| r.pkg_manager = PackageManager { name: "dnf".into(), installed: true, version: Some("4.24.0".into()) })
 }
 
 /// Arch: Linux with neither apt nor dnf, which the guided setup doesn't install through yet.
 pub(crate) fn bare_arch() -> SystemReport {
-    with(bare_debian(), false, |r| r.pkg_manager = PkgManager { name: "apt".into(), installed: false, version: None })
+    with(bare_debian(), false, |r| r.pkg_manager = PackageManager { name: "apt".into(), installed: false, version: None })
 }
 
 /// An Apple Silicon Mac with Docker Desktop running, but no Vagrant and no hypervisor.

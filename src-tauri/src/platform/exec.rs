@@ -28,7 +28,7 @@ pub use background::{Background, background};
 #[cfg(test)]
 pub use docker::IMAGE_PATTERN;
 pub use docker::login_name;
-pub use docker::{DockerSaid, ImageRef, docker_denied, docker_denied_error, groups_pending, valid_image};
+pub use docker::{DockerSaid, ImageRef, docker_denied, docker_denied_error, valid_image};
 #[cfg(test)]
 pub(crate) use elevate::leftover_script;
 pub(crate) use elevate::ps_quote;
@@ -183,7 +183,7 @@ fn failed(program: &str, args: &[&str], stderr: String) -> Error {
     Error::CommandFailed { command: format!("{program} {}", args.join(" ")), stderr }
 }
 
-/// What a tool given up on after `limit` failed with (see [`timed_out`]).
+/// What a tool given up on after `limit` failed with (`timed_out` reads it).
 fn timed_out_after(limit: Duration) -> String {
     format!("timed out after {}s (the tool or its backend may be stuck)", limit.as_secs())
 }
@@ -247,6 +247,7 @@ fn create_in_job(cmd: &std::process::Command, job: &crate::platform::sys::Job) -
 }
 
 /// Whether `e` is a timed tool that ran out of time (and was killed), not one that failed.
+#[cfg(test)]
 pub fn timed_out(e: &Error) -> bool {
     matches!(e, Error::CommandFailed { stderr, .. } if stderr.starts_with("timed out after"))
 }

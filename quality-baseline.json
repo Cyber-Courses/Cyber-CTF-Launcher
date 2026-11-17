@@ -40,7 +40,6 @@
     },
     "src-tauri/src/machine/system/wsl.rs": {
       "#![cfg_attr(not(windows), allow(dead_code, reason = \"off Windows only the UI's types and the tests use most of this\"))]": 1,
-      "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the probes on Windows\"))]": 1,
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
     },
     "src-tauri/src/machine/tools/install.rs": {

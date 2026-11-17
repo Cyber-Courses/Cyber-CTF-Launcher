@@ -4,10 +4,13 @@ use super::*;
 async fn the_vm_test_picks_no_hypervisor_without_vagrant() {
     // Regression: the test's own copy of "ready" never asked whether Vagrant was there, and
     // picked a hypervisor whose every Vagrant call would then fail.
-    use crate::platform::exec::fake::{Tools, ok};
-    let tools = Tools::new(|program, _| if program == "vagrant" { None } else { ok("") });
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+    let tools = std::sync::Arc::new(FakeProcesses::model(|call| if call.program == "vagrant" { Reply::missing() } else { Reply::ok("") }));
+    let runner: std::sync::Arc<dyn isothrum_runner::ProcessRunner> = tools.clone();
+    let root = crate::testing::temp_dir("vm-test-no-vagrant");
+    let _machine = crate::runtime::providers::testing::Machine::set(runner, crate::runtime::providers::testing::host(&root));
     assert_eq!(test_provider(Some(Provider::Virtualbox)).await, None);
-    assert!(tools.called("vagrant --version"), "{:?}", tools.calls());
+    assert_eq!(tools.made("vagrant --version").len(), 1, "{:?}", tools.calls());
 }
 
 #[tokio::test]

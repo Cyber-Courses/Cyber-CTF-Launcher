@@ -456,7 +456,7 @@ async fn the_found_copy_answers_for_real_through_the_path_it_is_given() {
     let echo = ["/bin/echo", "/usr/bin/echo"].into_iter().map(Path::new).find(|p| p.is_file()).expect("an echo program");
     std::os::unix::fs::symlink(echo, &file).unwrap();
     let direct = std::process::Command::new(echo).arg("--version").output().expect("echo runs");
-    let expected = crate::machine::system::first_line(&String::from_utf8_lossy(&direct.stdout));
+    let expected = isothrum_machine::tools::first_line(&String::from_utf8_lossy(&direct.stdout));
     assert!(expected.is_some(), "echo --version printed nothing");
     let tool = version_of(&file).await;
     assert_eq!(tool.version, expected, "the found file answered as the program it links to");

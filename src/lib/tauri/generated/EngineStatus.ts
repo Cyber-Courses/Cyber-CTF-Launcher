@@ -2,12 +2,12 @@
 import type { DockerEngine } from "./DockerEngine";
 
 /**
- * One Docker-compatible engine found on this machine: the CLI context that reaches it, whether
- * its daemon answers, and whether it is the CLI's current context (the one labs run on).
+ * One Docker-compatible engine found on this computer: the CLI context that reaches it, whether
+ * its daemon answers, and whether it is the CLI's current context.
  */
 export type EngineStatus = { 
 /**
- * Which engine it is (Docker Desktop, Colima, the Linux daemon…).
+ * Which engine it is.
  */
 engine: DockerEngine, 
 /**
@@ -19,6 +19,6 @@ context: string,
  */
 running: boolean, 
 /**
- * Whether its context is the CLI's current one, which labs run on.
+ * Whether its context is the CLI's current one.
  */
 current: boolean, };

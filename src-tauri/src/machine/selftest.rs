@@ -164,6 +164,15 @@ mod tests {
         )
     }
 
+    /// The Docker daemon as isothrum-machine asks it (`docker [--context <c>] info|version`),
+    /// answered by `script`, on this test's thread until dropped; the test keeps the calls.
+    fn daemon(script: isothrum_runner::fake::Script) -> (crate::runtime::providers::testing::Machine, std::sync::Arc<isothrum_runner::fake::FakeProcesses>) {
+        let tools = std::sync::Arc::new(script.build());
+        let runner: std::sync::Arc<dyn isothrum_runner::ProcessRunner> = tools.clone();
+        let host = crate::runtime::providers::testing::host(std::path::Path::new("/nonexistent/cyberctf-test-machine"));
+        (crate::runtime::providers::testing::Machine::set(runner, host), tools)
+    }
+
     #[tokio::test]
     async fn the_container_test_runs_every_step_then_cleans_up() {
         use crate::platform::exec::fake::{Tools, ok};
@@ -172,8 +181,8 @@ mod tests {
         let web =
             crate::platform::http::tests::serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\ncyberctf-selftest-ok".to_vec()).await;
         let addr = web.trim_start_matches("http://").trim_end_matches('/').to_string();
+        let _daemon = daemon(isothrum_runner::fake::FakeProcesses::script().expect("docker info", isothrum_runner::fake::Reply::ok("27.3.1\n")));
         let tools = Tools::new(move |_, args| match args {
-            ["info", ..] => ok("27.3.1\n"),
             [.., "exec", "-T", "probe", "wget", _, _, _, _] => ok("cyberctf-selftest-ok\n"),
             [.., "port", "web", "80"] => ok(format!("{addr}\n")),
             _ => ok(""),
@@ -199,17 +208,19 @@ mod tests {
     /// probe, the pull, compose and the clean-up, goes to that engine's context.
     #[tokio::test]
     async fn the_container_test_runs_on_the_engine_asked_for() {
-        use crate::platform::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, fail};
         let t = crate::testing::test_app::TestApp::new();
         let [image_list, down] = clean_slate();
-        let tools =
-            Tools::strict_rules(&[image_list, down, ("docker info", ok("27.3.1\n")), ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
+        let tools = Tools::strict_rules(&[image_list, down, ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
+        let (_daemon, asked) =
+            daemon(isothrum_runner::fake::FakeProcesses::script().expect("docker --context orbstack info", isothrum_runner::fake::Reply::ok("27.3.1\n")));
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("orbstack".into()), channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:ok", "pull:running", "pull:fail"]);
         // (`image inspect busybox`, the test's own: the storage bookkeeping after the run inspects
         // the image on the CLI's engine, as Storage reads it.)
-        for call in ["docker info", "image inspect busybox", "pull -q", "down -v"] {
+        assert_eq!(asked.calls().len(), 1, "the engine is asked on its context");
+        for call in ["image inspect busybox", "pull -q", "down -v"] {
             assert_eq!(tools.env_of(call, "DOCKER_CONTEXT").as_deref(), Some("orbstack"), "{call}: {:?}", tools.calls());
         }
     }
@@ -231,15 +242,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_container_test_stops_at_its_step_and_still_cleans_up() {
-        use crate::platform::exec::fake::{Tools, fail};
+        use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let [image_list, down] = clean_slate();
-        let tools = Tools::strict_rules(&[
-            image_list,
-            down,
-            ("docker image inspect", crate::platform::exec::fake::ok("")),
-            ("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock")),
-        ]);
+        let tools = Tools::strict_rules(&[image_list, down, ("docker image inspect", crate::platform::exec::fake::ok(""))]);
+        let down_daemon = isothrum_runner::fake::Reply::fail(1, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock");
+        let _daemon = daemon(isothrum_runner::fake::FakeProcesses::script().expect("docker info", down_daemon));
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
@@ -253,18 +261,19 @@ mod tests {
     /// the same engine.
     #[tokio::test]
     async fn an_engine_whose_docker_info_answers_nothing_fails_the_engine_step() {
-        use crate::platform::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, ok};
+        use isothrum_runner::fake::{FakeProcesses, Reply};
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::new(|_, args| match args {
-            ["info", ..] => ok("\n"),
-            ["version", ..] => fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"),
-            _ => ok(""),
-        });
+        let tools = Tools::new(|_, _| ok(""));
+        let down = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
+        let script =
+            FakeProcesses::script().expect("docker --context default info", Reply::ok("\n")).expect("docker --context default version", Reply::fail(1, down));
+        let (_daemon, asked) = daemon(script);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("default".into()), channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
         assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
-        assert_eq!(tools.env_of("docker version", "DOCKER_CONTEXT").as_deref(), Some("default"));
+        assert_eq!(asked.calls().len(), 2, "docker version asked of the same engine");
         assert!(!tools.called("pull"), "{:?}", tools.calls());
     }
 

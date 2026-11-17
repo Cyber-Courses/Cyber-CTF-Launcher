@@ -47,6 +47,67 @@ async fn remembered_at<E>(key: &str, now: Instant, ask: impl Future<Output = Res
     Ok(answer)
 }
 
+/// The programs whose `--version` the machine check keeps ([`Remembering`]): the ones it read
+/// through [`remembered`] before isothrum-machine ran its probes. A hypervisor's is never kept:
+/// its probe also tells a wedged service.
+const KEPT_VERSIONS: [&str; 4] = ["docker", "vagrant", "aws", "gcloud"];
+
+/// isothrum-machine's runner, the `--version` answers of [`KEPT_VERSIONS`] kept as [`remembered`]
+/// keeps them (one that failed is asked again next time); every other call goes to `inner`.
+pub struct Remembering {
+    inner: std::sync::Arc<dyn isothrum_runner::ProcessRunner>,
+}
+
+impl Remembering {
+    /// `inner`, its version answers kept.
+    pub fn new(inner: std::sync::Arc<dyn isothrum_runner::ProcessRunner>) -> Remembering {
+        Remembering { inner }
+    }
+}
+
+/// Why a version wasn't kept: the tool didn't run, or didn't exit 0.
+enum NotKept {
+    Failed(isothrum_runner::ProcessError),
+    Exited(isothrum_runner::Exit),
+}
+
+impl isothrum_runner::ProcessRunner for Remembering {
+    fn run<'a>(
+        &'a self,
+        spec: &'a isothrum_runner::ProcessSpec,
+        on_line: isothrum_runner::OnLine<'a>,
+    ) -> isothrum_runner::BoxFuture<'a, std::result::Result<isothrum_runner::Exit, isothrum_runner::ProcessError>> {
+        if spec.args != ["--version"] || !KEPT_VERSIONS.contains(&spec.program.as_str()) || !spec.env.is_empty() {
+            return self.inner.run(spec, on_line);
+        }
+        Box::pin(async move {
+            let ask = async {
+                let mut stdout = Vec::new();
+                let exit = self
+                    .inner
+                    .run(spec, &mut |stream, line| {
+                        if stream == isothrum_runner::Stream::Stdout {
+                            stdout.push(line.to_owned());
+                        }
+                    })
+                    .await
+                    .map_err(NotKept::Failed)?;
+                if exit.success() { Ok(stdout.join("\n")) } else { Err(NotKept::Exited(exit)) }
+            };
+            match remembered(&spec.line(), ask).await {
+                Ok(out) => {
+                    for line in out.lines() {
+                        on_line(isothrum_runner::Stream::Stdout, line);
+                    }
+                    Ok(isothrum_runner::Exit::new(Some(0)))
+                }
+                Err(NotKept::Exited(exit)) => Ok(exit),
+                Err(NotKept::Failed(e)) => Err(e),
+            }
+        })
+    }
+}
+
 /// Forgets every kept answer: a tool was installed or removed.
 pub fn forget_all() {
     kept().clear();
@@ -66,7 +127,35 @@ pub fn is_kept(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+    use isothrum_runner::{ProcessRunner, ProcessSpec, capture};
+
     use super::*;
+
+    /// A version kept by the machine check's runner is asked once; another call every time, and
+    /// one that failed is asked again.
+    #[tokio::test]
+    async fn the_checks_runner_keeps_the_versions_it_kept_before() {
+        forget_all();
+        let fake = Arc::new(
+            FakeProcesses::script()
+                .expect_times("gcloud --version", 1, Reply::ok("Google Cloud SDK 500.0.0\nbq 2.1"))
+                .expect_times("aws --version", 2, Reply::fail(1, "broken"))
+                .expect_times("VBoxManage --version", 2, Reply::ok("7.1.4r165100"))
+                .build(),
+        );
+        let inner: Arc<dyn ProcessRunner> = Arc::<FakeProcesses>::clone(&fake);
+        let runner = Remembering::new(inner);
+        for _ in 0..2 {
+            let gcloud = capture(&runner, &ProcessSpec::new("gcloud", ["--version"])).await.unwrap();
+            assert_eq!((gcloud.success(), gcloud.stdout.as_slice()), (true, ["Google Cloud SDK 500.0.0", "bq 2.1"].map(String::from).as_slice()));
+            assert!(!capture(&runner, &ProcessSpec::new("aws", ["--version"])).await.unwrap().success());
+            assert!(capture(&runner, &ProcessSpec::new("VBoxManage", ["--version"])).await.unwrap().success());
+        }
+        forget_all();
+    }
 
     #[tokio::test]
     async fn an_answer_is_kept_a_while_a_failure_never() {

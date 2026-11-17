@@ -17,11 +17,11 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use crate::machine::system::Tool;
 use crate::platform::exec::run_read_env;
 use crate::platform::policy::{self, Key};
 use crate::platform::remembered::{forget_all, remembered};
 use crate::platform::{AppDirs, random_hex};
+use isothrum_machine::tools::{Tool, first_line};
 
 #[cfg(test)]
 mod tests;
@@ -194,8 +194,8 @@ async fn version_of(file: &Path) -> Tool {
     let ask = run_read_env("ovftool", &["--version"], None, &env);
     // Boxed: kept in the machine check's future, it would double its size.
     match Box::pin(remembered(&format!("{} --version", file.display()), ask)).await {
-        Ok(out) => Tool { installed: true, version: crate::machine::system::first_line(&out) },
-        Err(_) => Tool { installed: false, version: None },
+        Ok(out) => Tool::installed(first_line(&out)),
+        Err(_) => Tool::MISSING,
     }
 }
 
