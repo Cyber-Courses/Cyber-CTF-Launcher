@@ -155,6 +155,81 @@ async fn a_proxmox_host_passes_the_connection_test() {
 #[ignore = "needs a Proxmox server; see the module docs"]
 async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     let dir = copy_lab("CYBERCTF_TEST_PVE_LAB", "cyberctf-pve-runner-lab", lab::Target::Proxmox);
+    let (place, home) = proxmox_place().await;
+    let run = Deployment::on_server(&home, &dir, "pve-runner-lab", Runtime::Vm, place).unwrap_or_else(|e| panic!("the lab's run on the server opens: {e}"));
+    let mut f = Vec::new();
+    scenario(
+        &mut f,
+        async |f: &mut Vec<String>| {
+            started(run.up(crate::runtime::isothrum::Inputs::default(), None, &mut log("pve")).await, f);
+            match run.status().await {
+                Ok(s) => {
+                    said(&s);
+                    check(s.running && s.url.is_some(), format!("it runs, with its entry (running={} url={:?})", s.running, s.url), f);
+                    reached(&run, &s, f).await;
+                }
+                Err(e) => check(false, format!("its status reads: {e}"), f),
+            }
+            // Its checks run in its machines through the runner, over SSH through the router
+            // (and through the node first when only it reaches the lab).
+            checks_pass(run.check().await, f);
+        },
+        async |f: &mut Vec<String>| stopped(run.down(&mut log("pve")).await, run.status().await, f),
+    )
+    .await;
+    assert!(f.is_empty(), "{f:#?}");
+}
+
+/// The Servers page's VM test on the Proxmox test server (`server_selftest`, run by
+/// isothrum-machine): where a launch would put a lab, every step of the plan the page lists
+/// passes in its order, a command runs inside the test VM, and nothing of it is left. Opt-in with
+/// the lab test's knobs (no lab needed):
+///
+/// ```text
+/// CYBERCTF_TEST_PVE_ENDPOINT=… CYBERCTF_TEST_PVE_TOKEN_ID=… CYBERCTF_TEST_PVE_TOKEN_SECRET=… CYBERCTF_TEST_PVE_NODE=… \
+/// CYBERCTF_TEST_PVE_BRIDGE=… [CYBERCTF_TEST_PVE_JUMP=root@<address>] CYBERCTF_TEST_PVE_RUNNER_HOME=… CYBERCTF_TEST_PVE_SSH_KEY=… \
+/// cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::server_lab::the_vm_test_passes_on_proxmox
+/// ```
+#[tokio::test]
+#[ignore = "needs a Proxmox server; see the module docs"]
+async fn the_vm_test_passes_on_proxmox() {
+    use crate::runtime::selftest_report::{Event, Reporter};
+    use crate::runtime::server_selftest;
+    // The test runs in this process, as in the app, on this machine's tools (Terraform).
+    crate::runtime::providers::testing::read_this_machine();
+    let (place, _) = proxmox_place().await;
+    let target =
+        server_selftest::proxmox_target(&place.name, &place, "cyberctf-server-selftest-integration").unwrap_or_else(|e| panic!("the test's server: {e}"));
+    let work = std::env::temp_dir().join("cyberctf-pve-vm-test");
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Event>::new()));
+    let sink = std::sync::Arc::clone(&seen);
+    let r = Reporter::new(move |e: Event| {
+        println!("{} {}: {}", e.step, e.state, e.detail.as_deref().unwrap_or_default());
+        sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(e);
+    });
+    let result = server_selftest::test(&work, &target, &r).await;
+    let mut f = Vec::new();
+    check(result.is_ok(), format!("the test passes ({:?})", result.err()), &mut f);
+    // Each step's last state, in the order first said: the plan after the connection, all ok.
+    let mut ends: Vec<(&str, &str)> = Vec::new();
+    for e in seen.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
+        match ends.iter_mut().find(|(s, _)| *s == e.step) {
+            Some(end) => end.1 = e.state,
+            None => ends.push((e.step, e.state)),
+        }
+    }
+    let plan = ["connect", "prepare", "image", "network", "vm", "uplink", "ssh", "command", "cleanup"];
+    let all_ok: Vec<(&str, &str)> = plan.iter().map(|s| (*s, "ok")).collect();
+    check(ends == all_ok, format!("every step of the plan passes in its order ({ends:?})"), &mut f);
+    assert!(f.is_empty(), "{f:#?}");
+}
+
+/// The test server where a launch puts a lab, as `launch::server_place` makes it: the profile a
+/// token setup with the node's key saves, its variables as a launch makes them
+/// (`lab::host_vars`), the runner's key the lab's VMs let in, the node passed in (as the launcher
+/// discovers it) and the jump through the node when only it reaches the lab; with the runner's
+/// home.
+async fn proxmox_place() -> (ServerPlace, PathBuf) {
     // The server's profile as a token setup with the node's key saves it, and its variables as a
     // launch makes them (`lab::host_vars`).
     let endpoint = var("CYBERCTF_TEST_PVE_ENDPOINT");
@@ -188,28 +263,7 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
         node: Some(var("CYBERCTF_TEST_PVE_NODE")),
         jump,
     };
-    let run = Deployment::on_server(&home, &dir, "pve-runner-lab", Runtime::Vm, place).unwrap_or_else(|e| panic!("the lab's run on the server opens: {e}"));
-    let mut f = Vec::new();
-    scenario(
-        &mut f,
-        async |f: &mut Vec<String>| {
-            started(run.up(crate::runtime::isothrum::Inputs::default(), None, &mut log("pve")).await, f);
-            match run.status().await {
-                Ok(s) => {
-                    said(&s);
-                    check(s.running && s.url.is_some(), format!("it runs, with its entry (running={} url={:?})", s.running, s.url), f);
-                    reached(&run, &s, f).await;
-                }
-                Err(e) => check(false, format!("its status reads: {e}"), f),
-            }
-            // Its checks run in its machines through the runner, over SSH through the router
-            // (and through the node first when only it reaches the lab).
-            checks_pass(run.check().await, f);
-        },
-        async |f: &mut Vec<String>| stopped(run.down(&mut log("pve")).await, run.status().await, f),
-    )
-    .await;
-    assert!(f.is_empty(), "{f:#?}");
+    (place, home)
 }
 
 /// The lab started (`up`).
