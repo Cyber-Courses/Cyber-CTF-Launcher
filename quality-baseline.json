@@ -3,7 +3,6 @@
     "dup/clone": {
       "rs:integration_tests": 1,
       "rs:labs": 1,
-      "rs:machine": 1,
       "rs:screen": 1,
       "ts:components": 1
     }
