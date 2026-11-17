@@ -4,7 +4,19 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { FIRST_DISPLAY, SESSION_BUS, WINDOW_MANAGERS, XVFB_PACKAGE, busSocket, displayFiles, needsDisplay, onPath, startDisplay } from "./display.mjs";
+import {
+  FIRST_DISPLAY,
+  SESSION_BUS,
+  SESSION_BUS_PACKAGE,
+  WINDOW_MANAGERS,
+  XVFB_PACKAGE,
+  busSocket,
+  displayFiles,
+  needsDisplay,
+  onPath,
+  runEnv,
+  startDisplay,
+} from "./display.mjs";
 
 // The run's display (runner/display.mjs): when the runner starts Xvfb, on which display, and that
 // it stops it, given a fake environment, fake X server files and a fake process spawner. No Xvfb is started.
@@ -88,26 +100,51 @@ function machine(
 
 const headless = { platform: "linux", env: { PATH: "/usr/bin" } };
 
-describe("whether the run needs a display of its own", () => {
-  it("does on Linux with neither DISPLAY nor WAYLAND_DISPLAY (empty counts as unset)", () => {
-    expect(needsDisplay("linux", {})).toBe(true);
-    expect(needsDisplay("linux", { DISPLAY: "", WAYLAND_DISPLAY: "" })).toBe(true);
+describe("whether the run gets a display of its own", () => {
+  it("does on Linux, always; not on macOS or Windows", () => {
+    expect(needsDisplay("linux")).toBe(true);
+    expect(needsDisplay("darwin")).toBe(false);
+    expect(needsDisplay("win32")).toBe(false);
   });
+});
 
-  it("doesn't with an X or a Wayland display, nor on macOS or Windows", () => {
-    expect(needsDisplay("linux", { DISPLAY: ":0" })).toBe(false);
-    expect(needsDisplay("linux", { WAYLAND_DISPLAY: "wayland-0" })).toBe(false);
-    expect(needsDisplay("darwin", {})).toBe(false);
-    expect(needsDisplay("win32", {})).toBe(false);
+/** A desktop's or a VNC session's shell: its display, Wayland's, its session bus and its
+ *  accessibility bus. */
+const session = {
+  PATH: "/usr/bin",
+  DISPLAY: ":1",
+  WAYLAND_DISPLAY: "wayland-0",
+  DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+  AT_SPI_BUS_ADDRESS: "unix:path=/run/user/1000/at-spi/bus",
+};
+
+describe("the environment on the run's display", () => {
+  it("has the run's display and bus, GTK on X, and nothing of the session's", () => {
+    const env = runEnv(session, ":99", "unix:path=/tmp/b");
+    expect(env).toEqual({ PATH: "/usr/bin", DISPLAY: ":99", DBUS_SESSION_BUS_ADDRESS: "unix:path=/tmp/b", GDK_BACKEND: "x11" });
+    expect(session.WAYLAND_DISPLAY).toBe("wayland-0");
   });
 });
 
 describe("the run's display", () => {
-  it("is the one there already: nothing started", async () => {
+  it("is none to start off Linux", async () => {
     const m = machine();
-    expect(await startDisplay({ ...m.opts, platform: "linux", env: { DISPLAY: ":0" } })).toEqual({ display: null });
     expect(await startDisplay({ ...m.opts, platform: "darwin", env: {} })).toEqual({ display: null });
+    expect(await startDisplay({ ...m.opts, platform: "win32", env: session })).toEqual({ display: null });
     expect(m.started).toEqual([]);
+  });
+
+  it("is the run's own on Linux from a desktop or a VNC session too: their display, Wayland's and their bus reach none of what it starts", async () => {
+    const m = machine();
+    const d = await startDisplay({ ...m.opts, platform: "linux", env: session });
+    const socket = busSocket(FIRST_DISPLAY, 4242);
+    expect(d).toMatchObject({ display: ":99", bus: { address: `unix:path=${socket}` }, windowManager: { name: "xfwm4" } });
+    expect(m.started.map((x) => x.command)).toEqual(["Xvfb"]);
+    for (const p of [...m.buses, ...m.wms]) {
+      expect(p.options.env).toMatchObject({ DISPLAY: ":99", DBUS_SESSION_BUS_ADDRESS: `unix:path=${socket}` });
+      expect(p.options.env).not.toHaveProperty("WAYLAND_DISPLAY");
+      expect(p.options.env).not.toHaveProperty("AT_SPI_BUS_ADDRESS");
+    }
   });
 
   it("is Xvfb's on a headless Linux, on the first number from :99 no server holds, up once its socket is there", async () => {
@@ -189,8 +226,8 @@ describe("the run's display", () => {
 });
 
 describe("the window manager on the runner's Xvfb", () => {
-  /** startDisplay with only `have` of the commands installed (Xvfb always). */
-  const only = (have: string[]) => (c: string) => c === "Xvfb" || have.includes(c);
+  /** startDisplay with only `have` of the window managers installed (Xvfb and the bus always). */
+  const only = (have: string[]) => (c: string) => c === "Xvfb" || c === SESSION_BUS || have.includes(c);
 
   it("is the first installed of xfwm4, openbox and fluxbox, started on Xvfb's display after it is up", async () => {
     expect(WINDOW_MANAGERS.map((w) => w.command)).toEqual(["xfwm4", "openbox", "fluxbox"]);
@@ -292,31 +329,30 @@ describe("the session bus beside the runner's Xvfb", () => {
     expect(m.started[0].kills).toEqual(["SIGTERM"]);
   });
 
-  it("isn't there when dbus-daemon isn't installed: the display is, with why, and the window manager keeps the session's bus", async () => {
+  it("is needed: without dbus-daemon installed nothing starts, and why names the package", async () => {
     const m = machine();
-    const env = { PATH: "/usr/bin", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" };
-    const d = await startDisplay({ ...m.opts, ...headless, env, installed: (c: string) => c !== SESSION_BUS });
-    expect(d).toMatchObject({ display: ":99", bus: { why: "dbus-daemon isn't installed" } });
-    expect(m.buses).toEqual([]);
-    expect(m.wms[0].options.env).toMatchObject({ DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" });
+    const d = await startDisplay({ ...m.opts, ...headless, installed: (c: string) => c !== SESSION_BUS });
+    expect(d).toEqual({ error: expect.stringContaining(`install the ${SESSION_BUS_PACKAGE} package`) as unknown });
+    expect(m.started).toEqual([]);
   });
 
-  it("isn't there when it ends as it starts: the display is, with why and its log named", async () => {
+  it("is needed: when it ends as it starts, why with its log named, and the display stopped", async () => {
     const m = machine([], undefined, undefined, (bus) => {
       bus.exits(1);
     });
     const d = await startDisplay({ ...m.opts, ...headless, log: "/logs/xvfb.log" });
-    expect(d).toMatchObject({ display: ":99", bus: { why: "dbus-daemon exited (code 1) as it started (its output: /logs/xvfb.log)" } });
-    if (!("stop" in d)) throw new Error("no display started");
-    d.stop();
+    expect(d).toEqual({ error: "dbus-daemon exited (code 1) as it started (its output: /logs/xvfb.log)" });
     expect(m.buses[0].kills).toEqual([]);
+    expect(m.started[0].kills).toEqual(["SIGTERM"]);
+    expect(m.wms).toEqual([]);
   });
 
-  it("isn't there when its socket never comes: stopped, with why", async () => {
+  it("is needed: when its socket never comes, it and the display stopped, with why", async () => {
     const m = machine([], undefined, undefined, () => {});
     const d = await startDisplay({ ...m.opts, ...headless, timeoutMs: 20 });
-    expect(d).toMatchObject({ display: ":99", bus: { why: expect.stringMatching(/^dbus-daemon's socket didn't come within/) as unknown } });
+    expect(d).toEqual({ error: expect.stringMatching(/^dbus-daemon's socket didn't come within/) as unknown });
     expect(m.buses[0].kills).toEqual(["SIGTERM"]);
+    expect(m.started[0].kills).toEqual(["SIGTERM"]);
   });
 });
 

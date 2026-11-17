@@ -21,7 +21,7 @@ export function preflightHint(why, { env = process.env, log = "", output = "" } 
   const see = log ? ` (all of its output: ${log})` : "";
   if (/^the app exited \(/.test(why)) {
     if (NO_DISPLAY.test(why) || NO_DISPLAY.test(output))
-      return `the app found no display to open its window on (DISPLAY=${env.DISPLAY || "(empty)"}, WAYLAND_DISPLAY=${env.WAYLAND_DISPLAY || "(empty)"}): give it a working one, or leave both empty and the runner starts Xvfb`;
+      return `the app found no display to open its window on (DISPLAY=${env.DISPLAY || "(empty)"}, WAYLAND_DISPLAY=${env.WAYLAND_DISPLAY || "(empty)"}): on Linux the runner's own Xvfb (its output in xvfb.log beside the specs' logs) didn't take it`;
     return `its own message above says why it stopped${see}: a missing system library, no display, or a crash at start are the usual causes (an app built without --features wdio doesn't exit: it runs without the WebDriver server)`;
   }
   if (/^no embedded WebDriver server on /.test(why)) {

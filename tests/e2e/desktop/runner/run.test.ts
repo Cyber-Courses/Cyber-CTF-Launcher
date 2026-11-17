@@ -392,10 +392,17 @@ function runnerSetup({ dockerUp = true, env = {}, docker }: { dockerUp?: boolean
     join(dir, "xfwm4"),
     `#!/bin/sh\necho $$ > "${join(dir, "wm.pid")}"\necho "$DISPLAY" > "${join(dir, "wm.display")}"\ntrap 'exit 0' TERM\nwhile :; do sleep 0.1; done\n`,
   );
+  // A session bus that makes its socket (--address=unix:path=<socket>), its pid in bus.pid, and
+  // removes the socket when stopped: never the machine's own dbus-daemon.
+  writeFileSync(
+    join(dir, "dbus-daemon"),
+    `#!/bin/sh\nfor a; do case $a in --address=unix:path=*) s=\${a#--address=unix:path=} ;; esac; done\necho $$ > "${join(dir, "bus.pid")}"\ntrap 'rm -f "$s"; exit 0' TERM\ntouch "$s"\nwhile :; do sleep 0.1; done\n`,
+  );
   chmodSync(join(dir, "docker"), 0o755);
   chmodSync(join(dir, "vagrant"), 0o755);
   chmodSync(join(dir, "Xvfb"), 0o755);
   chmodSync(join(dir, "xfwm4"), 0o755);
+  chmodSync(join(dir, "dbus-daemon"), 0o755);
   const results = join(dir, "out", "results.jsonl");
   const lab = join(dir, "lab");
   mkdirSync(lab);
@@ -564,7 +571,7 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
   });
 });
 
-describe.runIf(process.platform === "linux")("run.mjs on a Linux without a display", () => {
+describe.runIf(process.platform === "linux")("run.mjs on Linux, its own display whatever the shell has", () => {
   const headless = { DISPLAY: "", WAYLAND_DISPLAY: "" };
   const xvfbPid = (dir: string) => Number(readFileSync(join(dir, "xvfb.pid"), "utf8"));
   const wmPid = (dir: string) => Number(readFileSync(join(dir, "wm.pid"), "utf8"));
@@ -604,13 +611,24 @@ describe.runIf(process.platform === "linux")("run.mjs on a Linux without a displ
     expect(ends(xvfbPid(r.dir))).toBe(true);
   });
 
-  it("starts none with a display there already", () => {
-    const planDir = fakePlan({ a: { body: shows } });
-    const r = runRunner(planDir, ["--all"], { env: { DISPLAY: ":5", WAYLAND_DISPLAY: "" } });
+  it("starts its own all the same from a desktop or a VNC session: their display, Wayland's and their bus never reach the specs", () => {
+    const body =
+      'console.log("ok: env (0s) " + [process.env.DISPLAY, process.env.WAYLAND_DISPLAY ?? "-", process.env.AT_SPI_BUS_ADDRESS ?? "-", process.env.DBUS_SESSION_BUS_ADDRESS].join(" ")); process.exit(0);';
+    const planDir = fakePlan({ a: { body } });
+    const session = {
+      DISPLAY: ":1",
+      WAYLAND_DISPLAY: "wayland-0",
+      AT_SPI_BUS_ADDRESS: "unix:path=/run/user/1000/at-spi/bus",
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+    };
+    const r = runRunner(planDir, ["--all"], { env: session });
     expect(r.status, r.out).toBe(0);
-    expect(r.out).toContain("ok: display (0s) :5 managed");
-    expect(existsSync(join(r.dir, "xvfb.pid"))).toBe(false);
-    expect(existsSync(join(r.dir, "wm.pid"))).toBe(false);
+    expect(r.out).toContain("display: Xvfb on :99, xfwm4 its window manager, a session bus of its own");
+    expect(r.out).toMatch(/ok: env \(0s\) :99 - - unix:path=\S+\/\.cyberctf-e2e-bus-99-\d+/);
+    expect(readFileSync(join(r.dir, "wm.display"), "utf8").trim()).toBe(":99");
+    expect(ends(wmPid(r.dir))).toBe(true);
+    expect(ends(Number(readFileSync(join(r.dir, "bus.pid"), "utf8")))).toBe(true);
+    expect(ends(xvfbPid(r.dir))).toBe(true);
   });
 });
 
