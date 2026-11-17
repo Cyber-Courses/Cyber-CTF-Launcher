@@ -111,7 +111,7 @@ const FAILS_WITHIN: Duration = Duration::from_secs(5);
 /// background).
 pub(crate) async fn run(program: &Path, args: &[String]) -> Result<()> {
     #[cfg(test)]
-    if crate::testing::tools::set().is_some() {
+    if crate::testing::tool_set().is_some() {
         return on_test_machine(program, args).await;
     }
     run_within(program, args, FAILS_WITHIN).await

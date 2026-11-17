@@ -1,7 +1,7 @@
 use super::{LabRef, Park, clear_parked, park_lab, park_refusal, parked_message, provision_lab, provision_target, refuse_cloud_park, resume_lab, stop_lab};
+use crate::runtime::providers::testing::no_tools;
 use crate::runtime::recorded::Recorded;
 use crate::runtime::test_support::{record_parked, record_run};
-use crate::testing::tools::Tools;
 
 use crate::runtime::Runtime;
 use crate::runtime::test_support::status_with;
@@ -13,21 +13,21 @@ async fn a_lab_on_a_cloud_account_is_neither_parked_nor_provisioned_there() {
     t.lab("web", &[]);
     let host = t.host("az1", "azure", serde_json::json!({}));
     record_run(t.data(), "web", Some(&host), "cloud-docker", "failed");
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     let err = park_lab(&t.dirs(), "web", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err().to_string();
     assert!(err.starts_with("Pausing a lab on a server or a cloud account"), "{err}");
     let err = resume_lab(&t.dirs(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
     assert!(err.contains("on a server or a cloud account isn't parked"), "{err}");
     let err = provision_lab(&t.dirs(), "web", Runtime::Vm, None, |_| {}).await.unwrap_err().to_string();
     assert!(err.contains("Proxmox or a cloud"), "{err}");
-    assert_eq!(tools.calls(), Vec::<String>::new());
+    assert_eq!(tools.lines(), Vec::<String>::new());
     // Stopping it destroys it with Terraform there: with no module, nothing is left to destroy,
     // and the lab doesn't read as running there; the record stays, as nothing was removed.
     stop_lab(&t.dirs(), "web", Runtime::Docker, std::future::ready(()), |_| {}).await.unwrap();
     let dir = t.data().join("labs/web");
     assert!(!crate::runtime::status::status(&t.dirs(), &dir, "web", Runtime::Docker).await.unwrap().running);
     assert_eq!(Recorded::of(&t.dirs(), "web").await.unwrap().host(), Some("az1"));
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
 }
 
 #[tokio::test]
@@ -37,12 +37,12 @@ async fn the_policy_refuses_resuming_a_privileged_lab_before_anything_runs() {
     let t = TestApp::new();
     record_parked(t.data(), "priv", "docker", "pause");
     t.lab("priv", &[("isoloom.yml", crate::runtime::test_support::PRIVILEGED_LAB)]);
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
     let err = resume_lab(&t.dirs(), "priv", Runtime::Docker, |_| {}).await.unwrap_err();
     assert_eq!(err.code(), Code::TurnedOffByPolicy { setting: "RefusePrivilegedLabs".into() }, "{err}");
     assert_eq!(Recorded::of(&t.dirs(), "priv").await.unwrap().parked(), Some(Park::Pause));
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
 }
 
 #[tokio::test]
@@ -52,14 +52,14 @@ async fn a_parked_lab_whose_files_cant_be_made_again_is_left_recorded_and_says_w
     let t = TestApp::new();
     let dir = t.lab("web", &[]);
     record_parked(t.data(), "web", "docker", "shutdown");
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     let mut lines = Vec::<String>::new();
     let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
     let err = clear_parked(&t.dirs(), lab, &mut |l| lines.push(l)).await.unwrap_err().to_string();
     assert!(err.starts_with("This lab's files are gone"), "{err}");
     assert!(lines[0].starts_with("A parked copy of an older version"), "{lines:?}");
     assert_eq!(Recorded::of(&t.dirs(), "web").await.unwrap().parked(), Some(Park::Shutdown));
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn a_parked_lab_that_couldnt_be_taken_down_stays_parked_and_says_why() {
     let compose = crate::runtime::lab::compose_file(&dir);
     std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
     std::fs::write(&compose, "not a compose file").unwrap();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
     assert!(clear_parked(&t.dirs(), lab, &mut |_| {}).await.is_err());
     assert!(Recorded::of(&t.dirs(), "web").await.unwrap().record().is_some(), "still recorded: its machines may still be there");
@@ -110,10 +110,10 @@ async fn a_pause_on_qemu_is_refused_before_anything_runs() {
         "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
     t.lab("t", &[("isoloom.yml", spec)]);
     crate::runtime::test_support::record_vms_on(t.data(), "t", "qemu");
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     let err = park_lab(&t.dirs(), "t", Runtime::Vm, Park::Pause, |_| {}).await.unwrap_err();
     assert!(matches!(err, crate::error::Error::Refused(_)) && err.to_string().starts_with("QEMU can't pause"), "{err}");
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
     assert_eq!(Recorded::of(&t.dirs(), "t").await.unwrap().parked(), None, "not recorded as paused");
 }
 
@@ -130,26 +130,26 @@ async fn stopping_a_cloud_lab_that_runs_nowhere_runs_nothing() {
     // nothing.
     let t = TestApp::new();
     t.lab("goat", &[]);
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     stop_lab(&t.dirs(), "goat", Runtime::Cloud, std::future::ready(()), |_| {}).await.unwrap();
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
     // Parking or resuming it is refused on the runtime alone.
     let err = park_lab(&t.dirs(), "goat", Runtime::Cloud, Park::Pause, |_| {}).await.unwrap_err().to_string();
     assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
     let err = resume_lab(&t.dirs(), "goat", Runtime::Cloud, |_| {}).await.unwrap_err().to_string();
     assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
-    assert_eq!(tools.calls(), Vec::<String>::new());
+    assert_eq!(tools.lines(), Vec::<String>::new());
 }
 
 #[tokio::test]
 async fn clearing_a_lab_that_is_not_parked_does_nothing() {
     let t = TestApp::new();
     let dir = t.lab("web-1", &[]);
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     let mut lines = Vec::<String>::new();
     clear_parked(&t.dirs(), LabRef { dir: &dir, id: "web-1", runtime: Runtime::Vm }, &mut |l| lines.push(l)).await.unwrap();
     assert_eq!(lines, [] as [String; 0]);
-    assert_eq!(tools.calls(), [] as [String; 0]);
+    assert_eq!(tools.lines(), [] as [String; 0]);
 }
 
 /// What the page may do on lab `t`, declared `runtime`, where it is located now, on `provider`
@@ -171,7 +171,7 @@ async fn controls_of(t: &TestApp, dir: &std::path::Path, runtime: Runtime, provi
 #[tokio::test]
 async fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
     let t = TestApp::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let spec =
         "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
     let dir = t.lab("t", &[("isoloom.yml", spec)]);

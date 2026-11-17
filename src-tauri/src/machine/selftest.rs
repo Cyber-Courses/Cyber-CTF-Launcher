@@ -266,14 +266,14 @@ mod tests {
     async fn a_second_test_of_a_kind_waits_for_the_first() {
         // Regression: the Machine window's and the onboarding's runs shared the test project and
         // tore each other's test lab down.
-        use crate::testing::tools::Tools;
+        use crate::runtime::providers::testing::no_tools;
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::strict_rules(&[]);
+        let tools = no_tools();
         let first = one_at_a_time(Kind::Docker).lock().await;
         let (channel, seen) = events();
         let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.dirs(), Kind::Docker, None, None, channel)).await;
         assert!(second.is_err(), "it waits");
-        assert!(tools.calls().is_empty() && seen.messages().is_empty());
+        assert!(tools.lines().is_empty() && seen.messages().is_empty());
         drop(first);
     }
 

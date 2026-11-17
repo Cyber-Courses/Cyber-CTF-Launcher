@@ -1,7 +1,8 @@
 //! What the unit tests share: an app on Tauri's mock runtime, the property tests' strategies, the
 //! scans over the crate's own source, the warnings the code logs, and the TypeScript types written
-//! from the command structs, the scripted tools ([`tools`]), and a [`Switch`] a test shares with
-//! the model of its fake tools.
+//! from the command structs, the way the app's tools reach a test's machine ([`machine_runner`],
+//! [`tool_set`]: Isothrum's `FakeProcesses`, set with `runtime::providers::testing::fake`), and a
+//! [`Switch`] a test shares with the model of its fake tools.
 
 mod guardrails;
 pub mod logs;
@@ -10,12 +11,23 @@ pub mod runner;
 pub mod service;
 pub mod source_scan;
 pub mod test_app;
-pub mod tools;
 mod ts_bindings;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// The runner the app's tools start through in a unit test: the test's machine's
+/// (`runtime::providers::testing::fake`), never this one's. For the platform layer, which names
+/// no layer above it.
+pub fn machine_runner() -> Arc<dyn isothrum_runner::ProcessRunner> {
+    crate::runtime::providers::machine().runner
+}
+
+/// The tool set of the machine this thread's test set, if it set one (`platform::exec::ToolSet`).
+pub fn tool_set() -> Option<u64> {
+    crate::runtime::providers::testing::tool_set()
+}
 
 /// A fresh folder under the temp dir for one test, named after `tag` (`cyberctf-<tag>-XXXXXX`),
 /// removed with what it holds when the returned guard drops: at the end of the test, and when a
