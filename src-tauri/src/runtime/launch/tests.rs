@@ -151,11 +151,14 @@ async fn one_vm_per_machine_is_refused_on_a_server() {
 async fn one_vm_per_machine_on_utm_opens_utm_first() {
     let t = TestApp::new();
     t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
-    let tools = Tools::strict_rules(&[("open -g -j -a UTM", None)]);
+    let tools = std::sync::Arc::new(isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::missing()));
+    let mac = crate::runtime::providers::testing::host_on(isothrum_machine::HostOs::Macos, Arch::Arm64, None);
+    let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::<isothrum_runner::fake::FakeProcesses>::clone(&tools), mac);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
     let err = r.unwrap_err();
     assert!(matches!(err, crate::error::Error::ToolMissing { tool: "UTM" }), "{err}");
-    assert!(tools.called("open -g -j -a UTM"), "{:?}", tools.calls());
+    let opened = tools.calls().iter().any(|c| c.program == "open" && c.args.starts_with(&["-g".to_owned(), "-j".to_owned(), "-a".to_owned()]));
+    assert!(opened, "UTM opened hidden, in the background");
 }
 
 #[test]

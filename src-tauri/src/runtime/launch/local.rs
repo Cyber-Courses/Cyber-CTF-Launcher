@@ -78,7 +78,9 @@ pub(crate) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
     // `log` being this caller's alone.
     let (opening, mut said) = tokio::sync::mpsc::unbounded_channel();
     let ready = async move {
-        let mut waiting = move || drop(opening.send(()));
+        let mut waiting = move || {
+            let _ = opening.send(());
+        };
         ready::utm(&cx, ready::UTM_WAIT, &mut waiting).await
     };
     let say = async {
