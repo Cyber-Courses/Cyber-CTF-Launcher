@@ -17,9 +17,10 @@ use crate::platform::policy::Key;
 mod local;
 mod on_host;
 
+pub(crate) use local::check_utm;
 #[cfg(test)]
 use local::low_memory_warning;
-use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
+use local::{check_provider, check_qemu, warn_if_low_memory};
 #[cfg(feature = "cloud-services")]
 #[cfg(feature = "cloud-services")]
 pub(super) use on_host::check_aws_budget;

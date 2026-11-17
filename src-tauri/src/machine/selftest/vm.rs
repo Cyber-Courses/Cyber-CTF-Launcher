@@ -53,15 +53,15 @@ fn none_ready(preferred: Option<Provider>, statuses: &[providers::ProviderStatus
 }
 
 /// A read-only command that only succeeds when the hypervisor's service is up and usable
-/// by this user (not just installed).
+/// by this user (not just installed). UTM has none: it is probed as a lab's start does
+/// ([`check_utm`](crate::runtime::launch::check_utm)), which opens it hidden when it isn't
+/// running, where `utmctl list` would open it with its window in front.
 fn responds(p: Provider) -> Option<(&'static str, &'static [&'static str])> {
     match p {
         Provider::Virtualbox => Some(("VBoxManage", &["list", "hostinfo"])),
         Provider::VmwareDesktop => Some(("vmrun", &["list"])),
         Provider::Parallels => Some(("prlctl", &["list", "--all"])),
         Provider::Libvirt => Some(("virsh", &["-c", "qemu:///system", "list", "--all"])),
-        // Inside UTM's bundle, wherever UTM is installed.
-        Provider::Utm => Some((crate::runtime::providers::utmctl(), &["list"])),
         _ => None,
     }
 }
@@ -313,6 +313,10 @@ async fn host_provider(preferred: Option<Provider>, r: &Reporter) -> Result<Prov
 
     r.step("hypervisor", "Hypervisor responds", async {
         match responds(provider) {
+            None if provider == Provider::Utm => {
+                crate::runtime::launch::check_utm(&mut |_| {}).await?;
+                Ok(((), None))
+            }
             Some((program, args)) => {
                 run(program, args, None).await?;
                 Ok(((), None))
