@@ -24,7 +24,6 @@ const ALLOWED: &[(&str, &str)] = &[];
 const OWN_WINDOWS: &[(&str, &str)] = &[
     ("screen.rs", "the Remote Desktop client, the player's own window, given the password on its input"),
     ("screen/native.rs", "the hypervisor's console app, the player's own window, left running"),
-    ("runtime/terminal_launch.rs", "the player's terminal window; moves to isothrum-machine's terminal"),
     ("terminal.rs", "the in-app terminal's shell, on a pseudo-terminal"),
     ("platform/proxy.rs", "macOS's proxy settings (scutil), read once before the async runtime runs"),
 ];
