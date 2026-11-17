@@ -43,7 +43,7 @@ pluginInstalled: boolean,
  */
 utility: UtilityState | null, 
 /**
- * What is still to install for Vagrant to drive it here ([`needs`]): empty when nothing is.
+ * What is still to install for Vagrant to drive it here ([`needs()`]): empty when nothing is.
  */
 needs: Array<Need>, 
 /**
