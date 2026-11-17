@@ -207,8 +207,7 @@ pub(crate) mod testing {
     impl Machine {
         /// `runner` runs the tools, `host` is the machine (its devices a test's own).
         pub(crate) fn set(runner: Arc<dyn ProcessRunner>, host: isothrum_machine::Host) -> Machine {
-            // Apart from the launcher's scripted tools' sets (`testing::tools`), counted from 1.
-            static SETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1 << 32);
+            static SETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
             MACHINE.with(|m| *m.borrow_mut() = Some((runner, host)));
             SET.with(|s| s.set(Some(SETS.fetch_add(1, Ordering::Relaxed))));
             Machine
@@ -288,12 +287,7 @@ pub(crate) mod testing {
             return super::this_machine();
         }
         let (runner, host) = set.unwrap_or_else(|| {
-            // A test scripting the launcher's tools answers isothrum-machine's calls too.
-            let nothing: Arc<dyn ProcessRunner> = if crate::testing::tools::scripted() {
-                Arc::new(crate::testing::tools::AsRunner)
-            } else {
-                Arc::new(FakeProcesses::model(|_| Reply::missing()))
-            };
+            let nothing: Arc<dyn ProcessRunner> = Arc::new(FakeProcesses::model(|_| Reply::missing()));
             (nothing, host(std::path::Path::new("/nonexistent/cyberctf-test-machine")))
         });
         isothrum_machine::Context::new(runner, host)

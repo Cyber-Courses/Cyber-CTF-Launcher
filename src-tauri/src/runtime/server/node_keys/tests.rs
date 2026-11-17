@@ -1,5 +1,7 @@
 use super::*;
-use crate::testing::tools::{Tools, ok};
+use isothrum_runner::fake::{FakeProcesses, Reply};
+
+use crate::runtime::providers::testing::{Faked, fake, no_tools};
 
 /// Two public host keys (made for these tests), with the fingerprints `ssh-keygen -lf` gives them.
 const KEY_1: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIMV/X9GBl8lRmDMg/hSFR41QZH/fgA5PLNatzgxigSSL";
@@ -13,17 +15,19 @@ fn line(node: &str, key: &str) -> String {
 
 /// A node offering `offered`, its keys confirmed in the file `KEY_1` when `confirmed` (else no
 /// file yet), and the folder that file is in.
-fn node(offered: &str, confirmed: bool) -> (Tools, crate::testing::TempDir, PathBuf) {
+fn node(offered: &str, confirmed: bool) -> (Faked, crate::testing::TempDir, PathBuf) {
     let dir = crate::testing::temp_dir("node-keys");
     let file = dir.join("nodes_known_hosts");
     if confirmed {
         std::fs::write(&file, line("10.0.0.5", KEY_1)).unwrap();
     }
     // `ssh-keygen -F` reads the file only once it is written: always with `KEY_1` then.
-    let tools = Tools::strict_rules(&[
-        ("ssh-keyscan -T 10 -p 22 -t ed25519,ecdsa,rsa 10.0.0.5", ok(line("10.0.0.5", offered))),
-        ("ssh-keygen -F 10.0.0.5", ok(line("10.0.0.5", KEY_1))),
-    ]);
+    let tools = fake(
+        FakeProcesses::script()
+            .allow("ssh-keyscan -T 10 -p 22 -t ed25519,ecdsa,rsa 10.0.0.5", Reply::ok(&line("10.0.0.5", offered)))
+            .allow("ssh-keygen -F 10.0.0.5", Reply::ok(&line("10.0.0.5", KEY_1)))
+            .build(),
+    );
     (tools, dir, file)
 }
 
@@ -32,7 +36,7 @@ async fn a_node_whose_keys_are_confirmed_asks_nothing() {
     let (tools, _dir, file) = node(KEY_1, true);
     assert_eq!(unconfirmed_at("10.0.0.5", &file).await.unwrap(), None, "no question: the run goes on");
     confirm_at("10.0.0.5", &[FINGERPRINT_1.into()], &file).await.unwrap();
-    assert!(!tools.called("ssh-keygen -R"), "nothing rewritten: {:?}", tools.calls());
+    assert!(tools.made("ssh-keygen -R").is_empty(), "nothing rewritten: {:?}", tools.lines());
     assert_eq!(std::fs::read_to_string(&file).unwrap(), line("10.0.0.5", KEY_1));
 }
 
@@ -64,7 +68,7 @@ async fn a_node_offering_other_keys_than_the_confirmed_ones_is_refused_and_never
     assert_eq!(refused.code(), Code::SshHostKeyRefused { host: "10.0.0.5".into() }, "the host key changed wording");
     let refused = confirm_at("10.0.0.5", &[FINGERPRINT_1.into()], &file).await.unwrap_err();
     assert_eq!(refused.code(), Code::SshHostKeyRefused { host: "10.0.0.5".into() });
-    assert!(!tools.called("ssh-keygen -R"), "{:?}", tools.calls());
+    assert!(tools.made("ssh-keygen -R").is_empty(), "{:?}", tools.lines());
     assert_eq!(std::fs::read_to_string(&file).unwrap(), line("10.0.0.5", KEY_1), "the confirmed keys kept");
 }
 
@@ -72,8 +76,8 @@ async fn a_node_offering_other_keys_than_the_confirmed_ones_is_refused_and_never
 async fn a_server_whose_labs_dont_go_through_its_node_asks_nothing() {
     let t = crate::testing::test_app::TestApp::new();
     let esxi = t.host("esxi1", "vmware_esxi", serde_json::json!({}));
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     assert_eq!(unconfirmed(&t.dirs(), &esxi).await.unwrap(), None);
     assert!(confirm(&t.dirs(), &esxi, &[FINGERPRINT_1.into()]).await.is_err(), "no node keys to confirm");
-    assert!(tools.calls().is_empty(), "the node never reached: {:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "the node never reached: {:?}", tools.lines());
 }

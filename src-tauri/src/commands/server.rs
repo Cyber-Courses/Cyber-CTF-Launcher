@@ -190,7 +190,7 @@ mod tests {
     #[tokio::test]
     async fn a_proxmox_servers_identity_is_read_then_its_node_keys_confirmed_through_the_commands() {
         use crate::runtime::server::tls_pin::tests::{FINGERPRINT_A, server_a};
-        use crate::testing::tools::{Tools, ok};
+        use isothrum_runner::fake::{FakeProcesses, Reply};
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         // The launcher's own key, already made: nothing runs ssh-keygen.
@@ -207,7 +207,9 @@ mod tests {
         };
         let refused = server_identity(app(), input("vmware_esxi")).await.unwrap_err();
         assert!(matches!(&refused, crate::error::Error::Invalid(m) if m == "only Proxmox servers are confirmed by their fingerprints"), "{refused}");
-        let tools = Tools::strict_rules(&[("ssh-keyscan", ok(format!("127.0.0.1 ssh-ed25519 {NODE_KEY}\n")))]);
+        let tools = crate::runtime::providers::testing::fake(
+            FakeProcesses::script().expect("ssh-keyscan", Reply::ok(&format!("127.0.0.1 ssh-ed25519 {NODE_KEY}\n"))).build(),
+        );
         let shown = server_identity(app(), input("proxmox")).await.unwrap();
         assert_eq!(shown.tls.as_deref(), Some(FINGERPRINT_A), "the certificate's fingerprint, for the learner to compare");
         assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0, "nothing but a handshake reached the server");
@@ -219,12 +221,11 @@ mod tests {
         assert_eq!(shown.ssh_error, None);
         server_trust_ssh_keys(app(), input("proxmox"), vec![NODE_FINGERPRINT.into()]).await.unwrap();
         assert_eq!(std::fs::read_to_string(ssh.join("nodes_known_hosts")).unwrap(), format!("127.0.0.1 ssh-ed25519 {NODE_KEY}\n"));
-        assert!(tools.called("ssh-keyscan -T 10 -p 22 -t ed25519,ecdsa,rsa 127.0.0.1"), "{:?}", tools.calls());
+        assert!(!tools.made("ssh-keyscan -T 10 -p 22 -t ed25519,ecdsa,rsa 127.0.0.1").is_empty(), "{:?}", tools.lines());
     }
 
     #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
-        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         let input = |id: Option<&str>| -> HostInput {
@@ -243,9 +244,9 @@ mod tests {
         assert_eq!(server_set_default(app(), Some(saved.id.clone())).unwrap_err().to_string(), "a cloud account can't be the default host");
         server_set_default(app(), None).unwrap();
         // Testing it asks the Azure CLI (no network here).
-        let tools = Tools::strict_rules(&crate::testing::tools::azure_signed_in());
+        let tools = crate::runtime::providers::testing::fake(crate::runtime::test_support::azure_signed_in());
         let result = server_test(app(), saved.id.clone()).await.unwrap();
-        assert!(tools.called("az account show --subscription 00000000-0000-0000-0000-000000000000"));
+        assert!(!tools.made("az account show --subscription 00000000-0000-0000-0000-000000000000").is_empty(), "{:?}", tools.lines());
         assert!(!result.checks.is_empty());
         assert!(server_capacity(app(), saved.id.clone()).await.unwrap().is_none(), "only Proxmox reports capacity");
         assert_eq!(
@@ -294,7 +295,7 @@ mod tests {
     #[tokio::test]
     async fn the_vm_test_runs_on_proxmox_and_esxi_hosts_only() {
         let t = crate::testing::test_app::TestApp::new();
-        let tools = crate::testing::tools::Tools::strict_rules(&[]);
+        let tools = crate::runtime::providers::testing::no_tools();
         let app = || t.handle().clone();
         let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
 
@@ -318,14 +319,17 @@ mod tests {
         assert!(err.to_string().contains("AWS labs are billed"), "{err}");
         assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "ok")]);
         assert!(!t.data().join("selftest").join("server").join("aws1").exists(), "no test folder made");
-        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(tools.lines().is_empty(), "{:?}", tools.lines());
     }
 
     #[tokio::test]
     async fn the_esxi_vm_test_stops_at_its_first_step_without_vagrants_esxi_plugin() {
+        use isothrum_runner::fake::{FakeProcesses, Reply};
         let t = crate::testing::test_app::TestApp::new();
         // No Vagrant on this computer: no ESXi plugin either.
-        let _tools = crate::testing::tools::Tools::strict_rules(&[("ovftool --version", crate::testing::tools::ok("")), ("vagrant", None)]);
+        let _tools = crate::runtime::providers::testing::fake(
+            FakeProcesses::script().allow("ovftool --version", Reply::ok("")).expect("vagrant", Reply::missing()).build(),
+        );
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         t.host("esx", "vmware_esxi", serde_json::json!({ "host": "192.0.2.1", "port": 22, "username": "root" }));
         crate::runtime::server::secrets::set_secret("esx", "pw").unwrap();
