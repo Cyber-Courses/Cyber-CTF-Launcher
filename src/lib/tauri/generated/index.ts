@@ -23,7 +23,6 @@ export type * from "./GcpBillingAccount";
 export type * from "./GcpOrganization";
 export type * from "./HostCapacity";
 export type * from "./HypervisorOption";
-export type * from "./Imported";
 export type * from "./ImportedLab";
 export type * from "./InstalledTool";
 export type * from "./LabChallenge";

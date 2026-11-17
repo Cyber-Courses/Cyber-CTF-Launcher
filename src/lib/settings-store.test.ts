@@ -10,30 +10,7 @@ import type { Settings } from "@/lib/tauri";
 const settings = (over: Partial<Settings>): Settings => ({ ...SETTINGS_DEFAULTS, ...over });
 
 describe("the settings' copy in a window", () => {
-  it("hands over the settings 1.9 kept in localStorage, removes what the core took and keeps the window's own", async () => {
-    localStorage.setItem("cyberctf.appearance", "light");
-    localStorage.setItem("cyberctf.locale", "fr");
-    localStorage.setItem("cyberctf.onboarded", "1");
-    localStorage.setItem("cyberctf.devMock.hosts", "[]");
-    localStorage.setItem("cyberctf.labs.ports", "default");
-    localStorage.setItem("cyberctf.lastrun.web", "1763300000000");
-    const calls = installTauri({
-      settings_import_webview: (a) => {
-        const items = a?.items as Record<string, string>;
-        return { taken: Object.keys(items), settings: settings({ portMode: "default", lastRuns: { web: 1763300000000 } }) };
-      },
-    });
-    await loadSettings();
-    const sent = calls.find((c) => c.cmd === "settings_import_webview")?.args?.items;
-    expect(sent).toEqual({ "cyberctf.labs.ports": "default", "cyberctf.lastrun.web": "1763300000000" });
-    expect(getPortMode()).toBe("default");
-    expect(settingsNow().lastRuns.web).toBe(1763300000000);
-    expect(Object.keys(localStorage).sort()).toEqual(["cyberctf.appearance", "cyberctf.devMock.hosts", "cyberctf.locale", "cyberctf.onboarded"]);
-    expect(calls.some((c) => c.cmd === "settings_get")).toBe(false);
-  });
-
-  it("only reads the settings when the window has nothing to hand over, and loads once", async () => {
-    localStorage.setItem("cyberctf.appearance", "dark");
+  it("reads the settings from the core, once", async () => {
     const calls = installTauri({ settings_get: () => settings({ vmProvider: "utm" }) });
     await Promise.all([loadSettings(), loadSettings()]);
     expect(getVmProvider()).toBe("utm");

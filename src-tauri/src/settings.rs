@@ -4,9 +4,7 @@
 //! started. One typed set ([`Settings`]), each setting with its default here and nowhere else,
 //! kept in the launcher's store (`crate::store`, one key each), so the app, its command line and
 //! its background work read the same values without a window. The webview reads them whole
-//! (`settings_get`) and changes them one by one (`settings_change`); earlier versions kept them in
-//! the webview's own storage, which the webview hands over once
-//! ([`settings_import_webview`]).
+//! (`settings_get`) and changes them one by one (`settings_change`).
 
 use std::collections::BTreeMap;
 
@@ -146,16 +144,6 @@ pub enum Change {
     },
 }
 
-/// What the webview's import took: the keys of its storage now in the store (the webview removes
-/// them), and the settings after it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
-pub struct Imported {
-    /// The webview storage keys taken, each one to remove there.
-    pub taken: Vec<String>,
-    /// The settings with what was taken.
-    pub settings: Settings,
-}
-
 /// Each setting's key in the store's `settings` table.
 mod key {
     pub(super) const ATTACK_IMAGE: &str = "attack_box.image";
@@ -262,77 +250,6 @@ fn update_map<T: Serialize + serde::de::DeserializeOwned>(conn: &Connection, key
 /// floating tag, an earlier pinned digest): saved, it would hold the player on an old image.
 fn follows_default(image: &str) -> bool {
     image == crate::runtime::attack_box::default_image() || crate::runtime::attack_box::earlier_default_images().iter().any(|i| i == image)
-}
-
-/// The keys earlier versions kept the settings under in the webview's storage, and how each one's
-/// text reads as a change (none: a value that read as the default there too).
-mod webview {
-    use super::{BTreeMap, Change, Engine, PortMode, Provider, TestRecord, VmForm};
-
-    /// The prefix of every key the webview's storage kept.
-    const PREFIX: &str = "cyberctf.";
-
-    /// The changes stored item `key` = `value` stands for: none for a key that isn't a setting
-    /// (the webview's own preferences stay there), an empty list for a setting at its default or
-    /// a value that read as none.
-    pub(super) fn changes(key: &str, value: &str) -> Option<Vec<Change>> {
-        let name = key.strip_prefix(PREFIX)?;
-        let one = |c: Option<Change>| Some(c.into_iter().collect());
-        match name {
-            "attackbox.image" => one(Some(Change::AttackImage(Some(value.to_owned())))),
-            "attackbox.auto" => one(Some(Change::AttackAuto(value != "false"))),
-            "attackbox.desktop" => one(Some(Change::AttackDesktop(value == "true"))),
-            "vm.provider" => one(Provider::from_id(value).filter(|p| !p.is_remote()).map(|p| Change::VmProvider(Some(p)))),
-            "docker.engine" => one(serde_json::from_value::<Engine>(value.into()).ok().map(|e| Change::DockerEngine(Some(e)))),
-            "labs.ports" => one(match value {
-                "random" => Some(Change::PortMode(Some(PortMode::Random))),
-                "default" => Some(Change::PortMode(Some(PortMode::Default))),
-                _ => None,
-            }),
-            "labs.vmForm" => one((value == "vms").then_some(Change::VmForm(Some(VmForm::Vms)))),
-            "server.vmtest" => Some(server_tests(value)),
-            _ => {
-                if let Some(test) = name.strip_prefix("selftest.") {
-                    let record = serde_json::from_str::<TestRecord>(value).ok();
-                    return one(record.map(|record| Change::SelfTest { key: test.to_owned(), record }));
-                }
-                let lab = name.strip_prefix("lastrun.")?;
-                one(value.trim().parse::<u64>().ok().map(|ms| Change::LastRun { lab: lab.to_owned(), at: Some(ms) }))
-            }
-        }
-    }
-
-    /// The servers' VM tests, kept as one JSON object by server id; the entries that aren't a
-    /// test are left out, as the webview left them out.
-    fn server_tests(value: &str) -> Vec<Change> {
-        let all: BTreeMap<String, serde_json::Value> = serde_json::from_str(value).unwrap_or_default();
-        all.into_iter().filter_map(|(host, v)| serde_json::from_value::<TestRecord>(v).ok().map(|record| Change::ServerTest { host, record })).collect()
-    }
-}
-
-/// Takes the settings earlier versions kept in the webview's storage, `items` (its keys and their
-/// text): each setting among them goes into the store, over what it holds, in one transaction,
-/// and its key is answered for the webview to remove; anything else is left alone. Taking the same
-/// items again gives the same settings, so a webview that couldn't remove them (it closed
-/// first) hands them over again harmlessly at its next start.
-///
-/// # Errors
-///
-/// The store can't be written: nothing was taken.
-pub(crate) fn settings_import_webview(dirs: &AppDirs, items: &BTreeMap<String, String>) -> Result<Imported> {
-    let mut taken = Vec::new();
-    let mut changes = Vec::new();
-    for (key, value) in items {
-        if let Some(found) = webview::changes(key, value) {
-            taken.push(key.clone());
-            changes.extend(found);
-        }
-    }
-    let settings = if changes.is_empty() { settings_get(dirs)? } else { settings_change(dirs, &changes)? };
-    if !taken.is_empty() {
-        log::info!("the settings the webview kept were moved into the launcher's store: {}", taken.join(", "));
-    }
-    Ok(Imported { taken, settings })
 }
 
 #[cfg(test)]

@@ -107,7 +107,6 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         screen::screen_sign_in,
         settings::settings_get,
         settings::settings_change,
-        settings::settings_import_webview,
         shared_folder::shared_folder_get,
         shared_folder::shared_folder_set,
         shared_folder::shared_folder_open,

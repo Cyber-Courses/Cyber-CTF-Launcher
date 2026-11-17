@@ -73,7 +73,6 @@ permissions = [
   "allow-server-test",
   "allow-settings-change",
   "allow-settings-get",
-  "allow-settings-import-webview",
   "allow-shared-folder-get",
   "allow-shared-folder-open",
   "allow-shared-folder-set",
@@ -115,7 +114,6 @@ permissions = [
   "allow-save-diagnostics",
   "allow-settings-change",
   "allow-settings-get",
-  "allow-settings-import-webview",
   "allow-shared-folder-get",
   "allow-shared-folder-open",
   "allow-shared-folder-set",
@@ -157,7 +155,6 @@ permissions = [
   "allow-server-trust-ssh-keys",
   "allow-settings-change",
   "allow-settings-get",
-  "allow-settings-import-webview",
   "allow-system-check",
 ]
 
@@ -176,7 +173,6 @@ permissions = [
   "allow-managed-settings",
   "allow-settings-change",
   "allow-settings-get",
-  "allow-settings-import-webview",
   "allow-shared-folder-get",
   "allow-shared-folder-open",
   "allow-shared-folder-set",

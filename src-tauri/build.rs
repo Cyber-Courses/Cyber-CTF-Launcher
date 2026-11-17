@@ -97,7 +97,6 @@ const COMMANDS: &[&str] = &[
     "server_trust_ssh_keys",
     "settings_get",
     "settings_change",
-    "settings_import_webview",
     "shared_folder_get",
     "shared_folder_open",
     "shared_folder_set",

@@ -1,8 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { ignore, warn } from "@/lib/failure-log";
 import { registerReset } from "@/lib/module-state";
-import { removeStored, storedItems } from "@/lib/local-store";
-import { settingsChange, settingsGet, settingsImportWebview, type Change, type Settings } from "@/lib/tauri/settings";
+import { settingsChange, settingsGet, type Change, type Settings } from "@/lib/tauri/settings";
 import { EVENTS } from "@/lib/tauri/generated/Events";
 import { SETTINGS_DEFAULTS } from "@/lib/tauri/generated/SettingsDefaults";
 
@@ -88,22 +87,6 @@ export function changeSettings(...changes: Change[]) {
     });
 }
 
-/** The webview's own preferences, which stay in its storage; any other `cyberctf.` key is a
- *  setting an earlier version kept there, handed over to the core. */
-const KEPT_HERE = ["cyberctf.appearance", "cyberctf.locale", "cyberctf.onboarded", "cyberctf.diagram.fitWidth"];
-const handedOver = (key: string) => key.startsWith("cyberctf.") && !KEPT_HERE.includes(key) && !key.startsWith("cyberctf.devMock.");
-
-/** Hands over what an earlier version kept in this webview's storage (see `handedOver`), then
- *  removes what the core took; nothing to hand over reads the settings instead. The core takes
- *  the same items the same way twice, so a window closed before the removal loses nothing. */
-async function fromCore(): Promise<Settings> {
-  const items = Object.fromEntries(Object.entries(storedItems()).filter(([key]) => handedOver(key)));
-  if (Object.keys(items).length === 0) return settingsGet();
-  const { taken, settings } = await settingsImportWebview(items);
-  for (const key of taken) removeStored(key);
-  return settings;
-}
-
 /** Fills this window's copy, once, and follows other windows' changes from then on. The copy
  *  keeps the defaults when the core can't answer (logged). */
 export function loadSettings(): Promise<void> {
@@ -112,7 +95,7 @@ export function loadSettings(): Promise<void> {
     listen<Settings>(EVENTS.settingsChanged, (e) => {
       if (pending === 0 && at === epoch) replace(e.payload);
     }).catch(ignore("no events outside the app"));
-    const settings = await fromCore();
+    const settings = await settingsGet();
     if (at === epoch) replace(settings);
   })().catch(warn("reading the settings"));
   return loading;
