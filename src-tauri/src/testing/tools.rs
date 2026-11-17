@@ -8,23 +8,16 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// A scripted tool's answer: its stdout (each line streamed, for `stream`), or its failure.
+/// A scripted tool's answer: its stdout.
 #[derive(Clone)]
 pub enum Reply {
     Out(String),
-    Fail(String),
 }
 
 /// A script's answer for a tool that printed `stdout`.
 #[expect(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
 pub fn ok(stdout: impl Into<String>) -> Option<Reply> {
     Some(Reply::Out(stdout.into()))
-}
-
-/// A script's answer for a tool that failed, printing `stderr`.
-#[expect(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
-pub fn fail(stderr: impl Into<String>) -> Option<Reply> {
-    Some(Reply::Fail(stderr.into()))
 }
 
 /// The Azure CLI as testing an Azure account reads it: signed in to the "Pay-As-You-Go"
@@ -44,8 +37,6 @@ type Answer = Box<dyn FnMut(&str, &[&str]) -> Option<Reply>>;
 struct State {
     script: Answer,
     calls: Vec<String>,
-    /// The environment each call was given, beside `calls`.
-    envs: Vec<Vec<(String, String)>>,
 }
 
 thread_local! {
@@ -222,7 +213,7 @@ impl Tools {
     pub fn new(script: impl FnMut(&str, &[&str]) -> Option<Reply> + 'static) -> Tools {
         static SETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let set = SETS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let state = Rc::new(RefCell::new(State { script: Box::new(script), calls: Vec::new(), envs: Vec::new() }));
+        let state = Rc::new(RefCell::new(State { script: Box::new(script), calls: Vec::new() }));
         STATE.with(|s| *s.borrow_mut() = Some(state.clone()));
         SET.with(|s| s.set(Some(set)));
         Tools(state, None)
@@ -267,20 +258,6 @@ impl Tools {
         tools
     }
 
-    /// Lenient tools, for the tests written before [`Tools::script`]: the first rule whose text
-    /// the call (`program arg arg…`) contains answers; any other call succeeds with no output,
-    /// so such a test can't see a call it didn't expect. New tests script their calls strictly.
-    pub fn rules(rules: &[(&str, Option<Reply>)]) -> Tools {
-        let rules: Vec<(String, Option<Reply>)> = rules.iter().map(|(k, r)| (k.to_string(), r.clone())).collect();
-        Tools::new(move |program, args| {
-            let line = std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" ");
-            match rules.iter().find(|(k, _)| line.contains(k.as_str())) {
-                Some((_, r)) => r.clone(),
-                None => ok(""),
-            }
-        })
-    }
-
     /// Every call so far, as `program arg arg…`.
     pub fn calls(&self) -> Vec<String> {
         self.0.borrow().calls.clone()
@@ -289,13 +266,6 @@ impl Tools {
     /// Whether a call containing `text` was made.
     pub fn called(&self, text: &str) -> bool {
         self.calls().iter().any(|c| c.contains(text))
-    }
-
-    /// The value of `name` in the environment of the last call containing `text`.
-    pub fn env_of(&self, text: &str, name: &str) -> Option<String> {
-        let st = self.0.borrow();
-        let at = st.calls.iter().rposition(|c| c.contains(text))?;
-        st.envs[at].iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone())
     }
 }
 
@@ -341,10 +311,9 @@ impl isothrum_runner::ProcessRunner for AsRunner {
         on_line: isothrum_runner::OnLine<'a>,
     ) -> isothrum_runner::BoxFuture<'a, std::result::Result<isothrum_runner::Exit, isothrum_runner::ProcessError>> {
         let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
-        let scripted = reply(&spec.program, &args, &spec.env);
+        let scripted = reply(&spec.program, &args);
         let answer = match scripted {
             Some(Scripted::Reply(Reply::Out(text))) => Some((isothrum_runner::Stream::Stdout, text, 0)),
-            Some(Scripted::Reply(Reply::Fail(text))) => Some((isothrum_runner::Stream::Stderr, text, 1)),
             Some(Scripted::Missing) | None => None,
         };
         let program = spec.program.clone();
@@ -360,13 +329,12 @@ impl isothrum_runner::ProcessRunner for AsRunner {
     }
 }
 
-/// The script's answer to `program args`, recorded with its environment; None when no test
+/// The script's answer to `program args`, recorded; None when no test
 /// scripts the tools on this thread.
-fn reply(program: &str, args: &[&str], env: &[(String, String)]) -> Option<Scripted> {
+fn reply(program: &str, args: &[&str]) -> Option<Scripted> {
     let state = STATE.with(|s| s.borrow().clone())?;
     let mut st = state.borrow_mut();
     st.calls.push(std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" "));
-    st.envs.push(env.to_vec());
     Some((st.script)(program, args).map_or(Scripted::Missing, Scripted::Reply))
 }
 
@@ -385,7 +353,7 @@ mod tests {
         let mut words = line.split(' ');
         let program = words.next().unwrap();
         let args: Vec<&str> = words.collect();
-        reply(program, &args, &[]).and_then(|s| match s {
+        reply(program, &args).and_then(|s| match s {
             Scripted::Reply(r) => Some(r),
             Scripted::Missing => None,
         })
