@@ -138,9 +138,9 @@ pub(crate) async fn follow_others(dirs: &crate::platform::AppDirs, on: &mut impl
     remote::follow_others(&client, on).await.map_err(Error::Invalid)
 }
 
-pub(crate) use remote::{Others, adopt_downloads, downloads, public_key, records, remove_downloads, rows, usage};
 #[cfg(test)]
-pub(crate) use remote::{stop_service, unreachable as service_unreachable};
+pub(crate) use remote::stop_service;
+pub(crate) use remote::{Others, adopt_downloads, downloads, public_key, records, remove_downloads, rows, usage};
 
 /// The address blocks Docker's networks hold now, but lab `id`'s own (left from an earlier run):
 /// what its instance must stay clear of, read by `home`'s runner. Empty when Docker can't say.
