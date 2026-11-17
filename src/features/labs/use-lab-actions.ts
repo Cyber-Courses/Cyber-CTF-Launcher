@@ -6,8 +6,10 @@ import { getPortMode, type PortMode } from "@/lib/settings";
 import { askPortMode } from "@/features/labs/port-mode-prompt";
 import type { Lab } from "@/features/labs/use-labs";
 import { endDeploy, useDeploy, type DeployRun } from "@/features/labs/runs/deploy-runs";
+import { getLastPlace } from "@/features/labs/runs/last-run";
 import {
   cloudLaunch,
+  launchAgain,
   localLaunch,
   type LocalVmPick,
   parking,
@@ -43,10 +45,11 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
   const operate = useCallback((lab: Lab, op: ActiveOperation["op"], body: OperationBody) => runOperation(lab, op, body, settle), [settle]);
 
   /**
-   * `host` = a saved server or cloud account to run the lab on, null for this machine. Omitted,
-   * nothing is picked and the player's saved preference decides, by the backend's one rule
-   * (`labPlacement`: a VM lab on the saved hypervisor or the first ready one, else the default
-   * server; a container lab here). `vm` runs a VM lab here on that hypervisor (none: the rule's),
+   * `host` = a saved server or cloud account to run the lab on, null for this machine. Omitted
+   * (Home's "start again"), nothing is newly picked: the lab starts where it was last started
+   * here, the player's own earlier choice; never started, their saved preference decides. Either
+   * way by the backend's one rule (`labPlacement`: for a lab never started, a VM lab on the saved
+   * hypervisor or the first ready one, else the default server; a container lab here). `vm` runs a VM lab here on that hypervisor (none: the rule's),
    * or a container lab with VM recipes as one VM per machine there (`perMachine`; a cloud
    * account's cloud-vm form with no hypervisor). The launch sends the rule's answer as it is.
    * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
@@ -57,6 +60,11 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
       if (!lab.runtime) return;
       if (lab.runtime.runtime === "CLOUD") {
         await operate(lab, "launch", cloudLaunch(lab, host));
+        return;
+      }
+      const last = host === undefined && !vm ? getLastPlace(lab.id) : null;
+      if (last) {
+        await operate(lab, "launch", launchAgain(lab, last));
         return;
       }
       // A container lab on this machine publishes its services here: on random free ports or

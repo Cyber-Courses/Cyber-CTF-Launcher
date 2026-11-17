@@ -12,7 +12,7 @@ import {
   subscribeDeploy,
   type DeployRun,
 } from "@/features/labs/runs/deploy-runs";
-import { forgetLastRun, getLastRun, setLastRun } from "@/features/labs/runs/last-run";
+import { forgetLastRun, getLastPlace, getLastRun, setLastRun } from "@/features/labs/runs/last-run";
 import { deployingOf, keepsRunningPhase, operationLabel, operationStatus, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
 import { useWorkerLog } from "@/features/labs/runs/worker-log";
 import { takeIn } from "@/lib/tauri/run-events";
@@ -310,5 +310,16 @@ describe("last run", () => {
     expect(getLastRun("x")).not.toBeNull();
     forgetLastRun("x");
     expect(getLastRun("x")).toBeNull();
+  });
+
+  it("keeps where each lab was last started: a resume leaves it, a removal forgets it", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    setLastRun("p", { kind: "server", host: "pve" });
+    setLastRun("p");
+    expect(getLastPlace("p")).toEqual({ kind: "server", host: "pve" });
+    setLastRun("p", { kind: "docker", engine: null, defaultPorts: false });
+    expect(getLastPlace("p")).toEqual({ kind: "docker", engine: null, defaultPorts: false });
+    forgetLastRun("p");
+    expect(getLastPlace("p")).toBeNull();
   });
 });

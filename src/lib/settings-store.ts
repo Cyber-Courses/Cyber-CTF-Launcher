@@ -50,9 +50,13 @@ export function applyChange(settings: Settings, change: Change): Settings {
     case "serverTest":
       return { ...settings, serverTests: { ...settings.serverTests, [change.value.host]: change.value.record } };
     case "lastRun": {
-      const { lab } = change.value;
-      const others = Object.fromEntries(Object.entries(settings.lastRuns).filter(([id]) => id !== lab));
-      return { ...settings, lastRuns: change.value.at === null ? others : { ...others, [change.value.lab]: change.value.at } };
+      const { lab, at, place } = change.value;
+      const without = <T>(map: Partial<Record<string, T>>) => Object.fromEntries(Object.entries(map).filter(([id]) => id !== lab)) as Record<string, T>;
+      const lastRuns = without(settings.lastRuns);
+      const lastPlaces = without(settings.lastPlaces);
+      if (at === null) return { ...settings, lastRuns, lastPlaces };
+      // No place: a resume, the lab back where it was.
+      return { ...settings, lastRuns: { ...lastRuns, [lab]: at }, lastPlaces: place === null ? settings.lastPlaces : { ...lastPlaces, [lab]: place } };
     }
     case "attackImage":
       return { ...settings, attackImage: change.value?.trim() || null };

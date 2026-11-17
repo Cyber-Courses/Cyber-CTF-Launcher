@@ -136,13 +136,37 @@ export const askStartPlacement = (id: string, runtime: Runtime, repository: stri
 /** A choice with nothing picked: the saved preference decides. */
 const NOTHING_PICKED: LabPlacementChoice = { here: false, host: null, provider: null, perMachineVm: false, engine: null, defaultPorts: null };
 
+/** `last`, where a lab (declared `runtime`) was last started, as the choice it was: the player's
+ *  own earlier one, every part of it picked. */
+function choiceOfPlacement(last: LabPlacement, runtime: Runtime): LabPlacementChoice {
+  switch (last.kind) {
+    case "docker":
+      return { ...NOTHING_PICKED, here: true, engine: last.engine, defaultPorts: last.defaultPorts };
+    case "vms":
+      // A container lab's VMs here are its one-VM-per-machine form.
+      return { ...NOTHING_PICKED, here: true, provider: last.provider, perMachineVm: runtime === "DOCKER" };
+    case "server":
+      return { ...NOTHING_PICKED, host: last.host };
+    case "cloud":
+      return { ...NOTHING_PICKED, host: last.account, perMachineVm: last.perMachine };
+  }
+}
+
+/** A lab started again with nothing newly picked, where it was `last` started: sent as the choice,
+ *  so the rule still checks the lab runs there and it is ready, refusing as for any choice. */
+export const launchAgain =
+  (lab: Lab, last: LabPlacement): OperationBody =>
+  async (log, rt) => {
+    await launchAt(lab, await placementFor(lab, rt, choiceOfPlacement(last, rt.runtime)), log);
+  };
+
 /** Starts lab `lab` where `placement` says, as it is: the node's keys confirmed first on a
  *  server, the start offered offline when Cyber CTF can't be reached, then the ready notice. */
 async function launchAt(lab: Lab, placement: LabPlacement, log: (line: string) => void) {
   if (placement.kind === "server") await nodeKeysConfirmed(placement.host);
   await launchOrOfferOffline(lab.title, (offline) => labLaunch({ labId: lab.id, placement, offline }, log));
   log(translate("labs.actions.labRunning"));
-  setLastRun(lab.id);
+  setLastRun(lab.id, placement);
   void notify(translate("labs.actions.labReady"), translate(readyKey(placement), { title: lab.title }));
 }
 
