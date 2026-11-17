@@ -3,9 +3,9 @@
 //! said here in the player's words.
 
 use isothrum_machine::install::exit_codes::{Done, Known};
-use isothrum_machine::install::{Note, Step, StepFailed};
+use isothrum_machine::install::{NotServed, Note, Step, StepFailed};
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 
 /// Without pkexec there is no graphical password prompt (Debian ships it apart from polkit).
 pub const NO_PKEXEC: &str =
@@ -130,6 +130,8 @@ pub(super) fn step_failed(failed: StepFailed, removal: bool) -> Error {
             Error::Invalid("No password prompt could be shown (no polkit agent is running). Run the command above in a terminal instead.".into())
         }
         StepFailed::SudoRefused => Error::Refused(SUDO_REFUSED.into()),
+        StepFailed::NotServed(NotServed::DockerDistribution) => Error::coded(Code::DockerOtherDistribution),
+        StepFailed::NotServed(NotServed::HypervEdition) => Error::coded(Code::HypervHomeEdition),
         StepFailed::Homebrew(trouble) => Error::Invalid(
             match trouble {
                 isothrum_machine::install::brew::Trouble::Locked => BREW_LOCKED,

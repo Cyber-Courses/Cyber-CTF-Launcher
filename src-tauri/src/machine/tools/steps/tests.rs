@@ -39,6 +39,15 @@ fn isothrum_machines_step_failures_read_as_the_launcher_said_them() {
     assert!(step_failed(StepFailed::PromptRefused, false).to_string().contains("cancelled"));
     assert!(step_failed(StepFailed::NoPolkitAgent, false).to_string().contains("polkit agent"));
     assert_eq!(step_failed(StepFailed::SudoRefused, false).to_string(), SUDO_REFUSED);
+    // A script that stopped where it doesn't serve: the catalogue's words, as the script said them before.
+    assert_eq!(
+        step_failed(StepFailed::NotServed(NotServed::DockerDistribution), false).to_string(),
+        "Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again."
+    );
+    assert_eq!(
+        step_failed(StepFailed::NotServed(NotServed::HypervEdition), false).to_string(),
+        "This edition of Windows (Home) has no Hyper-V. Run VM labs with VirtualBox, on a server or in the cloud."
+    );
     assert_eq!(step_failed(StepFailed::Homebrew(Trouble::Locked), false).to_string(), BREW_LOCKED);
     assert_eq!(step_failed(StepFailed::Homebrew(Trouble::Outdated), false).to_string(), BREW_OUTDATED);
     assert_eq!(step_failed(StepFailed::Homebrew(Trouble::XcodeTooOld), false).to_string(), BREW_XCODE_OUTDATED);

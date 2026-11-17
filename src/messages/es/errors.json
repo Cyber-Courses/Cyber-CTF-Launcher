@@ -11,6 +11,8 @@
     "dockerNotRunning": "Docker no se está ejecutando. Inicia tu motor de contenedores (Docker Desktop, o el servicio docker en Linux) y vuelve a iniciar el lab.",
     "dockerDenied": "Docker se está ejecutando, pero tu cuenta aún no puede usarlo. Añádete al grupo docker en una terminal (sudo usermod -aG docker {user}), luego cierra la sesión y vuelve a entrar.",
     "dockerDeniedWindows": "Docker se está ejecutando, pero tu cuenta aún no puede usarlo. Añádete al grupo docker-users (en una terminal como administrador: net localgroup docker-users \"{user}\" /add), luego cierra la sesión y vuelve a entrar.",
+    "dockerOtherDistribution": "Cyber CTF instala Docker en Debian, Ubuntu y las distribuciones basadas en ellas. Instala Docker Engine desde tu distribución o desde https://docs.docker.com/engine/install/ y vuelve a comprobar.",
+    "hypervHomeEdition": "Esta edición de Windows (Home) no tiene Hyper-V. Ejecuta los laboratorios de VM con VirtualBox, en un servidor o en la nube.",
     "toolMissing": "{tool} no está instalado o no está en el PATH.",
     "commandFailed": "{command} falló: {stderr}",
     "downloadStalled": "La descarga de las imágenes del lab dejó de avanzar ({minutes} minutos sin nada nuevo), así que se detuvo. Revisa tu conexión a Internet e inténtalo de nuevo: lo que ya se descargó se conserva.",
