@@ -32,6 +32,14 @@ async fn the_check_says_where_the_ovf_tool_was_found() {
     assert!(json.get("needsRosetta").is_some() && json.get("source").is_some(), "{json}");
 }
 
+/// The machine check's report with `tools` as this machine's.
+async fn checked(tools: FakeProcesses) -> super::SystemReport {
+    let root = tempfile::tempdir().unwrap();
+    let _machine = Machine::set(Arc::new(tools), host(root.path()));
+    let t = crate::testing::test_app::TestApp::new();
+    super::system_check(t.dirs()).await
+}
+
 /// Docker down and Vagrant missing: the report says so for them, and is made all the same.
 #[tokio::test]
 async fn the_report_carries_what_isothrum_machine_found() {
@@ -41,10 +49,7 @@ async fn the_report_carries_what_isothrum_machine_found() {
         ("terraform", _) => Reply::ok("Terraform v1.9.8\n"),
         _ => Reply::missing(),
     });
-    let root = tempfile::tempdir().unwrap();
-    let _machine = Machine::set(Arc::new(tools), host(root.path()));
-    let t = crate::testing::test_app::TestApp::new();
-    let report = super::system_check(t.dirs()).await;
+    let report = checked(tools).await;
     assert_eq!(report.docker.version.as_deref(), Some("Docker version 28.4.0, build d8eb465"));
     assert!(!report.docker_running && !report.docker_denied && report.docker_denied_hint.is_none() && report.docker_engine.is_none());
     assert!(!report.vagrant.installed && !report.cloud_clis.azure.installed && report.ready_hypervisors.is_empty());
@@ -62,9 +67,6 @@ async fn a_daemon_that_refuses_this_account_comes_with_its_hint() {
         ("docker", Some("--version")) => Reply::ok("Docker version 26.1.5"),
         _ => Reply::missing(),
     });
-    let root = tempfile::tempdir().unwrap();
-    let _machine = Machine::set(Arc::new(tools), host(root.path()));
-    let t = crate::testing::test_app::TestApp::new();
-    let report = super::system_check(t.dirs()).await;
+    let report = checked(tools).await;
     assert!(report.docker_denied && !report.docker_running && report.docker_denied_hint.is_some());
 }
