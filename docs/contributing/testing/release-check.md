@@ -84,8 +84,7 @@ Not in the gate, run when the release touches them:
   contract, with the backend), `fake_clis` (cloud reaper and hung CLI, `--test-threads=1`),
   `finder_path_finds_tools` (the Finder PATH, `--test-threads=1`),
   `the_real_aws_account_test_confirms_the_launch_permission` (an AWS account signed in with the
-  AWS CLI), `real_docker_machine_page_stop_removes_the_labs_volumes_and_networks` and
-  `real_docker_clean_up_keeps_the_players_image` (Docker), `prints_this_machines_report` (prints the machine report),
+  AWS CLI), `real_docker_clean_up_keeps_the_players_image` (Docker), `prints_this_machines_report` (prints the machine report),
   `real_download_is_placed_and_runs` (a downloaded OVF Tool), `utm_is_opened_and_answers_before_a_vm_starts`
   (UTM) and `queries_the_api_anonymously` (the network).
 - `package-smoke.yml` runs in CI, not in the check: the built bundle installed and launched on

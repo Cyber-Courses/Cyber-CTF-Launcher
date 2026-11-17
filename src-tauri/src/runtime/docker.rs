@@ -9,5 +9,5 @@ mod compose;
 mod inspect;
 
 pub use check::{Check, CheckResult};
-pub use compose::{LEGACY_ATTACK_BOX_SUFFIXES, lab_of_project, legacy_attack_box_names, project};
+pub use compose::{lab_of_project, project};
 pub use inspect::answers;

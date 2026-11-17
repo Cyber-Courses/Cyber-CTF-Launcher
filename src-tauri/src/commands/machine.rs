@@ -84,16 +84,16 @@ pub async fn machine_selftest_prefetch(app: AppHandle, kind: Kind, provider: Opt
     selftest::machine_selftest_prefetch(AppDirs::from(&app), kind, provider).await
 }
 
-/// The labs and attack boxes running on this machine.
+/// The labs running on this machine.
 #[tauri::command]
-pub async fn machine_workloads(app: AppHandle) -> Vec<Workload> {
+pub async fn machine_workloads(app: AppHandle) -> Result<Vec<Workload>> {
     workloads::machine_workloads(AppDirs::from(&app)).await
 }
 
 /// Stops the workload `id` of `kind`.
 #[tauri::command]
 pub async fn machine_workload_stop(app: AppHandle, kind: workloads::WorkloadKind, id: String) -> Result<()> {
-    workloads::machine_workload_stop(&app, AppDirs::from(&app), kind, id).await
+    workloads::machine_workload_stop(&app, kind, id).await
 }
 
 /// The runtime's labs, for the Machine page.

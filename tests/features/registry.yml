@@ -2080,7 +2080,7 @@ areas:
           desktop: machine/page checks only that the words CPU, Memory and Disk appear
 
       - id: machine.running-now
-        what: See what Cyber CTF runs on this machine right now (lab containers, VMs, the self-test VM) with sizes, and stop one.
+        what: See what Cyber CTF runs on this machine right now (lab containers and VMs) with sizes, and stop one.
         providers:
           - docker
           - libvirt
@@ -2096,23 +2096,21 @@ areas:
           - machine_workload_stop
         tests:
           unit:
-            - src-tauri/src/machine/workloads.rs > the_machine_page_lists_and_stops_the_apps_containers_and_vms
-            - src-tauri/src/machine/workloads/docker.rs > stopping_a_lab_never_targets_a_lab_whose_id_extends_it
-            - src-tauri/src/machine/workloads/vm.rs > stopping_a_lab_destroys_each_vagrant_folder_it_has
-            - src-tauri/src/machine/workloads/vm.rs > only_the_apps_running_local_vms_count
+            - src-tauri/src/machine/workloads/tests.rs > the_machine_page_lists_the_runs_running_here_with_what_their_containers_use
+            - src-tauri/src/machine/workloads/tests.rs > a_run_is_its_labs_containers_or_vms_counted_as_last_seen_running
+            - src-tauri/src/machine/workloads/tests.rs > runs_that_cant_be_listed_are_an_error_not_nothing_running
+            - src-tauri/src/machine/workloads/tests.rs > a_stop_from_the_machine_page_is_the_labs_own_stop
             - src/features/machine/machine-screen.test.tsx > lists what runs, with lab titles, sizes and providers, and stops one
             - src/features/machine/machine-screen.test.tsx > keeps the list after a failed stop
           desktop:
             - machine/page
             - cleanup/section
-          integration:
-            - src-tauri/src/machine/workloads.rs > real_docker_machine_page_stop_removes_the_labs_volumes_and_networks
         rig:
           - desktop-e2e
         gaps:
           web: no spec opens the Running now panel or stops a workload
           desktop: only the panel's title is checked; nothing is listed or stopped
-          integration: the real stop is an opt-in Docker test outside the runner, not run by the rig; stopping a VM workload never runs for real
+          integration: the list and the memory are read from the runner, whose real-tool tests cover them; a Stop is the lab's own, run for real by the lab integration tests, never from this page
 
       - id: machine.downloads
         what: See what lab downloads (container images, VM boxes) Cyber CTF keeps on this machine and how much disk they take.

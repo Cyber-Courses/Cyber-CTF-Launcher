@@ -88,8 +88,6 @@ pub enum DockerSaid {
     Denied,
     /// The engine doesn't answer: stopped, or quit while a call ran (on Windows, its pipe gone).
     EngineDown,
-    /// The container named isn't there.
-    NoSuchContainer,
     /// Anything else.
     Other,
 }
@@ -105,18 +103,8 @@ impl DockerSaid {
             DockerSaid::Denied
         } else if ENGINE_DOWN.iter().any(|m| s.contains(m)) && !refusal(&s) {
             DockerSaid::EngineDown
-        } else if s.contains("no such container") {
-            DockerSaid::NoSuchContainer
         } else {
             DockerSaid::Other
-        }
-    }
-
-    /// What `err` says, when it is a `docker` call that failed; none for another error.
-    pub fn of_error(err: &Error) -> Option<DockerSaid> {
-        match err {
-            Error::CommandFailed { stderr, .. } => Some(DockerSaid::of(stderr)),
-            _ => None,
         }
     }
 }
@@ -221,14 +209,13 @@ mod tests {
             ),
             ("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock", DockerSaid::Denied),
             ("error during connect: open //./pipe/docker_engine: Access is denied.", DockerSaid::Denied),
-            ("Error response from daemon: No such container: cyberctf-sqli-attacker", DockerSaid::NoSuchContainer),
+            ("Error response from daemon: No such container: cyberctf-sqli-attacker", DockerSaid::Other),
             ("Error response from daemon: pull access denied for x, repository does not exist", DockerSaid::Other),
             ("", DockerSaid::Other),
         ];
         for (stderr, said) in cases {
             assert_eq!(DockerSaid::of(stderr), said, "{stderr}");
         }
-        assert_eq!(DockerSaid::of_error(&Error::ToolMissing { tool: "docker" }), None);
         assert!(refusal("access is denied.") && refusal("permission denied") && !refusal("denied"));
     }
 

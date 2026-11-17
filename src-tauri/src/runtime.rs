@@ -38,7 +38,7 @@ pub(crate) mod terminal_launch;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use docker::{LEGACY_ATTACK_BOX_SUFFIXES, lab_of_project, legacy_attack_box_names, project as compose_project};
+pub use docker::lab_of_project;
 pub use inflight::Operation;
 pub(crate) use inflight::{lock_lab, try_lock_lab};
 pub use isothrum_runner::ShellCommand;
