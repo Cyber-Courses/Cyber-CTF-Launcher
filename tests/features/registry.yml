@@ -547,7 +547,7 @@ areas:
             - src-tauri/src/runtime/isothrum/vm_tests.rs > a_vm_lab_goes_up_on_its_hypervisor_through_the_runner
             - src-tauri/src/runtime/isothrum/vm_tests.rs > the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_process
             - src-tauri/src/runtime/launch/tests.rs > qemu_emulates_only_the_vms_built_for_another_cpu
-            - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here on the hypervisor the backend picks for it there
+            - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here where the backend's rule places it, sending that placement as it is
           web:
             - "vm-labs.spec.ts > on this machine: up, pause, resume, provision one machine again, stop"
             - "vm-labs.spec.ts > on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops"
@@ -3755,7 +3755,7 @@ areas:
             - src/lib/hooks.test.tsx > tell sends an OS notification otherwise
             - src/lib/hooks.test.tsx > notify asks for permission and never throws
             - src-tauri/src/app.rs > a_notification_that_cant_be_shown_is_logged
-            - src/features/labs/use-lab-actions.test.tsx > says a container lab is ready on the server or in the cloud account it runs on
+            - src/features/labs/use-lab-actions.test.tsx > says a lab is ready on the server or in the cloud account its placement names
           web:
             - signed-out.spec.ts > the wait shows what to do and the ways out
             - coded-errors.spec.ts > the toast, and the previous run kept
