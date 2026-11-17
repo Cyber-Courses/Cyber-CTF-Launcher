@@ -365,7 +365,8 @@ mod tests {
             assert_eq!(proxies[0].args.last().map(String::as_str), Some("root@node.lab"));
             let key = run.key().to_string_lossy().into_owned();
             assert!(proxies[0].args.windows(2).any(|w| w[0] == "-i" && w[1] == key), "the launcher's node key: {:?}", proxies[0].args);
-            let checked = format!("UserKnownHostsFile=\"{}\"", confirmed.display());
+            // As ssh's options name a file: with `/`, which Windows' OpenSSH reads as `\`.
+            let checked = format!("UserKnownHostsFile=\"{}\"", confirmed.to_string_lossy().replace('\\', "/"));
             assert!(proxies[0].args.contains(&checked), "the node's keys checked against the confirmed ones: {:?}", proxies[0].args);
             assert!(proxies[0].args.iter().any(|a| a == "StrictHostKeyChecking=yes"), "{:?}", proxies[0].args);
             assert!(calls.iter().all(|c| c.program != "ssh-keyscan"), "the node never trusted on first use");
