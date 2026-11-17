@@ -59,7 +59,7 @@ async fn problems(dirs: &AppDirs, c: &Checked<'_>) -> Vec<Error> {
         }
         // Containers here, for a container lab (any other is refused above).
         Placement::Docker { engine, .. } if c.runtime == Runtime::Docker => {
-            found.extend(engine_answers(engine.map(crate::machine::system::docker::Engine::id)).await.err());
+            found.extend(engine_answers(engine.map(isothrum_machine::docker::Engine::id)).await.err());
             true
         }
         Placement::Docker { .. } | Placement::Server { .. } | Placement::Cloud { .. } => false,
@@ -122,11 +122,11 @@ async fn hypervisor_ready(provider: Provider, lab: Option<&Lab>) -> Result<()> {
 /// the daemon there answering this account.
 async fn engine_answers(engine: Option<&str>) -> Result<()> {
     let context = match engine {
-        Some(engine) => Some(crate::machine::system::docker::engine_context(engine).await?),
+        Some(engine) => Some(super::docker::engine_context(engine).await?),
         None => None,
     };
     let cx = super::providers::machine();
-    isothrum_machine::docker::daemon_info(&cx, "{{.ServerVersion}}", context.as_deref()).await.map(drop).map_err(crate::machine::system::docker::no_answer)
+    isothrum_machine::docker::daemon_info(&cx, "{{.ServerVersion}}", context.as_deref()).await.map(drop).map_err(super::docker::no_answer)
 }
 
 /// The host ports the lab's spec keeps fixed (`publish` with `fixed: true`: apps whose pages call

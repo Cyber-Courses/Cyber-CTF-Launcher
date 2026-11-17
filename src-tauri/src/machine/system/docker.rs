@@ -1,45 +1,19 @@
 //! The Docker-compatible engines, as isothrum-machine finds them ([`isothrum_machine::docker`]),
 //! in the launcher's errors; and switching or starting one the way the player would.
 
-use isothrum_machine::docker::{ContextError, NoAnswer, StartFailed};
+use isothrum_machine::docker::StartFailed;
 pub use isothrum_machine::docker::{Engine, EngineStatus};
 
 use crate::error::{Error, Result};
 use crate::platform::exec::docker_denied_error;
+use crate::runtime::docker::{context_error, engine_of};
+// A start pins a lab to an engine's context and says the daemon's answers from the runtime,
+// below this layer; the machine page says them the same way.
+pub(crate) use crate::runtime::docker::{engine_context, no_answer};
 
 /// What isothrum-machine runs Docker with ([`crate::runtime::providers::machine_check`]).
 fn machine() -> isothrum_machine::Context {
     crate::runtime::providers::machine_check()
-}
-
-/// Why the daemon gave no answer, as the launcher's error: a refusal or a stopped daemon as the
-/// Docker call that failed, its words as the CLI said them ([`isothrum_machine::docker::says_denied`]).
-pub(crate) fn no_answer(why: NoAnswer) -> Error {
-    match why {
-        NoAnswer::NoCli => Error::ToolMissing { tool: "docker" },
-        NoAnswer::Denied(said) | NoAnswer::Down(said) => Error::CommandFailed { command: "docker info".into(), stderr: said },
-        empty => Error::Invalid(empty.to_string()),
-    }
-}
-
-/// The engine with the webview's id `engine`.
-fn engine_of(engine: &str) -> Result<Engine> {
-    Engine::from_id(engine).ok_or_else(|| Error::Invalid(format!("no Docker context for {engine}")))
-}
-
-/// A context that couldn't be found or used, as the launcher's error.
-fn context_error(engine: &str, e: ContextError) -> Error {
-    match e {
-        ContextError::Unlisted(why) => Error::Invalid(format!("couldn't list the Docker contexts to find {engine}'s: {}", no_answer(why))),
-        ContextError::Unused(why) => no_answer(why),
-        none => Error::Invalid(none.to_string()),
-    }
-}
-
-/// The Docker context behind `engine` on this machine, for pinning a lab to it (`DOCKER_CONTEXT` /
-/// `docker --context <name>`); an error when no context on this machine names that engine.
-pub async fn engine_context(engine: &str) -> Result<String> {
-    isothrum_machine::docker::engine_context(&machine(), engine_of(engine)?).await.map_err(|e| context_error(engine, e))
 }
 
 /// Points the Docker CLI at another running engine (`docker context use`), as the player
