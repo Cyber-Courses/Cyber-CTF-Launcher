@@ -2313,8 +2313,6 @@ areas:
             - src-tauri/src/machine/setup/tests.rs > a_linux_without_apt_or_dnf_is_told_to_install_each_tool_itself_instead_of_a_failing_command
             - src-tauri/src/machine/setup/tests.rs > a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt
             - src-tauri/src/machine/tools/install/tests.rs > a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs
-            - src-tauri/src/machine/tools/install/tests.rs > a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand
-            - src-tauri/src/machine/tools/uninstall.rs > a_tool_installed_through_dnf_is_removed_through_dnf
             - src/features/machine/setup-steps/setup-steps.test.tsx > links to App Installer on Windows and names the Linux package manager
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > on a Linux without apt or dnf
           web:
@@ -2335,11 +2333,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/tools/install/tests.rs > an_install_streams_its_steps_and_records_a_tool_it_added
-            - src-tauri/src/machine/tools/install/tests.rs > linux_installs_through_pkexec
             - src-tauri/src/machine/tools/install/tests.rs > windows_installs_through_winget_and_wsl_through_its_installer
-            - src-tauri/src/machine/tools/steps/tests.rs > pkexec_refusals_name_their_cause
-            - src-tauri/src/machine/tools/exit_codes.rs > a_declined_uac_prompt_reads_as_cancelled
-            - src-tauri/src/machine/tools/scripts/tests.rs > vendor_keys_are_pinned_and_checked_before_apt_trusts_them
           web:
             - "machine-setup.spec.ts > a fresh Mac: the package manager is detected, then each install streams"
           desktop:
@@ -2371,7 +2365,6 @@ areas:
           - install_vagrant_plugin
         tests:
           unit:
-            - src-tauri/src/machine/tools/install/tests.rs > vagrant_comes_from_hashicorps_repository_not_the_distributions
             - src-tauri/src/machine/tools/install/tests.rs > only_vagrant_plugin_names_are_installed
             - src/features/machine/setup-steps/setup-steps.test.tsx > installs Vagrant, then the hypervisor
             - src/features/machine/setup-steps/setup-steps.test.tsx > shows a failed plugin install, on its row too
@@ -2401,9 +2394,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/machine/tools/vmware_utility.rs > the_mac_install_checks_hashicorps_file_and_signature_before_installing_as_root
-            - src-tauri/src/machine/tools/vmware_utility.rs > the_windows_install_checks_hashicorps_file_and_signature_and_elevates_through_uac
-            - src-tauri/src/machine/tools/vmware_utility.rs > a_download_that_isnt_hashicorps_file_fails_before_any_prompt
             - src/features/machine/setup-steps/setup-steps.test.tsx > a failed utility install reads as failed, not done, and the flow waits
             - src/features/machine/setup-steps/setup-steps.test.tsx > an installed utility whose service stopped is offered again
           setup:
@@ -2491,8 +2481,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > each_engine_says_what_makes_it_the_one_docker_uses
-            - src-tauri/src/machine/tools/scripts/tests.rs > docker_install_adds_the_player_to_the_docker_group
-            - src-tauri/src/machine/tools/scripts/tests.rs > docker_picks_its_apt_repository_by_distro_or_the_distributions_own_docker
             - src-tauri/src/machine/tools/install/tests.rs > docker_is_named_as_the_setup_installs_it_on_each_os
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > installs the engine the plan installs, starts the one it starts
             - src/features/machine/setup-steps/setup-steps.test.tsx > installs the recommended engine, then asks to finish in its installer
@@ -2523,7 +2511,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > hyper_v_is_turned_on_by_the_setup_then_waits_for_a_restart
-            - src-tauri/src/machine/tools/install/tests.rs > hyper_v_is_turned_on_by_dism_elevated_and_refused_on_windows_home
             - src-tauri/src/machine/system/wsl/tests.rs > hyper_v_turned_on_asks_for_a_restart_in_that_boot_only
             - src-tauri/src/platform/exec/elevate.rs > only_hyperv_on_windows_goes_through_the_script_elevated_when_it_must
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > turns Hyper-V on, which the plan offers instead of a link
@@ -2547,7 +2534,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > a_bare_windows_turns_wsl_on_installs_docker_desktop_virtualbox_and_vagrant_and_passes_over_the_others
-            - src-tauri/src/machine/tools/scripts/tests.rs > every_vendor_repository_is_set_up_the_same_way
             - src-tauri/src/machine/selftest/vm/tests.rs > a_virtualbox_test_vm_carries_its_folder_so_a_leftover_is_known_as_the_tests
           integration:
             - setup
@@ -2573,8 +2559,6 @@ areas:
             - src-tauri/src/machine/setup/tests.rs > a_bare_debian_installs_docker_engine_libvirt_vagrant_and_its_plugin
             - src-tauri/src/machine/setup/tests.rs > installed_libvirt_needs_only_its_plugin_and_one_that_cant_run_is_passed_over
             - src-tauri/src/machine/setup/tests.rs > libvirt_joined_since_logging_in_asks_for_a_new_login_after_the_rest
-            - src-tauri/src/machine/tools/scripts/tests.rs > libvirt_install_brings_what_the_vagrant_libvirt_plugin_compiles_against
-            - src-tauri/src/machine/tools/scripts/tests.rs > libvirt_install_brings_virtiofsd_for_the_shared_folder_where_the_release_has_it
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > says libvirt waits for a new login once the player joined its group
           integration:
             - setup
@@ -2601,10 +2585,7 @@ areas:
             - src-tauri/src/machine/setup/tests.rs > a_mac_with_docker_and_no_vagrant_sets_up_only_the_vm_path
             - src-tauri/src/machine/selftest/vm/tests.rs > the_qemu_test_vm_boots_with_the_acceleration_the_labs_ask_for
             - src-tauri/src/machine/setup/tests.rs > qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test
-            - src-tauri/src/machine/tools/scripts/tests.rs > qemu_install_adds_the_player_to_the_group_that_opens_dev_kvm
-            - src-tauri/src/machine/tools/scripts/tests.rs > qemu_install_brings_virtiofsd_for_the_shared_folder_where_the_release_has_it
             - src-tauri/src/machine/setup/tests.rs > qemu_without_virtiofsd_is_installed_again_which_brings_it
-            - src-tauri/src/machine/tools/install/tests.rs > macos_installs_through_homebrew
           integration:
             - setup
           setup:
@@ -2628,7 +2609,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > a_mac_with_docker_and_no_vagrant_sets_up_only_the_vm_path
-            - src-tauri/src/machine/tools/scripts/tests.rs > a_failed_cask_fetch_updates_homebrew_and_retries_once
           web:
             - "machine-setup.spec.ts > a fresh Mac: the package manager is detected, then each install streams"
           integration:
@@ -2786,7 +2766,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/tools/uninstall.rs > only_a_tool_missing_before_and_found_after_counts_as_ours
-            - src-tauri/src/machine/tools/uninstall.rs > a_removal_runs_as_root_as_an_install_does
             - src-tauri/src/machine/tools/uninstall.rs > every_windows_tool_is_removed_through_winget
             - src-tauri/src/machine/tools/uninstall.rs > every_macos_tool_has_a_way_out
             - src/features/settings/settings-rows.test.tsx > removes a tool only once the system dialog confirms it, then re-reads the list
@@ -3339,8 +3318,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/machine/tools/scripts/tests.rs > the_aws_cli_bundle_must_be_signed_by_the_embedded_key
-            - src-tauri/src/machine/tools/scripts/tests.rs > an_aws_cli_bundle_with_a_bad_signature_is_not_installed
             - src/features/servers/host-setup/cloud-setup.test.tsx > installs a missing cloud CLI and re-checks the machine
             - src/features/servers/host-setup/cloud-setup.test.tsx > logs a failed install and frees the buttons
         gaps:
@@ -3374,7 +3351,6 @@ areas:
             - src-tauri/src/platform/proxy.rs > the_system_proxy_becomes_the_tools_variables
             - src-tauri/src/platform/proxy.rs > root_commands_get_the_proxy_variables_that_are_set
             - src-tauri/src/platform/proxy.rs > a_disabled_proxy_or_a_pac_file_sets_nothing
-            - src-tauri/src/machine/tools/install/tests.rs > a_root_install_carries_the_proxy_through_pkexec_off_its_command_line
         gaps:
           integration: no run behind a proxy (setup, installs, labs); PAC files are logged, not followed
         note: Windows relies on each tool's own proxy settings; nothing in the app handles it there.
