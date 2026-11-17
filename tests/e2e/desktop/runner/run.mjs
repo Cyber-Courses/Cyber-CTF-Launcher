@@ -209,7 +209,8 @@ function skipCase(c, why) {
 const RUN_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "cyberctf-e2e.")));
 process.env.CYBERCTF_WDIO_ROOT = RUN_ROOT;
 const FOLDERS = runFolders(RUN_ROOT);
-/** The apps' logs (the app's own and its labs' deploy logs: every `*.log` under `<root>/app`, and
+/** The apps' logs (the app's own `logs/cyberctf.log` and its runner service's `isothrum/service.log`,
+ *  where the labs' operations run: every `*.log` under `<root>/app`, and
  *  under the signed-out run's), copied beside the specs' logs (`<logs>/app/`, their paths kept)
  *  before the run's folder goes, so a failed spec's evidence outlives it. Never `home/` (the
  *  session, the secrets); a line naming a password, a token or a key is left out (plan.mjs). */
@@ -315,14 +316,6 @@ function endGroup(pid) {
 async function portWhy() {
   return (await waitPortFree(PORT, args.portWait)) ? null : portStillHeld(PORT);
 }
-/** The deploy workers whose job is in the run's folder, stopped; whether any was. */
-function stopDeployWorkers() {
-  if (WINDOWS) {
-    const script = `Get-CimInstance Win32_Process -Filter "Name = '${basename(APP)}'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('deploy --job') -and $_.CommandLine.Contains('${RUN_ROOT.replace(/'/g, "''")}') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; 'killed' }`;
-    return (runTool("powershell.exe", ["-NoProfile", "-Command", script]) ?? "").includes("killed");
-  }
-  return runTool("pkill", ["-9", "-f", `deploy --job ${RUN_ROOT}`]) !== null;
-}
 /** How long a runner service has after SIGTERM before SIGKILL. */
 const SERVICE_STOP_MS = 5000;
 /** The runner services whose home is in the run's folder (owned.mjs `runServices`: the app's
@@ -358,8 +351,9 @@ function isRunning(pid) {
 }
 /** The run's own apps still up, stopped, never another copy of the same binary: the ones the run
  *  launched (records/apps/<pid>, by app.mjs and the preflight; fail-signedout's under
- *  signed-out/), while that pid is still the app, and the deploy workers whose job is in the
- *  run's folder. */
+ *  signed-out/), while that pid is still the app, then their runner services (`stopRunServices`),
+ *  which outlive the app and would otherwise carry an operation a spec left under way (a start
+ *  the app was killed or closed during) into the next spec's clean-up. */
 function stopRunApps() {
   let killed = false;
   for (const dir of [join(FOLDERS.records, "apps"), join(RUN_ROOT, "signed-out", "records", "apps")]) {
@@ -373,8 +367,8 @@ function stopRunApps() {
       rmSync(join(dir, f), { force: true });
     }
   }
-  if (stopDeployWorkers()) killed = true;
   if (killed) sleepSync(1000);
+  stopRunServices();
 }
 
 /** The run's own Compose projects (owned.mjs), taken down with their volumes; the next spec never
@@ -476,7 +470,7 @@ const CHECKS = {
       : "no server: set CYBERCTF_TEST_SERVER_ENV to a file with CYBERCTF_TEST_PVE_HOST/_TOKEN_ID/_TOKEN_SECRET or CYBERCTF_TEST_ESXI_HOST/_PASSWORD";
   },
   "own-frame": () => (process.platform === "linux" || WINDOWS ? null : "macOS keeps the system's window frame: the app draws no window controls there"),
-  unix: () => (WINDOWS ? "kills the worker with SIGKILL: Unix only (Windows: taskkill /F, the rig's own case)" : null),
+  unix: () => (WINDOWS ? "kills the runner service with SIGKILL: Unix only (Windows: taskkill /F, the rig's own case)" : null),
 };
 /** Why runner-provided `need` isn't met, checked once; null when it is. */
 function runnerNeed(need) {

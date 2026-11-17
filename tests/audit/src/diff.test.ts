@@ -75,7 +75,7 @@ const after = snap(6000, [
     [
       "  700 10-01:23:20 /Applications/Cyber CTF.app/Contents/MacOS/cyber-ctf-desktop",
       " 4100    1:15:00 vagrant ssh --command docker compose --project-name cyberctf-hello up",
-      " 4200    0:10:00 /Applications/Cyber CTF.app/Contents/MacOS/cyber-ctf-desktop deploy --job /Users/owner/Library/Application Support/org.cyberctf.desktop/deploys/mylab.json",
+      " 4200    0:10:00 /Applications/Cyber CTF.app/Contents/MacOS/cyber-ctf-desktop serve --home /Users/owner/Library/Application Support/org.cyberctf.desktop/isothrum --detach",
       "now 6000",
     ].join("\n"),
   ),
@@ -97,7 +97,7 @@ describe("on a machine someone uses (shared)", () => {
     });
   });
 
-  it("leaves the owner's own alone: made meanwhile, of the same project after the run, a VM, a worker", () => {
+  it("leaves the owner's own alone: made meanwhile, of the same project after the run, a VM, a runner service", () => {
     const others = Object.fromEntries(results.map((r) => [r.kind, r.others.map((i) => i.name)]));
     // Another process made a container of the run's project three hours on: not the run's.
     expect(others["docker-container"]).toEqual(["cyberctf-scratch-db-1", "cyberctf-hello-db-1"]);

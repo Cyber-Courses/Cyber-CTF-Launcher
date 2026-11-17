@@ -40,29 +40,29 @@ try {
   if (!(await startMade(b, id))) throw new Error(`the start never made a container: ${JSON.stringify(await outcomeOf(b, "start", 1000))}`);
   const { pid } = JSON.parse(readFileSync(serviceFile, "utf8"));
   process.kill(pid, "SIGKILL");
-  r.pass("kill-worker/killed", `runner service ${pid} killed mid-start`);
+  r.pass("kill-runner-service/killed", `runner service ${pid} killed mid-start`);
 
   const start = await outcomeOf(b, "start", STOP_MS);
-  if (start && start.err) r.pass("kill-worker/said", `the start ended with: ${start.err}`);
-  else r.fail("kill-worker/said", `the start ended: ${JSON.stringify(start)}`);
+  if (start && start.err) r.pass("kill-runner-service/said", `the start ended with: ${start.err}`);
+  else r.fail("kill-runner-service/said", `the start ended: ${JSON.stringify(start)}`);
 
   const status = await invokeWhenIdle(b, "lab_status", { id, runtime: "DOCKER" });
-  if (status && !status.running) r.pass("kill-worker/not-running", "the lab reads as not running");
-  else r.fail("kill-worker/not-running", `status: ${JSON.stringify(status)}`);
+  if (status && !status.running) r.pass("kill-runner-service/not-running", "the lab reads as not running");
+  else r.fail("kill-runner-service/not-running", `status: ${JSON.stringify(status)}`);
 
   await invokeWhenIdle(b, "lab_stop", { id, runtime: "DOCKER" }, STOP_MS);
-  if (labContainers(id).length === 0) r.pass("kill-worker/cleared", "a Stop clears what the killed start left");
-  else r.fail("kill-worker/cleared", `left: ${JSON.stringify(labContainers(id))}`);
+  if (labContainers(id).length === 0) r.pass("kill-runner-service/cleared", "a Stop clears what the killed start left");
+  else r.fail("kill-runner-service/cleared", `left: ${JSON.stringify(labContainers(id))}`);
   await invokeWhenIdle(b, "lab_launch_local", { path: LAB }, LAB_START_MS);
   await waitSettled(b, id);
   const again = await invokeWhenIdle(b, "lab_status", { id, runtime: "DOCKER" });
-  if (again && again.running) r.pass("kill-worker/start-again", "a start again brings the lab up");
-  else r.fail("kill-worker/start-again", `after a start again: ${JSON.stringify(again)}`);
+  if (again && again.running) r.pass("kill-runner-service/start-again", "a start again brings the lab up");
+  else r.fail("kill-runner-service/start-again", `after a start again: ${JSON.stringify(again)}`);
   await invokeWhenIdle(b, "lab_stop", { id, runtime: "DOCKER" });
-  if (labContainers(id).length === 0) r.pass("kill-worker/stopped", "it stops, nothing left");
-  else r.fail("kill-worker/stopped", `left: ${JSON.stringify(labContainers(id))}`);
+  if (labContainers(id).length === 0) r.pass("kill-runner-service/stopped", "it stops, nothing left");
+  else r.fail("kill-runner-service/stopped", `left: ${JSON.stringify(labContainers(id))}`);
 } catch (e) {
-  r.fail("kill-worker", e.message);
+  r.fail("kill-runner-service", e.message);
 } finally {
   await finish(b, proc);
 }

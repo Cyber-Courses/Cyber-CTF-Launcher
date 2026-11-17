@@ -777,7 +777,7 @@ areas:
           unit:
             - src-tauri/src/runtime/lifecycle/tests.rs > provisioning_needs_a_running_lab_and_a_known_machine
             - src-tauri/src/runtime/isothrum/vm_tests.rs > a_vm_lab_is_checked_parked_resumed_reprovisioned_and_stopped
-            - src-tauri/src/commands/labs.rs > machine_names_outside_plain_ascii_are_refused_before_a_worker_starts
+            - src-tauri/src/commands/labs.rs > machine_names_outside_plain_ascii_are_refused_before_an_operation_starts
             - src/features/labs/use-lab-actions.test.tsx > re-runs the setup on one machine or on all of them
             - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > re-runs the setup on all machines by default
           web:
@@ -3986,7 +3986,7 @@ areas:
     title: Diagnostics and logs
     features:
       - id: diagnostics.log-file
-        what: The app writes a log file (and one per lab's deploy worker) in its log folder, at info or CYBERCTF_LOG's level, frontend errors and warnings included, with tokens, passwords and keys redacted so it can be sent to support.
+        what: The app writes one log file (cyberctf.log) in its log folder, at info or CYBERCTF_LOG's level, frontend errors and warnings included, with tokens, passwords and keys redacted so it can be sent to support; a lab's operations are in the runner's journal, read with `cyberctf labs logs`.
         host: true
         tests:
           unit:
@@ -4161,19 +4161,19 @@ areas:
             - resilience-docker-killed-start
             - resilience-vm-killed-start
           desktop:
-            - kill-worker
+            - kill-runner-service
         gaps:
-          desktop: kill-worker kills with SIGKILL, so it skips on Windows
+          desktop: kill-runner-service kills with SIGKILL, so it skips on Windows
           integration: "the scenarios don't check that the tools the killed start ran are ended by the next operation (docs/contributing/testing/resilience.md A4); Isothrum's ledger tests hold it with real child processes"
 
       - id: resilience.window-closed-mid-start
-        what: "The window closed while a lab starts: the start goes on in its worker, and the reopened app shows the lab running (docs/contributing/testing/resilience.md A1)."
+        what: "The window closed while a lab starts: the start goes on in the runner service, and the reopened app shows the lab running (docs/contributing/testing/resilience.md A1)."
         host: true
         tests:
           desktop:
             - close-mid-deploy
         gaps:
-          unit: covered by the deploy worker's design only (it is no child of the window)
+          unit: covered by the runner service's design only (started detached, it is no child of the window)
 
       - id: resilience.double-start
         what: "Start pressed twice: one start runs, the other is refused as already in progress, one copy of the lab (docs/contributing/testing/resilience.md S1)."
@@ -4318,7 +4318,7 @@ known_gaps:
 
   - id: resilience-suite
     what: "The resilience suite: a deploy killed, the app quit, the network or Docker lost mid-operation"
-    status: "the resilience area (docs/contributing/testing/resilience.md) covers machines removed, stopped or killed, the worker killed, a double Start, Stop during Start, Docker stopped and deleted files; sleep, reboot, a full disk, a clock jump, the network cut and a server's credentials changed are rig proposals, not tests yet"
+    status: "the resilience area (docs/contributing/testing/resilience.md) covers machines removed, stopped or killed, the runner service killed, a double Start, Stop during Start, Docker stopped and deleted files; sleep, reboot, a full disk, a clock jump, the network cut and a server's credentials changed are rig proposals, not tests yet"
     features:
       - lab-run.interrupted-deploy-recovery
       - app.quit-guard

@@ -687,7 +687,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn machine_names_outside_plain_ascii_are_refused_before_a_worker_starts() {
+    async fn machine_names_outside_plain_ascii_are_refused_before_an_operation_starts() {
         let t = TestApp::new();
         t.lab("ad", &[]);
         let tools = no_tools();

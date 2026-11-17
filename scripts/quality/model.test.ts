@@ -17,13 +17,9 @@ describe("repoRelative", () => {
   });
 
   it("puts a Windows clippy span (the crate's file, with backslashes) in its module's area", () => {
-    const file = repoRelative(
-      String.raw`C:\lw\src`,
-      path.win32.resolve(String.raw`C:\lw\src`, "src-tauri", String.raw`src\deploy_worker\process.rs`),
-      path.win32,
-    );
-    expect(file).toBe("src-tauri/src/deploy_worker/process.rs");
-    expect(areaOf(file)).toBe("rs:deploy_worker");
+    const file = repoRelative(String.raw`C:\lw\src`, path.win32.resolve(String.raw`C:\lw\src`, "src-tauri", String.raw`src\run_service\host.rs`), path.win32);
+    expect(file).toBe("src-tauri/src/run_service/host.rs");
+    expect(areaOf(file)).toBe("rs:run_service");
   });
 
   it("takes plain Windows paths, absolute or relative to the repository, with either separator", () => {

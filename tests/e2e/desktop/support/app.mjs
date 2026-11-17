@@ -500,8 +500,8 @@ export async function invokeWhenIdle(b, cmd, args, timeoutMs = LAB_START_MS) {
   }
 }
 
-/** Wait until lab `id` has no operation in flight (its launch worker has finished), so a
- *  lifecycle command won't race the launch for the per-lab lock. Polls the app's own `busy_labs`;
+/** Wait until lab `id` has no operation in flight (its launch has finished), so a lifecycle
+ *  command won't race the launch for the lab. Polls the app's own `busy_labs`;
  *  a failed read is tried again, never taken for "settled", and a lab still busy at the deadline
  *  fails the scenario. */
 export async function waitSettled(b, id, timeoutMs = STOP_MS) {
@@ -526,7 +526,7 @@ export async function waitSettled(b, id, timeoutMs = STOP_MS) {
 }
 
 /**
- * Waits until lab `id` (run as `runtime`) is as its launch leaves it: the launch's worker done,
+ * Waits until lab `id` (run as `runtime`) is as its launch leaves it: the launch's operation done,
  * then the attack box "Start it with each lab" (Settings, on by default) adds up, or none to add
  * (the setting off, or no run the launcher reaches), then nothing in flight on the lab. The box is
  * added by the page once the launch's operation is gone (src/features/labs/attack-box-auto.ts), so

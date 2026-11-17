@@ -55,7 +55,7 @@ try {
   const id = raw && raw.split("-isoloom-")[0];
   if (!id) throw new Error(`no local lab id on the Overview:\n${main.slice(0, 400)}`);
 
-  // The launch worker holds the per-lab lock a little past the point the Overview shows "running",
+  // The launch's operation holds the lab a little past the point the Overview shows "running",
   // and the attack box "Start it with each lab" adds once it ends joins the lab after that: the lab
   // read once both are done, so a container the box adds is never taken for the pause's doing.
   await waitLaunchSettled(b, id);

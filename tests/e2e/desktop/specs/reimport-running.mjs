@@ -35,7 +35,7 @@ try {
   const raw = (main.match(/local-[a-z0-9_-]+/) || [])[0];
   const id = raw && raw.split("-isoloom-")[0];
   if (!id) throw new Error(`no local lab id on the Overview:\n${main.slice(0, 400)}`);
-  // The launch's worker done. The attack box "Start it with each lab" attaches next holds the lab
+  // The launch's operation done. The attack box "Start it with each lab" attaches next holds the lab
   // a while: the import below waits for the lab to be free (invokeWhenIdle), as the UI's buttons
   // do, so it is refused (or not) for the lab running, never for being busy.
   await waitSettled(b, id, LAB_START_MS);

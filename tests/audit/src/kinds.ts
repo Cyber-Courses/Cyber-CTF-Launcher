@@ -23,7 +23,7 @@ export const KINDS: Kind[] = [
     tool: "find / registry",
     what: "what the stack registers with the system: the cyberctf:// handler's desktop entry, a launch agent, a RunOnce entry",
   },
-  { kind: "process", on: ALL, tool: "ps", what: "the stack's processes: the app, deploy workers, the screen bridge, Vagrant, VM processes, tunnels" },
+  { kind: "process", on: ALL, tool: "ps", what: "the stack's processes: the app, its runner service, the screen bridge, Vagrant, VM processes, tunnels" },
   { kind: "listening-port", on: ALL, tool: "ss / lsof", what: "listening TCP sockets, with their process" },
   { kind: "hosts-entry", on: ALL, tool: "hosts file", what: "the hosts file's entries" },
   { kind: "route", on: ALL, tool: "ip / netstat", what: "network routes (host routes left out)" },
