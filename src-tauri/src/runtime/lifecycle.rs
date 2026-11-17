@@ -22,8 +22,7 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
     let run = local_run(dirs, lab, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.").await?;
-    // Only what the page is offered for this run ([`controls`]): a pause of containers on Docker
-    // would be carried out as a shut down, and QEMU refuses one.
+    // Only what the page is offered for this run ([`controls`]): QEMU refuses a pause.
     if let Some(why) = park_refusal(mode, run.target(), run.recorded_provider().await?.as_deref()) {
         return Err(Error::Refused(why.into()));
     }
@@ -66,10 +65,9 @@ fn park_refusal(mode: Park, target: Option<lab::Target>, provider: Option<&str>)
     if local_controls(target, provider).contains(&control) {
         return None;
     }
-    // Every form here shuts down: only a pause is refused, or anything of a helper VM's run.
+    // Every form here shuts down: only a pause on QEMU is refused, or anything of a helper VM's run.
     Some(match target {
         None => LEFT_IN_A_HELPER_VM,
-        Some(lab::Target::Docker) => "A container lab on Docker has no state to save: shut it down instead.",
         Some(_) => "QEMU can't pause a lab: shut it down instead.",
     })
 }
@@ -79,12 +77,11 @@ fn park_refusal(mode: Park, target: Option<lab::Target>, provider: Option<&str>)
 const LEFT_IN_A_HELPER_VM: &str =
     "This lab runs Docker inside a VM, as an earlier version of Cyber CTF started it, which this version no longer does: stop it, then start it again.";
 
-/// Whether a run on this machine for `target`, on `provider`, can be paused: its VMs suspend
-/// (a container lab here only stops its containers: there is no state to save, so it is shut
-/// down), unless the provider has no suspend (vagrant-qemu answers "this provider doesn't
-/// support this action").
+/// Whether a run on this machine for `target`, on `provider`, can be paused: its containers
+/// freeze (`compose pause`) and its VMs suspend, unless the provider has no suspend
+/// (vagrant-qemu answers "this provider doesn't support this action").
 fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
-    target != lab::Target::Docker && provider.and_then(Provider::from_id) != Some(Provider::Qemu)
+    target == lab::Target::Docker || provider.and_then(Provider::from_id) != Some(Provider::Qemu)
 }
 
 /// What can be done on a lab where it runs (`host`, on `provider` as its status reads it): pause

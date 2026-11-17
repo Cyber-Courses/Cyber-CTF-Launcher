@@ -56,7 +56,7 @@ async fn checks_pass(r: &Run, f: &mut Vec<String>) {
 /// Park the lab (its containers stopped, kept), then resume it; it reads as parked between, and
 /// runs again after.
 async fn park_and_resume(r: &Run, f: &mut Vec<String>) {
-    let parked = r.park(&mut log(&r.id)).await;
+    let parked = r.park(crate::runtime::Park::Shutdown, &mut log(&r.id)).await;
     check(parked.is_ok(), format!("{}: it parks ({:?})", r.id, parked.err()), f);
     let s = r.status().await;
     check(s.as_ref().is_ok_and(|s| !s.running && s.parked.is_some()), format!("{}: parked, it reads as parked", r.id), f);

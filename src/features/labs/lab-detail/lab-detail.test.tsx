@@ -237,6 +237,25 @@ describe("LabDetail", () => {
     expect(h.onResume).toHaveBeenCalled();
   });
 
+  it("says a paused container lab is paused, and offers to resume it", async () => {
+    installTauri(idle);
+    const user = userEvent.setup();
+    // The runner reads a frozen container as stopped, as it reads a suspended VM.
+    const h = renderDetail({ status: status({ running: false, parked: "pause", url: null, machines: [machine("api", "stopped")] }) });
+    await flush();
+    // Its header says Paused, as a paused VM lab's does, and its diagram stays.
+    expect(screen.getAllByText("Paused").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Shut down")).toBeNull();
+    await user.click(
+      must(
+        screen.getAllByRole("button").find((b) => /resume/i.test(b.textContent)),
+        "a Resume button",
+      ),
+    );
+    await flush();
+    expect(h.onResume).toHaveBeenCalled();
+  });
+
   it("asks a signed-out player to sign in", async () => {
     installTauri();
     renderDetail({ loggedIn: false, status: status({ running: false, machines: [], url: null }) });

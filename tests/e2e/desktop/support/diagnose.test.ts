@@ -134,7 +134,7 @@ describe("operationEnd", () => {
 
   it("says it went through, or why it failed", () => {
     expect(operationEnd(op, [started, frame(2, { kind: "ended", operation: op, labId: ID, op: "launch", error: null })])).toEqual({ ok: true });
-    const error = { code: "refused", message: "A container lab on Docker has no state to save: shut it down instead." };
+    const error = { code: "refused", message: "QEMU can't pause a lab: shut it down instead." };
     expect(operationEnd(op, [started, frame(2, { kind: "ended", operation: op, labId: ID, op: "pause", error })])).toEqual({ err: error.message });
   });
 });

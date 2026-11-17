@@ -1,13 +1,15 @@
-// Normal lifecycle: a running container lab shuts down and resumes. Launch the local lab, confirm it
-// runs and wait until it is as its launch leaves it (the attack box "Start it with each lab" adds
-// up too); a Pause is refused, as the lab page offers none for containers on Docker (they have no
-// state to save: lifecycle's park_refusal), and changes nothing of the lab, each container as it
-// was; lab_park{shutdown} then leaves nothing of the lab running (Docker stops the containers,
-// keeping them), lab_resume runs it again, then stop. Drives the real lab_park / lab_resume
-// commands (the lab page's Shut down / Resume) against a local lab, which has no detail-page
-// buttons of its own.
+// Normal lifecycle: a running container lab pauses and resumes, then shuts down and resumes. Launch
+// the local lab, confirm it runs and wait until it is as its launch leaves it (the attack box "Start
+// it with each lab" adds up too). lab_park{pause} freezes every container that ran (Docker reads
+// them `paused`, none running) and the lab reads paused, still after the app is quit and opened
+// again; lab_resume brings back the same containers, running as before, and a shell in the attack
+// box answers. lab_park{shutdown} then leaves nothing of the lab running (Docker stops the
+// containers, keeping them), lab_resume runs it again, then stop. Drives the real lab_park /
+// lab_resume commands (the lab page's Pause, Shut down and Resume) against a local lab, which has
+// no detail-page buttons of its own.
 import {
   containersChanged,
+  docker,
   eventually,
   finish,
   goTo,
@@ -28,10 +30,19 @@ const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
 
 // The lab has one-shot init/probe containers that exit by design, so count running containers
-// rather than expect them all running: park leaves none running (stopped or paused), resume runs
+// rather than expect them all running: park leaves none running (paused or stopped), resume runs
 // the service container(s) again.
 const states = (id) => labContainers(id).map((c) => c.state);
 const runningCount = (s) => s.filter((x) => x === "running").length;
+/** Why `after` isn't `before` paused (each container that ran now `paused`, the others as they
+ *  were, none added or gone); null when it is. */
+const notAsPaused = (before, after) =>
+  containersChanged(
+    before.map((c) => (c.state === "running" ? { ...c, state: "paused" } : c)),
+    after,
+  );
+/** Lab `id`'s containers in `cs`, each as `<service> <state>`. */
+const seen = (id, cs) => cs.map((c) => `${c.name.replace(`cyberctf-${id}-`, "")} ${c.state}`).join(", ");
 
 let proc;
 let b;
@@ -46,29 +57,45 @@ try {
 
   // The launch worker holds the per-lab lock a little past the point the Overview shows "running",
   // and the attack box "Start it with each lab" adds once it ends joins the lab after that: the lab
-  // read once both are done, so a container the box adds is never taken for the refusal's doing.
+  // read once both are done, so a container the box adds is never taken for the pause's doing.
   await waitLaunchSettled(b, id);
   const before = labContainers(id);
   if (runningCount(before.map((c) => c.state)) === 0) throw new Error(`no running container before park: ${JSON.stringify(before)}`);
 
-  const refusal = await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "pause" }).then(
-    () => null,
-    (e) => e.message,
-  );
-  const afterPause = labContainers(id);
-  const changed = containersChanged(before, afterPause);
-  const seen = afterPause.map((c) => `${c.name.replace(`cyberctf-${id}-`, "")} ${c.state}`).join(", ");
-  const refusedAsPause = refusal !== null && /shut it down instead/i.test(refusal);
+  // Pause: every container that ran is frozen, none stopped or removed, and the lab reads paused.
+  await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "pause" });
+  let paused = labContainers(id);
+  await eventually(() => runningCount((paused = labContainers(id)).map((c) => c.state)) === 0, 15000, 1000);
+  const frozen = notAsPaused(before, paused);
+  const read = await invokeWhenIdle(b, "lab_status", { id, runtime: "DOCKER" });
   r.check(
-    "pause-refused",
-    refusedAsPause && changed === null,
-    refusal === null
-      ? `a Pause of containers on Docker was carried out: ${seen}`
-      : !refusedAsPause
-        ? `refused, but not as a Pause of containers on Docker is: ${refusal}`
-        : changed
-          ? `refused (${refusal}), yet the lab changed: ${changed}`
-          : `refused (${refusal}); nothing of the lab changed: ${seen}`,
+    "pause",
+    frozen === null && read.parked === "pause" && !read.running,
+    frozen ?? `each container that ran is paused; the lab reads ${read.running ? "running" : `parked (${read.parked})`}: ${seen(id, paused)}`,
+  );
+
+  // Quit and open the app again: the lab still reads paused, its containers frozen.
+  await finish(b, proc);
+  ({ proc, b } = await openApp());
+  const again = await invokeWhenIdle(b, "lab_status", { id, runtime: "DOCKER" });
+  const still = notAsPaused(before, labContainers(id));
+  r.check(
+    "pause-restart",
+    still === null && again.parked === "pause" && !again.running,
+    still ?? `after the app opened again the lab reads ${again.running ? "running" : `parked (${again.parked})`}`,
+  );
+
+  // Resume: the same containers run again, as they were, and a shell in the attack box answers.
+  await invokeWhenIdle(b, "lab_resume", { id, runtime: "DOCKER" });
+  let back = labContainers(id);
+  await eventually(() => containersChanged(before, (back = labContainers(id))) === null, 15000, 1000);
+  const changed = containersChanged(before, back);
+  const box = before.find((c) => /-attackbox-/.test(c.name) && c.state === "running");
+  const shell = box ? (docker("exec", box.name, "sh", "-c", "echo shell-ok") ?? "").trim() : "no attack box";
+  r.check(
+    "pause-resume",
+    changed === null && (!box || shell === "shell-ok"),
+    changed ? `resumed, yet the lab isn't as it was: ${changed}` : `resumed as it was (${seen(id, back)}); the attack box's shell: ${shell}`,
   );
 
   await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "shutdown" });

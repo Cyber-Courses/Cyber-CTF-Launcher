@@ -71,8 +71,8 @@ export const deriveState = (p: Partial<LabStateInput>) =>
     ...p,
   });
 
-/** What the backend offers on a container lab here: shut down only. */
-const CONTAINERS_HERE: LabStatus["controls"] = ["shutdown"];
+/** What the backend offers on a container lab here: pause (its containers frozen) or shut down. */
+const CONTAINERS_HERE: LabStatus["controls"] = ["pause", "shutdown"];
 
 /** A Docker lab up on this machine: `machines` on its default network (10.42.0.0/24), served on
  *  port 8080, `p` over it. */

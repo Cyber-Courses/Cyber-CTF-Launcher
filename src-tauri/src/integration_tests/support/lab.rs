@@ -53,9 +53,10 @@ impl Run {
         isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.check().await
     }
 
-    /// Parks the lab (its containers stopped, kept), as the lab page's Shut down does.
-    pub(crate) async fn park(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.park(crate::runtime::Park::Shutdown, log).await
+    /// Parks the lab in `mode`, as the lab page's Pause (its containers frozen) or Shut down (its
+    /// containers stopped, kept) does.
+    pub(crate) async fn park(&self, mode: crate::runtime::Park, log: &mut impl FnMut(String)) -> Result<()> {
+        isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.park(mode, log).await
     }
 
     /// Starts the parked lab again, as it was.

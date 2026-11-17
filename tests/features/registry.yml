@@ -709,7 +709,7 @@ areas:
           integration: VM labs only
 
       - id: lab-run.pause-resume
-        what: Pause (state saved) or shut down a running lab here, then Resume it as it was.
+        what: Pause (a VM lab's state saved, a container lab's containers frozen) or shut down a running lab here, then Resume it as it was.
         providers:
           - docker
           - libvirt
@@ -726,17 +726,23 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/isothrum/tests.rs > a_lab_parks_and_resumes
+            - src-tauri/src/runtime/isothrum/tests.rs > a_container_lab_pauses_and_resumes_as_it_was
             - src-tauri/src/runtime/isothrum/tests.rs > a_parked_lab_whose_containers_are_gone_offers_a_fresh_start
             - src-tauri/src/runtime/lifecycle/tests.rs > a_lab_is_parked_only_in_a_mode_its_page_is_offered
-            - src-tauri/src/runtime/lifecycle/tests.rs > a_pause_of_containers_on_docker_is_refused_before_anything_runs
+            - src-tauri/src/runtime/lifecycle/tests.rs > the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs
+            - src-tauri/src/runtime/lifecycle/tests.rs > a_pause_on_qemu_is_refused_before_anything_runs
             - src-tauri/src/runtime/lifecycle/tests.rs > a_cloud_lab_is_never_parked
             - src/features/labs/use-lab-actions.test.tsx > pauses and shuts down a lab
+            - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > opens a running lab's URL, pauses or shuts it down, and asks before removing it
+            - src/features/labs/lab-detail/lab-detail.test.tsx > says a paused container lab is paused, and offers to resume it
           web:
             - "vm-labs.spec.ts > on this machine: shut down powers the VMs off, Resume boots them again"
             - "vm-labs.spec.ts > on this machine: up, pause, resume, provision one machine again, stop"
           desktop:
             - park-resume
-            - park-resume/pause-refused
+            - park-resume/pause
+            - park-resume/pause-restart
+            - park-resume/pause-resume
             - lab-actions/pause
             - lab-actions/resume
           integration:
@@ -750,7 +756,7 @@ areas:
           - vm
           - desktop-e2e
         gaps:
-          desktop: "container labs only, through the commands (park-resume: a Pause refused, Shut down and Resume; needs CYBERCTF_TEST_LOCAL_LAB); lab-actions' pause/resume skip on a container lab, whose page offers no Pause, and no spec presses Shut down on the page or pauses a VM lab"
+          desktop: "container labs only: park-resume through the commands (Pause, the app opened again, Resume; Shut down and Resume; needs CYBERCTF_TEST_LOCAL_LAB), lab-actions on the page (Pause and Resume, needs a signed-in account); no spec presses Shut down on the page or pauses a VM lab"
           integration: no park/resume for per-machine; QEMU's pause refusal untested on a real host
 
       - id: lab-run.provision-again
