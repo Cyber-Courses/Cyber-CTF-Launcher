@@ -42,9 +42,9 @@ pub fn app_cache_dir(identifier: &str) -> Option<PathBuf> {
 /// Merges the `PATH` an installer has since written to the registry (machine, then user), and
 /// the tool folders that exist now, into this process's `PATH` (Windows; nothing to merge
 /// elsewhere). Children inherit it, so a restart from the app keeps it too. Cheap (two registry
-/// reads): call before each machine check.
-pub async fn refresh() {
-    let Some(dirs) = tool_path::refreshed(&crate::runtime::providers::machine(), &Env::here()).await else { return };
+/// reads, through `cx`'s runner): call before each machine check.
+pub async fn refresh(cx: &isothrum_machine::Context) {
+    let Some(dirs) = tool_path::refreshed(cx, &Env::here()).await else { return };
     #[cfg(windows)]
     if let Ok(path) = std::env::join_paths(dirs) {
         log::info!("PATH refreshed from the registry");
