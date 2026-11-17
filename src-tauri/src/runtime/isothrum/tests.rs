@@ -199,7 +199,7 @@ async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
 #[tokio::test]
 async fn a_container_lab_started_on_an_engine_stays_on_it_for_its_page_and_its_stop() {
     // The player chose an engine other than the current one: the runner records it with the run,
-    // so the page's reads and the stop, which name none, go to it too (no marker in the lab).
+    // so the page's reads and the stop, which name none, go to it too.
     let f = Fixture::new();
     let _tools = Tools::strict_rules(&[]);
     let run = f.run();
@@ -210,31 +210,6 @@ async fn a_container_lab_started_on_an_engine_stays_on_it_for_its_page_and_its_s
     run.down(&mut |_| {}).await.unwrap();
     let docker: Vec<_> = f.fake.calls().into_iter().filter(|c| c.program == "docker" && c.args.iter().any(|a| a == "compose")).collect();
     assert!(docker.iter().any(|c| c.args.iter().any(|a| a == "down")), "it was taken down");
-    for call in &docker {
-        assert_eq!(call.args[..2], ["--context", "orbstack"], "{}", call.line());
-    }
-    assert!(!f.home.dir.join(".cyberctf-engine").exists(), "nothing of it in the lab's folder");
-}
-
-#[tokio::test]
-async fn a_lab_an_earlier_version_started_on_an_engine_keeps_it_and_the_runner_records_it() {
-    // An earlier version noted the engine beside the lab (`.cyberctf-engine`); the run it started
-    // records none. The note's engine reaches every call until an operation has the runner record
-    // it; then the note goes, and the run keeps going there.
-    let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
-    f.run().up(on_own_ports(&launch_env()), None, &mut |_| {}).await.unwrap();
-    std::fs::write(f.home.dir.join(".cyberctf-engine"), "orbstack\n").unwrap();
-    let before = f.fake.calls().len();
-    let run = f.run();
-    run.status().await.unwrap();
-    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
-    assert!(!f.home.dir.join(".cyberctf-engine").exists(), "the note goes once the runner records the engine");
-    let record = crate::testing::runner::run_record(&f.home.runner(), "cyberctf-web");
-    assert_eq!(record["docker_context"], "orbstack", "{record}");
-    f.run().resume(&mut |_| {}).await.unwrap();
-    let docker: Vec<_> = f.fake.calls().into_iter().skip(before).filter(|c| c.program == "docker" && c.args.iter().any(|a| a == "compose")).collect();
-    assert_ne!(docker.len(), 0, "compose ran");
     for call in &docker {
         assert_eq!(call.args[..2], ["--context", "orbstack"], "{}", call.line());
     }

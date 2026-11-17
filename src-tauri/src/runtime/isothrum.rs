@@ -25,7 +25,6 @@ pub(crate) mod errors;
 mod esxi;
 mod gone;
 mod local;
-mod old_engine;
 #[cfg(feature = "cloud-services")]
 mod own_module;
 mod progress;

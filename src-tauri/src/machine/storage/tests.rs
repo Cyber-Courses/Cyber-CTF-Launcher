@@ -1,5 +1,5 @@
-//! Storage over the runner's record: what earlier launchers recorded taken in once, the attack
-//! box's images by name, one row per image, and a clean-up that removes only the record's.
+//! Storage over the runner's record: the attack box's images by name, one row per image, and a
+//! clean-up that removes only the record's.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -9,8 +9,8 @@ use isothrum_runner::fake::{Call, FakeProcesses, Reply};
 use super::*;
 use crate::testing::test_app::TestApp;
 
-/// Docker and Vagrant on this machine: `nginx:1.27` (1000 bytes) as 1.9 recorded it, `redis:7`
-/// pulled again since (another id than recorded: the player's now), the attack box's image (3000
+/// Docker and Vagrant on this machine: `nginx:1.27` (1000 bytes) as the runner recorded it,
+/// `redis:7` pulled again since (another id than recorded: the player's now), the attack box's image (3000
 /// bytes, also tagged as a digest) and the player's own Kali; Vagrant holds `generic/alpine319`.
 /// What `image rm` untags is gone after.
 fn machine(removed: &Mutex<BTreeSet<String>>, call: &Call) -> Reply {
@@ -55,23 +55,25 @@ fn extra() -> Vec<String> {
 }
 
 #[tokio::test]
-async fn storage_lists_and_cleans_only_the_apps_downloads_taken_in_from_what_earlier_launchers_recorded() {
+async fn storage_lists_and_cleans_only_the_apps_downloads() {
     let (t, fake) = app();
-    let earlier = r#"{"images": [{"reference": "nginx:1.27", "id": "sha256:nginx"}, {"reference": "redis:7", "id": "sha256:old"}],
-        "boxes": [{"name": "generic/alpine319", "provider": "virtualbox", "version": "4"}]}"#;
-    std::fs::write(t.data().join("storage.json"), earlier).unwrap();
-    std::fs::write(t.data().join("storage.json.lock"), "").unwrap();
+    let home = crate::runtime::paths::runner_home(&t.dirs()).unwrap();
+    let recorded = vec![
+        DownloadToAdopt::Image { reference: "nginx:1.27".into(), image_id: Some("sha256:nginx".into()) },
+        DownloadToAdopt::Image { reference: "redis:7".into(), image_id: Some("sha256:old".into()) },
+        DownloadToAdopt::Box { name: "generic/alpine319".into(), provider: "virtualbox".into(), version: "4".into() },
+    ];
+    remote::adopt_downloads(&home, recorded).await.unwrap();
 
     let listed = machine_storage(t.dirs(), extra()).await.unwrap();
     let names = |items: &[StoredItem]| items.iter().map(|i| (i.name.clone(), i.bytes)).collect::<Vec<_>>();
     // Two references to the attack box's image are one download; redis:7 names another image now.
     assert_eq!(names(&listed.images), [("cyberctf/attack-box:latest".to_owned(), 3000), ("nginx:1.27".to_owned(), 1000)]);
-    assert!(!t.data().join("storage.json").exists() && !t.data().join("storage.json.lock").exists(), "taken in once");
 
     assert_eq!(machine_storage_clean(t.dirs(), extra()).await.unwrap(), 4000);
     let removals: Vec<String> = fake.made("docker").iter().filter(|c| c.args.iter().any(|a| a == "rm")).filter_map(|c| c.args.last().cloned()).collect();
     assert!(removals.iter().all(|r| r.starts_with("cyberctf/attack-box") || r == "nginx:1.27"), "only the app's: {removals:?}");
-    assert!(fake.made("vagrant").iter().any(|c| c.args.starts_with(&["box".to_owned(), "remove".to_owned()])), "the box it took in too");
+    assert!(fake.made("vagrant").iter().any(|c| c.args.starts_with(&["box".to_owned(), "remove".to_owned()])), "the recorded box too");
     let after = machine_storage(t.dirs(), Vec::new()).await.unwrap();
     assert!(after.images.is_empty() && after.boxes.is_empty());
 }

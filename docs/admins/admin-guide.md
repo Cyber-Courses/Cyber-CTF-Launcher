@@ -328,7 +328,6 @@ In the app data folder:
 | `offline/`                  | which lab, runtime, repository and commit each lab last started from, for an offline start (no tokens)                                                                                                 |
 | `deploys/`                  | the jobs of the deploy workers (a deploy keeps running if the window closes), each with its output (`<lab>.log`, the run before kept as `<lab>.previous.log`); a job carries the lab's launch token    |
 | `installed-tools.json`      | the tools the launcher installed, so Settings > Maintenance removes only those                                                                                                                         |
-| `storage.json`              | what a launcher up to 1.9 downloaded: handed to the Isothrum runner, which records what the launcher downloads, at the first Storage listing, then removed                                             |
 | `terraform-plugins/`        | an older Terraform provider cache, cleanable from the Storage page                                                                                                                                     |
 | `tools/ovftool/`            | VMware's OVF Tool, when the user placed a download of it from the ESXi setup ("Use a downloaded OVF Tool…"): a copy of the unpacked folder, on the app's `PATH`                                        |
 

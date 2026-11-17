@@ -1,13 +1,9 @@
 //! What Cyber CTF stores on this machine, for the Machine page: the container images and
 //! Vagrant boxes it downloaded itself, with sizes, and a clean-up that removes only those. The
 //! runner records what its runs fetch and removes only that (`Runner::downloads`); the app adds to
-//! its record what earlier launchers recorded themselves ([`legacy`]) and the attack box's images
-//! (see [`ATTACK_BOX_REPOSITORY`]). An image or box the player had before, or pulled for their own
+//! its record the attack box's images (see [`ATTACK_BOX_REPOSITORY`]). An image or box the player had before, or pulled for their own
 //! projects, is never listed nor removed, even when a lab uses the same one. Images still used by
 //! a container, or boxes used by a VM, are left alone (Docker and Vagrant refuse).
-
-mod legacy;
-pub(crate) mod record;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -80,11 +76,9 @@ fn storage_of(downloads: &[Download]) -> Storage {
     Storage { images, boxes: boxes.into_iter().map(|(name, bytes)| StoredItem { name, bytes }).collect() }
 }
 
-/// What the runner of `home` records, once what earlier launchers recorded and the attack box's
-/// images of `extra_images` are in its record. An adoption that fails is logged: what it would
-/// add stays where it is, for the next listing.
-async fn recorded(dirs: &AppDirs, home: &Path, extra_images: &[String]) -> Result<Vec<Download>> {
-    legacy::take_in(dirs, home).await;
+/// What the runner of `home` records, once the attack box's images of `extra_images` are in its
+/// record. An adoption that fails is logged: it is tried again at the next listing.
+async fn recorded(home: &Path, extra_images: &[String]) -> Result<Vec<Download>> {
     let attack_box = attack_box_images(extra_images);
     if !attack_box.is_empty()
         && let Err(e) = remote::adopt_downloads(home, attack_box).await
@@ -98,7 +92,7 @@ async fn recorded(dirs: &AppDirs, home: &Path, extra_images: &[String]) -> Resul
 /// repository count (see [`attack_box_images`]), any other is the player's unless recorded.
 pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result<Storage> {
     let home = crate::runtime::paths::runner_home(&dirs)?;
-    Ok(storage_of(&recorded(&dirs, &home, &extra_images).await?))
+    Ok(storage_of(&recorded(&home, &extra_images).await?))
 }
 
 /// Removes what `machine_storage` lists: every download the runner records, each image reference
@@ -106,7 +100,7 @@ pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result
 /// `--all`). Ones still in use stay. Returns the bytes freed.
 pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>) -> Result<u64> {
     let home = crate::runtime::paths::runner_home(&dirs)?;
-    let before = storage_of(&recorded(&dirs, &home, &extra_images).await?);
+    let before = storage_of(&recorded(&home, &extra_images).await?);
     for removal in remote::remove_downloads(&home, DownloadsToRemove::All).await? {
         if let RemovalOutcome::Failed { reason } = &removal.outcome {
             log::warn!("Storage's clean-up kept {:?}: {reason}", removal.download.map(|d| d.item));

@@ -66,6 +66,11 @@ const MIGRATIONS: &[&str] = &[
     "
     DROP TABLE run_values;
     ",
+    // 4: the runner's record is the only record of the app's downloads.
+    "
+    DROP TABLE storage_images;
+    DROP TABLE storage_boxes;
+    ",
 ];
 
 /// The schema version this build writes.
