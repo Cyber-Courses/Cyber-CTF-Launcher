@@ -146,6 +146,19 @@ pub(crate) use remote::{Others, adopt_downloads, downloads, public_key, records,
 #[cfg(test)]
 pub(crate) use remote::{stop_service, unreachable as service_unreachable};
 
+/// The address blocks Docker's networks hold now, but lab `id`'s own (left from an earlier run):
+/// what its instance must stay clear of, read by `home`'s runner. Empty when Docker can't say.
+pub(crate) async fn address_blocks_in_use(home: &Path, id: &str) -> Vec<String> {
+    let blocks = match run_name(id) {
+        Ok(run) => remote::address_blocks_in_use(home, &run).await,
+        Err(e) => Err(e),
+    };
+    blocks.unwrap_or_else(|e| {
+        log::info!("the address blocks Docker's networks hold can't be read: {e}");
+        Vec::new()
+    })
+}
+
 /// Lab `id`'s run's name (`cyberctf-<id>`).
 fn run_name(id: &str) -> Result<RunName> {
     RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))

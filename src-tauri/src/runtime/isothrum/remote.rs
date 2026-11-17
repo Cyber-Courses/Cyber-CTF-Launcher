@@ -373,6 +373,21 @@ pub(crate) async fn adopt_downloads(home: &Path, adopted: Vec<isothrum_runner::D
     .map_err(Failure::into_error)
 }
 
+/// The IPv4 address blocks the networks of the engine hold, as `home`'s runner reads them, but
+/// those of run `except`'s own.
+///
+/// # Errors
+///
+/// No service can be reached, Docker is missing, or the engine can't say.
+pub(crate) async fn address_blocks_in_use(home: &Path, except: &RunName) -> Result<Vec<String>> {
+    call(home, |client| {
+        let except = except.clone();
+        async move { client.address_blocks_in_use(Some(except), None).await }
+    })
+    .await
+    .map_err(Failure::into_error)
+}
+
 /// The recorded runs of `home`'s service past their lifetime that may still hold something.
 ///
 /// # Errors

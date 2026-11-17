@@ -91,7 +91,8 @@ async fn a_refused_website_launch_leaves_the_lab_running_on_the_players_account(
     t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
     let aws = t.host("aws1", "aws", json!({ "useCliCreds": true }));
     crate::runtime::test_support::record_run(t.data(), id, Some(&aws), "cloud-docker", "ready");
-    let tools = crate::platform::exec::fake::Tools::strict_rules(&[("docker network ls", crate::platform::exec::fake::ok(""))]);
+    let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+    crate::testing::service::serve_silent(&crate::runtime::paths::runner_home(&dirs).unwrap());
     assert!(crate::runtime::lab_present(&dirs, id).await);
     let err = run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
     assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");

@@ -140,7 +140,8 @@ impl Slot {
     async fn of(dirs: &AppDirs, lab_id: &str) -> Result<Slot> {
         let labs = crate::runtime::paths::labs_root(dirs)?;
         let dir = labs.join(lab_id);
-        Ok(Slot { labs, dir, in_use: runtime::subnets_in_use(lab_id).await })
+        let in_use = crate::runtime::isothrum::address_blocks_in_use(&crate::runtime::paths::runner_home(dirs)?, lab_id).await;
+        Ok(Slot { labs, dir, in_use })
     }
 }
 

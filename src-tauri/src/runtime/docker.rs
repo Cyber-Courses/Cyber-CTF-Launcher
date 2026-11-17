@@ -10,4 +10,4 @@ mod inspect;
 
 pub use check::{Check, CheckResult};
 pub use compose::{LEGACY_ATTACK_BOX_SUFFIXES, lab_of_project, legacy_attack_box_names, project};
-pub use inspect::{answers, subnets_in_use};
+pub use inspect::answers;
