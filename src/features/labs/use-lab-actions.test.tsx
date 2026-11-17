@@ -364,11 +364,11 @@ describe("useLabActions: launch", () => {
 
   describe("started again with nothing newly picked", () => {
     it("goes back where it was last started: that placement sent as the player's choice", async () => {
-      setLastRun("act-again-vms", { kind: "vms", provider: "libvirt" });
-      setLastRun("act-again-pve", { kind: "server", host: "pve" });
       const { calls, hook } = setup({
         lab_placement: (a) => (a?.id === "act-again-pve" ? { kind: "server", host: "pve" } : { kind: "vms", provider: "libvirt" }),
       });
+      setLastRun("act-again-vms", { kind: "vms", provider: "libvirt" });
+      setLastRun("act-again-pve", { kind: "server", host: "pve" });
       await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-again-vms" }, undefined, undefined));
       await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-again-pve" }, undefined, undefined));
       expect(choiceSent(calls, "act-again-vms")).toEqual({
@@ -388,10 +388,10 @@ describe("useLabActions: launch", () => {
     });
 
     it("keeps a container lab's form, engine and ports, without asking the ports again", async () => {
+      const { calls, hook } = setup();
       setLastRun("act-again-docker", { kind: "docker", engine: "colima", defaultPorts: true });
       setLastRun("act-again-pervm", { kind: "vms", provider: "qemu" });
       setLastRun("act-again-cloud", { kind: "cloud", account: "aws1", perMachine: true });
-      const { calls, hook } = setup();
       for (const id of ["act-again-docker", "act-again-pervm", "act-again-cloud"]) await act(() => hook.result.current.launch({ ...dockerLab, id }));
       expect(choiceSent(calls, "act-again-docker")).toEqual({
         here: true,
@@ -411,16 +411,16 @@ describe("useLabActions: launch", () => {
     });
 
     it("is refused, launching nothing, when the rule says it can't run there now", async () => {
-      setLastRun("act-again-gone", { kind: "vms", provider: "parallels" });
       const { calls, hook } = setup({ lab_placement: () => rejectWith({ code: "noHypervisor", message: "No hypervisor is ready" }) });
+      setLastRun("act-again-gone", { kind: "vms", provider: "parallels" });
       await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-again-gone" }, undefined, undefined));
       expect(choiceSent(calls)).toMatchObject({ here: true, provider: "parallels" });
       expect(commands(calls)).not.toContain("lab_launch");
     });
 
     it("notes where each launch went; a pick made anew still wins over it", async () => {
-      setLastRun("act-again-pick", { kind: "server", host: "pve" });
       const { calls, hook } = setup({ lab_placement: () => ({ kind: "vms", provider: "virtualbox" }) });
+      setLastRun("act-again-pick", { kind: "server", host: "pve" });
       await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-again-pick" }, null, undefined));
       expect(choiceSent(calls)).toMatchObject({ here: true, host: null });
       expect(getLastPlace("act-again-pick")).toEqual({ kind: "vms", provider: "virtualbox" });
