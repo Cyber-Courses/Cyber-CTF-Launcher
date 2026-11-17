@@ -5,6 +5,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
+use crate::error::Code;
 
 /// Two self-signed test certificates (EC P-256, made for these tests only, `CN=pve-test-a` and
 /// `-b`), and their keys (PKCS#8), as DER in base64.
@@ -70,26 +71,7 @@ pub(crate) async fn server_a() -> (u16, Arc<std::sync::atomic::AtomicUsize>) {
     server(CERT_A, PKCS8_A).await
 }
 
-fn url(port: u16) -> String {
-    format!("https://127.0.0.1:{port}/api2/json/version")
-}
-
 const LIMIT: Duration = Duration::from_secs(10);
-
-#[test]
-fn a_fingerprint_reads_as_the_server_page_shows_it_in_any_case_or_spacing() {
-    let a = Fingerprint::of(&der(CERT_A));
-    assert_eq!(a.to_string(), FINGERPRINT_A);
-    assert_eq!(Fingerprint::parse(&FINGERPRINT_A.to_lowercase()), Some(a));
-    assert_eq!(Fingerprint::parse(&FINGERPRINT_A.replace(':', "")), Some(a));
-    assert_eq!(Fingerprint::parse(&FINGERPRINT_A.replace(':', " ")), Some(a));
-    for bad in ["", "4F:1F", &FINGERPRINT_A.replace("4F", "ZZ"), &format!("{FINGERPRINT_A}:00"), "é".repeat(32).as_str()] {
-        assert_eq!(Fingerprint::parse(bad), None, "{bad}");
-    }
-    assert_eq!(serde_json::to_value(a).unwrap(), serde_json::json!(FINGERPRINT_A));
-    assert_eq!(serde_json::from_value::<Fingerprint>(serde_json::json!(FINGERPRINT_A.to_lowercase())).unwrap(), a);
-    assert!(serde_json::from_value::<Fingerprint>(serde_json::json!("nope")).is_err());
-}
 
 #[tokio::test]
 async fn the_certificate_is_read_for_confirmation_without_sending_a_request() {
@@ -99,48 +81,23 @@ async fn the_certificate_is_read_for_confirmation_without_sending_a_request() {
 }
 
 #[tokio::test]
-async fn only_the_confirmed_certificate_is_accepted() {
+async fn a_refused_console_says_the_certificate_and_the_server() {
     let a = Fingerprint::parse(FINGERPRINT_A).unwrap();
-    let (port, requests) = server(CERT_A, PKCS8_A).await;
-    // Confirmed: the request goes through.
-    let pinned = Client::new(Trust::Pinned(Some(a)), LIMIT).unwrap();
-    assert_eq!(pinned.http.get(url(port)).send().await.unwrap().text().await.unwrap(), "ok");
-    assert_eq!(pinned.refused(), None);
-    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 1);
-    // None confirmed yet: refused, the certificate offered said.
-    let unconfirmed = Client::new(Trust::Pinned(None), LIMIT).unwrap();
-    assert!(unconfirmed.http.get(url(port)).header("Authorization", "PVEAPIToken=x").send().await.is_err());
-    assert_eq!(unconfirmed.refused(), Some(Refusal::Unconfirmed { presented: a }));
-    // Another server at the same address: refused, both certificates said.
-    let (other, other_requests) = server(CERT_B, PKCS8_B).await;
-    let changed = Client::new(Trust::Pinned(Some(a)), LIMIT).unwrap();
-    assert!(changed.http.get(url(other)).send().await.is_err());
+    let (other, requests) = server(CERT_B, PKCS8_B).await;
+    let changed = Client::upgrade(Trust::Pinned(Some(a))).unwrap();
+    assert!(changed.http.get(format!("https://127.0.0.1:{other}/")).send().await.is_err());
     let b = Fingerprint::of(&der(CERT_B));
-    assert_eq!(changed.refused(), Some(Refusal::Changed { pinned: a, presented: b }));
-    assert_eq!(
-        requests.load(std::sync::atomic::Ordering::SeqCst) + other_requests.load(std::sync::atomic::Ordering::SeqCst),
-        1,
-        "no refused request reached a server"
-    );
-    // The error says the server and both fingerprints, in its code.
+    assert_eq!(changed.refused().map(Refusal::from), Some(Refusal::Changed { pinned: a, presented: b }));
+    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0, "nothing reached the server");
     let said = Refusal::Changed { pinned: a, presented: b }.error("Garage Proxmox");
     assert!(matches!(said.code(), Code::TlsChanged { ref server, ref pinned, .. } if server == "Garage Proxmox" && pinned == FINGERPRINT_A), "{said:?}");
+    let new = refused(isothrum_runner::tls::Refusal::Unconfirmed { presented: a }, "Garage Proxmox");
+    assert!(matches!(new.code(), Code::TlsUnconfirmed { ref presented, .. } if presented == FINGERPRINT_A), "{new:?}");
 }
 
-#[tokio::test]
-async fn a_server_replaying_the_confirmed_certificate_without_its_key_is_refused() {
+#[test]
+fn a_saved_pin_reads_as_it_was_written() {
     let a = Fingerprint::parse(FINGERPRINT_A).unwrap();
-    // Certificate A, its handshake signed with B's key: the fingerprint matches, the proof doesn't.
-    let (port, requests) = server(CERT_A, PKCS8_B).await;
-    let pinned = Client::new(Trust::Pinned(Some(a)), LIMIT).unwrap();
-    assert!(pinned.http.get(url(port)).send().await.is_err());
-    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0);
-}
-
-#[tokio::test]
-async fn a_server_trusted_by_the_system_is_not_pinned() {
-    let (port, _) = server(CERT_A, PKCS8_A).await;
-    let system = Client::new(Trust::System, LIMIT).unwrap();
-    assert!(system.http.get(url(port)).send().await.is_err(), "a self-signed certificate isn't trusted by the system");
-    assert_eq!(system.refused(), None, "no pin to say anything about");
+    assert_eq!(serde_json::to_value(a).unwrap(), serde_json::json!(FINGERPRINT_A));
+    assert_eq!(serde_json::from_value::<Fingerprint>(serde_json::json!(FINGERPRINT_A.to_lowercase())).unwrap(), a);
 }

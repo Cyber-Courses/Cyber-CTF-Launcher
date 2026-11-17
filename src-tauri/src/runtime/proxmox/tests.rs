@@ -19,6 +19,10 @@ fn a_login_without_a_realm_is_on_pam() {
 
 #[test]
 fn recognises_token_ids() {
+    let pattern = regex::Regex::new(TOKEN_PATTERN).unwrap();
+    for login in ["root@pam!cyberctf", "root@pam", "root!x", "root@pam!", "api@pve!ci!2", "@!x", "root!x@pam"] {
+        assert_eq!(pattern.is_match(login), is_token(login), "the setup form's pattern reads {login} as Isothrum does");
+    }
     assert!(is_token("root@pam!cyberctf"));
     assert!(!is_token("root@pam"));
     assert!(!is_token("root!x"));
@@ -71,16 +75,6 @@ fn lab_bridge_defaults_to_vmbr0() {
 }
 
 #[test]
-fn internal_bridges_have_no_ports() {
-    let ifaces: Vec<api::Iface> = listed(json!([{"iface": "vmbr0", "bridge_ports": "eno1"}, {"iface": "vmbr1", "bridge_ports": " "}, {"iface": "vmbr2"}]));
-    assert!(!find_iface(&ifaces, "vmbr0").is_some_and(has_no_ports));
-    assert!(find_iface(&ifaces, "vmbr1").is_some_and(has_no_ports));
-    assert!(find_iface(&ifaces, "vmbr2").is_some_and(has_no_ports));
-    assert!(find_iface(&ifaces, "vmbr9").is_none());
-    assert!(find_iface(&[], "vmbr0").is_none());
-}
-
-#[test]
 fn storage_problems_name_the_fix() {
     let ok: Vec<api::Storage> =
         listed(json!([{"storage": "local", "content": "iso,vztmpl,snippets,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]));
@@ -94,29 +88,13 @@ fn storage_problems_name_the_fix() {
 }
 
 #[test]
-fn the_configured_node_or_the_first() {
-    let nodes: Vec<api::Node> = listed(json!([{"node": "pve"}, {"node": "pve2"}]));
-    assert_eq!(pick_node(&nodes, None).unwrap(), "pve");
-    assert_eq!(pick_node(&nodes, Some("")).unwrap(), "pve");
-    assert_eq!(pick_node(&nodes, Some("pve2")).unwrap(), "pve2");
-    let err = pick_node(&nodes, Some("nope")).unwrap_err().to_string();
-    assert_eq!(err, "there is no node \"nope\" on this host (found: pve, pve2)");
-    assert_eq!(pick_node(&[], None).unwrap_err().to_string(), "this user can't see any node");
-}
-
-#[test]
-fn call_errors_read_as_http_codes_or_their_message() {
-    assert_eq!(CallError::Status(401).to_string(), "HTTP 401");
-    assert_eq!(CallError::Other("boom".into()).to_string(), "boom");
-}
-
-#[test]
 fn sign_in_failures_say_what_to_fix() {
-    let r = sign_in_report(SignInError::Rejected, true);
+    let token = HostProfile { username: "root@pam!t".into(), ..host("h", None) };
+    let r = sign_in_report(SignInError::Rejected, &token);
     assert!(!r.ok && r.authenticated == Some(false) && r.message.contains("API token"));
-    let r = sign_in_report(SignInError::Rejected, false);
+    let r = sign_in_report(SignInError::Rejected, &host("h", None));
     assert!(r.authenticated == Some(false) && r.message.contains("root@pam"));
-    let r = sign_in_report(SignInError::Failed("TLS".into()), false);
+    let r = sign_in_report(SignInError::Failed("TLS".into()), &host("h", None));
     assert_eq!(r.authenticated, None);
     assert_eq!(r.message, "Reachable, but the API call failed: TLS");
 }
@@ -127,13 +105,14 @@ fn node_listing_failures_are_signed_in_failures() {
     assert!(!r.ok && r.authenticated == Some(true) && r.message.contains("Administrator role"));
     let r = node_report(CallError::Status(500));
     assert_eq!(r.message, "Signed in, but listing nodes failed: HTTP 500");
+    let r = node_report(worded(CallError::NoSuchNode { asked: "nope".into(), found: vec!["pve".into(), "pve2".into()] }));
+    assert_eq!(r.message, "Signed in, but listing nodes failed: there is no node \"nope\" on this host (found: pve, pve2)");
 }
 
 #[test]
 fn a_missing_bridge_is_a_problem() {
-    let ifaces: Vec<api::Iface> = listed(json!([{"iface": "vmbr0"}]));
-    assert_eq!(bridge_problem(&ifaces, "vmbr0", "pve"), None);
-    assert!(bridge_problem(&ifaces, "vmbr1", "pve").unwrap().starts_with("Bridge \"vmbr1\" doesn't exist on pve."));
+    let missing = isothrum_machine::place::proxmox::check::Finding::NoBridge { bridge: "vmbr1".into() };
+    assert!(check::problem(&missing, "pve").starts_with("Bridge \"vmbr1\" doesn't exist on pve."));
 }
 
 #[test]
@@ -144,15 +123,6 @@ fn the_outcome_lists_every_problem() {
     let bad = outcome("pve", "vmbr0", &["one".into(), "two".into()]);
     assert!(!bad.ok);
     assert_eq!(bad.message, "Signed in, but a lab launch would fail:\n• one\n• two");
-}
-
-#[test]
-fn storage_needs_each_content_once() {
-    // The VM disks on `local` too: still one check per (storage, content).
-    let all: Vec<api::Storage> = listed(json!([{"storage": "local", "content": "iso, snippets, images"}]));
-    assert_eq!(storage_problems(&all, "local", IMAGE_STORAGE, SNIPPET_STORAGE), Vec::<String>::new());
-    assert_eq!(storage_content(&listed::<api::Storage>(json!([{"storage": "x"}])), "x"), Some(vec![String::new()]));
-    assert_eq!(storage_content(&[], "x"), None);
 }
 
 #[test]

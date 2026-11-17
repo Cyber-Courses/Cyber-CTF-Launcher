@@ -4,9 +4,9 @@ import type * as Generated from "@/lib/tauri/generated";
 import type {
   HostCapacity,
   MonthSpend,
-  ProxmoxBridge,
-  ProxmoxNodeChoices,
-  ProxmoxPlacement,
+  Bridge,
+  NodeChoices,
+  Placement,
   SelfTestEvent,
   ServerCheck,
   ServerCheckState,
@@ -20,12 +20,14 @@ import type { CloudProvider } from "@/lib/tauri/cloud";
 import { SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
 import { signal } from "@/lib/event-channel";
 
+/** A Proxmox server's placement choices, as isothrum-machine reads them (`place::proxmox::placement`). */
+export type ProxmoxPlacement = Placement;
+export type ProxmoxNodeChoices = NodeChoices;
+export type ProxmoxBridge = Bridge;
+
 export type {
   HostCapacity,
   MonthSpend,
-  ProxmoxBridge,
-  ProxmoxNodeChoices,
-  ProxmoxPlacement,
   ServerCheck,
   ServerCheckState,
   ServerIdentity,
