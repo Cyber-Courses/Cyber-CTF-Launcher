@@ -680,10 +680,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_new_lab_version_is_installed_unless_the_old_one_still_runs() {
-        use crate::testing::tools::Tools;
+        use crate::runtime::providers::testing::no_tools;
         let t = crate::testing::test_app::TestApp::new();
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
-        let tools = Tools::rules(&[]);
+        let tools = no_tools();
         let lines = std::sync::Mutex::new(Vec::<String>::new());
         let log = |l: String| lines.lock().unwrap().push(l);
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &log, async || Ok(gz.clone())).await.unwrap();
@@ -725,7 +725,7 @@ mod tests {
     async fn a_new_lab_version_is_refused_while_a_parked_copy_couldnt_be_taken_down() {
         let t = crate::testing::test_app::TestApp::new();
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
-        let _tools = crate::testing::tools::Tools::rules(&[]);
+        let _tools = crate::runtime::providers::testing::no_tools();
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
         crate::runtime::test_support::record_parked(t.data(), "invoice", "docker", "shutdown");
         let compose = runtime::lab::compose_file(&dir);
@@ -743,17 +743,17 @@ mod tests {
     async fn a_launch_waits_for_the_lab_lock_before_installing_anything() {
         // Regression: the install (download, staging, swap) ran before the lock was taken, so
         // two installs of one lab shared its staging folder and a stop could run mid-swap.
-        use crate::testing::tools::Tools;
+        use crate::runtime::providers::testing::no_tools;
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (runtime::lab::COMMIT_MARKER, SHA)]);
-        let tools = Tools::rules(&[]);
+        let tools = no_tools();
         let held = runtime::lock_lab(&t.dirs(), "invoice").await.unwrap();
         let launch =
             parse_launch(serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] })).unwrap();
         let waiting =
             tokio::time::timeout(std::time::Duration::from_millis(300), run(&t.dirs(), launch.clone(), runtime::Destination::default(), |_| {})).await;
         assert!(waiting.is_err(), "the launch waits while another operation holds the lab");
-        assert!(tools.calls().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.calls());
+        assert!(tools.lines().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.lines());
         assert!(!dir.join(runtime::lab::INSTANCE_MARKER).exists());
         // Once the lock is free the launch may proceed (its install and the runner start are
         // covered by the runner's own tests and the integration tests).
@@ -855,13 +855,13 @@ mod tests {
         // Regression: the import asked this machine's Docker, the lab folder's Vagrant record and
         // `deployments/`, where the runner keeps nothing: a copy the runner ran as VMs here, in a
         // local VM or on a server was swapped out from under it.
+        use crate::runtime::providers::testing::no_tools;
         use crate::runtime::test_support::record_run;
-        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         // Removed when the test ends, a failed assertion included (it was left after one).
         let src = crate::testing::temp_dir("import-src");
         std::fs::write(src.join("isoloom.yml"), SPEC).unwrap();
-        let _tools = Tools::rules(&[]);
+        let _tools = no_tools();
         let log = |_: String| {};
         let dir = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
         std::fs::write(dir.join("mine"), "kept").unwrap();
@@ -939,9 +939,9 @@ mod tests {
 
     #[tokio::test]
     async fn lab_ids_at_the_validation_boundaries_install_or_are_refused() {
-        use crate::testing::tools::Tools;
+        use crate::runtime::providers::testing::no_tools;
         let t = crate::testing::test_app::TestApp::new();
-        let _tools = Tools::rules(&[]);
+        let _tools = no_tools();
         let log = |_: String| {};
         let max = "A".repeat(63) + "_";
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
