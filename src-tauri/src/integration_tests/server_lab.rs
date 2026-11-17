@@ -376,9 +376,10 @@ async fn proxmox_place() -> (ServerPlace, PathBuf) {
     // The key the lab's VMs let in, as a launch gives it (`launch::server_place`).
     let keys = crate::runtime::isothrum::key_values(&home).await.unwrap_or_else(|e| panic!("the run's key for the lab's VMs reads: {e}"));
     let jump = std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty());
+    let key = home.join("ssh").join("id_ed25519");
     if let Some((_, node)) = jump.as_deref().and_then(|j| j.split_once('@')) {
-        // The tunnel checks the node's host key against the ones confirmed beside the key.
-        trust_on_first_use(node, &[&home.join("ssh").join("id_ed25519")]).await;
+        // The runner checks the node's host key against the ones confirmed beside the key.
+        trust_on_first_use(node, &[&key]).await;
     }
     let place = ServerPlace {
         label: "pve-lab".into(),
@@ -387,6 +388,7 @@ async fn proxmox_place() -> (ServerPlace, PathBuf) {
         // The profile names no node: the launcher passes the server's first.
         node: Some(var("CYBERCTF_TEST_PVE_NODE")),
         jump,
+        nodes_known_hosts: Some(crate::runtime::ssh::node_known_hosts(&key)),
     };
     (place, home)
 }
