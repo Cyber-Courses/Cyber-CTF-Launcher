@@ -6,8 +6,11 @@
 
 use serde::{Deserialize, Serialize};
 
-// The variables of the backend's evidence claim (a lab exchanges the token for its evidence).
-use crate::runtime::isothrum::CLAIM;
+/// The variables of the backend's evidence claim: the API a lab claims the player's evidence
+/// from and the launch's single-use token, which the lab exchanges for its evidence. A lab
+/// declares them as its inputs, the token a sensitive one, each with a development default so it
+/// also starts without a launch (an import, a resume, the checks).
+const CLAIM: [&str; 2] = ["CTF_API_URL", "CTF_LAUNCH_TOKEN"];
 
 /// One variable of a launch's `env`.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
