@@ -71,7 +71,7 @@ fn of_tool(report: &ErrorReport) -> Error {
     let step = report.step.as_deref().unwrap_or_default();
     match (report.code, report.detail.as_ref().map(|d| &d.data)) {
         (ErrorCode::PortInUse, Some(Detail::PortInUse { port, holder, .. })) => {
-            Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: holder.as_ref().map(|h| format!("{} (pid {})", known_as(&h.program), h.pid)) })
+            Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: holder.as_ref().map(holder_named) })
         }
         (ErrorCode::ToolMissing, Some(Detail::ToolMissing { tool })) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
         (ErrorCode::ToolTooOld, Some(Detail::ToolTooOld { tool, found, required })) => {
@@ -171,6 +171,12 @@ fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
         // A reason added later reads as the plain limit.
         _ => Code::StepTimedOut { step, minutes },
     })
+}
+
+/// A port's holder as a taken port's error says it ("nginx (pid 4123)"): a run's `port_in_use`,
+/// or one the start's preflight found taken.
+pub(crate) fn holder_named(holder: &isothrum_runner::PortHolder) -> String {
+    format!("{} (pid {})", known_as(&holder.program), holder.pid)
 }
 
 /// What the player knows a process listening on a port by: Docker's several process names (and

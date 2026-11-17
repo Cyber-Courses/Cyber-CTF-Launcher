@@ -130,6 +130,29 @@ async fn a_fixed_host_port_already_taken_is_said_unless_the_lab_holds_it_already
     checked(&t, "fixed", Runtime::Docker, &HERE).await.unwrap();
 }
 
+/// A taken fixed port names what holds it, as the system's tools say, through the same words a
+/// run's taken port is said with ("nginx (pid 4123)", Docker's processes as Docker). `lsof`'s
+/// answer here; Windows asks PowerShell.
+#[cfg(not(windows))]
+#[tokio::test]
+async fn a_taken_fixed_port_names_what_holds_it() {
+    let t = TestApp::new();
+    let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = held.local_addr().unwrap().port();
+    installed(&t, "fixed", &web(port, true));
+    for (lsof, named) in [("p4123\ncnginx\n", "nginx (pid 4123)"), ("p77\ncom.docke\n", "Docker (pid 77)")] {
+        let _tools = fake(FakeProcesses::model(move |c: &Call| match c.program.as_str() {
+            "docker" if c.args.first().is_some_and(|a| a == "context") => Reply::ok("default *\n"),
+            "docker" => Reply::ok("27.3.1\n"),
+            "lsof" if c.args.iter().any(|a| a == &format!("-iTCP:{port}")) => Reply::ok(lsof),
+            _ => Reply::missing(),
+        }));
+        let err = checked(&t, "fixed", Runtime::Docker, &HERE).await.unwrap_err();
+        assert_eq!(err.code(), Code::PortInUse { port: isothrum_runner::HostPort::new(port), holder: Some(named.into()) });
+        assert!(err.to_string().contains(&format!("Held by {named}.")), "{err}");
+    }
+}
+
 #[tokio::test]
 async fn every_problem_is_said_at_once() {
     let t = TestApp::new();
