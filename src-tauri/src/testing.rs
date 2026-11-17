@@ -8,6 +8,7 @@
 //! busy".
 
 mod guardrails;
+pub mod https;
 pub mod logs;
 pub mod proptest_support;
 pub mod runner;
