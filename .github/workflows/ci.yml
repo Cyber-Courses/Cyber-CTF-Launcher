@@ -45,7 +45,11 @@ jobs:
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-nextest
+      # The Rust contract tests run Isoloom's own example labs (spec_run.rs), from its dev: cloned
+      # beside the checkout, not inside it, where the format and lint steps would read it.
+      - run: git clone --quiet --depth 1 --branch dev https://github.com/isoloom/isoloom.git "$RUNNER_TEMP/isoloom"
       - run: scripts/release/release-check.sh
         env:
           FAST: "1"
           STRICT: "1"
+          CYBERCTF_TEST_ISOLOOM_DIR: ${{ runner.temp }}/isoloom

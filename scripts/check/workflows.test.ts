@@ -57,6 +57,22 @@ describe("the workflows run the check", () => {
     for (const step of fastSteps()) expect(known, `FAST_STEPS names "${step}"`).toContain(step);
   });
 
+  it("every job that runs the Rust tests has an Isoloom checkout", () => {
+    // spec_run.rs reads Isoloom's example labs, and prereqs refuses to start without them.
+    for (const workflow of ["ci.yml", "gate.yml"]) {
+      const jobs = read(`.github/workflows/${workflow}`)
+        .split(/^ {2}(?=[a-z][a-z0-9-]*:$)/m)
+        .slice(1);
+      const testing = jobs.filter((j) => /^\s+(FAST: "1"|ONLY: .*\b(unit-rust|coverage-rust)\b)/m.test(j));
+      expect(testing.length, `${workflow} has a job that runs the Rust tests`).toBeGreaterThan(0);
+      for (const job of testing) {
+        const name = job.slice(0, job.indexOf(":"));
+        expect(job, `${workflow}'s ${name} job clones Isoloom`).toContain("https://github.com/isoloom/isoloom.git");
+        expect(job, `${workflow}'s ${name} job points the tests at it`).toMatch(/^\s+CYBERCTF_TEST_ISOLOOM_DIR: /m);
+      }
+    }
+  });
+
   it("no workflow runs a step's command on its own", () => {
     // The check's commands belong to it: a workflow running one besides it would drift from it.
     for (const workflow of ["ci.yml", "gate.yml"]) {
