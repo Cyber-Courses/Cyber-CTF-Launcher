@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
 use isothrum_client::proto::{Command, OpOptions, Target};
-use isothrum_client::{Client, ClientError, HeldConsole, Pool};
+use isothrum_client::{Client, ClientError, Followed, HeldConsole, Pool};
 use isothrum_runner::{ErrorReport, EventKind, Format, NativeConsole, RunName, RunOptions, RunRecord, ServiceEndpoint, ShellCommand, Status};
 
 use super::super::deploy_log;
@@ -86,10 +86,27 @@ where
     // Connected first: no service to reach is the launcher's own error, as is a new connection
     // that couldn't be made once the first broke.
     client(home).await.map_err(Failure::Launcher)?;
-    POOL.call(home, ask).await.map_err(|e| match e {
+    POOL.call(home, ask).await.map_err(|e| failure(home, e))
+}
+
+/// Queues the operation `command` with `home`'s service and follows it, on a connection made
+/// again once when found dead, as [`call`] does; one sent but unanswered may have been queued, so
+/// it is followed again rather than sent again ([`Pool::follow`]).
+///
+/// # Errors
+///
+/// As [`call`].
+async fn follow(home: &Path, command: Command) -> std::result::Result<Followed, Failure> {
+    client(home).await.map_err(Failure::Launcher)?;
+    POOL.follow(home, command).await.map_err(|e| failure(home, e))
+}
+
+/// A client's failure as the launcher reports it: no service to reach is the launcher's own.
+fn failure(home: &Path, e: ClientError) -> Failure {
+    match e {
         ClientError::Unavailable(_) => Failure::Launcher(unreachable(home, &e)),
         e => Failure::of_client(e),
-    })
+    }
 }
 
 /// An operation on a run.
@@ -203,8 +220,9 @@ impl Served {
     /// Runs `act` with `opts` on the run, its events as `log`'s lines and its steps told to the
     /// operation's ([`deploy_log::tell`]): whether it reached its goal (false: a check failed).
     pub(super) async fn operate(&self, act: Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, Failure> {
-        // Queued on a connection that answers: one found dead first is made again.
-        let mut followed = call(&self.home, |client| async move { client.follow(command(act, self.target(), opts)).await }).await?;
+        // Queued on a connection that answers: one found dead first is made again, and one that
+        // ended before the service answered is followed again, not queued twice.
+        let mut followed = follow(&self.home, command(act, self.target(), opts)).await?;
         OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(followed.accepted.operation.0);
         let mut outcome = None;
         while let Some(event) = followed.next().await {
