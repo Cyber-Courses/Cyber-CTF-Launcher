@@ -1,8 +1,6 @@
 //! Isoloom's path and naming conventions, in one place: where it writes a target's files
 //! (`.isoloom[-<n>]/docker|vagrant|proxmox|cloud-docker/<cloud>|cloud-vm/<cloud>|cloud-services`,
-//! the Compose file among them, and the `docker-vm` folder an earlier version
-//! left), the environment its
-//! Vagrantfiles read to reach an ESXi host (`ESXI_*`), and the output of its cloud modules the
+//! the Compose file among them), the environment its Vagrantfiles read to reach an ESXi host (`ESXI_*`), and the output of its cloud modules the
 //! launcher reads (`ip`). The rest of the launcher asks here instead of spelling them out.
 
 use std::path::{Path, PathBuf};
@@ -29,31 +27,14 @@ pub fn docker_dir(dir: &Path) -> PathBuf {
     out(dir).join("docker")
 }
 
-/// Where the Vagrantfile of a local or ESXi run is: one VM per machine (`vagrant`); for a
-/// container lab, the folder of the one helper VM an earlier version ran it in
-/// ([`docker_vm_dir`]).
-pub fn vagrant_dir(dir: &Path, runtime: Runtime) -> PathBuf {
-    match runtime {
-        Runtime::Docker => docker_vm_dir(dir),
-        Runtime::Vm => out(dir).join("vagrant"),
-        // No Vagrant: its generated files (Terraform variables and scripts).
-        Runtime::Cloud => out(dir).join("cloud-services"),
-    }
+/// Where the Vagrantfile of a local or ESXi run is: one VM per machine (`vagrant`), a container
+/// lab's VM form included.
+pub fn vagrant_dir(dir: &Path) -> PathBuf {
+    out(dir).join("vagrant")
 }
 
-/// Where an earlier version ran a container lab as Docker Compose inside one helper VM (Isoloom's
-/// former `docker-vm` target), here or on ESXi, and (`proxmox/` under it) on a Proxmox server.
-/// Isoloom no longer generates that form: the folder is only read, to stop and remove a run left
-/// in it.
-pub fn docker_vm_dir(dir: &Path) -> PathBuf {
-    out(dir).join(DOCKER_VM_FOLDER)
-}
-
-/// The folder name of [`docker_vm_dir`], by which a run's project is known as one in a helper VM.
-pub const DOCKER_VM_FOLDER: &str = "docker-vm";
-
-/// The folder of Isoloom's target `project` is generated in (`docker`, `vagrant`, `docker-vm`,
-/// `proxmox`, `cloud-vm`, …): the one right under the lab's `.isoloom[-<n>]` folder. None for a
+/// The folder of Isoloom's target `project` is generated in (`docker`, `vagrant`, `proxmox`,
+/// `cloud-vm`, …): the one right under the lab's `.isoloom[-<n>]` folder. None for a
 /// folder outside one.
 pub fn target_folder(project: &Path) -> Option<&str> {
     let mut parts = project.iter().filter_map(|c| c.to_str());
@@ -64,8 +45,7 @@ pub fn target_folder(project: &Path) -> Option<&str> {
 
 /// The Terraform module and its Isoloom target for a server or cloud (`tf` is the launcher's
 /// Terraform target: `proxmox`, `aws`, `azure`, `gcp`, `digitalocean`, `linode`, `oci`). On
-/// Proxmox, a lab runs as one VM per machine whatever its catalogue form: a container lab left in
-/// a helper VM there by an earlier version is read from [`docker_vm_dir`] instead.
+/// Proxmox, a lab runs as one VM per machine whatever its catalogue form.
 pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
     let out = out(dir);
     match (runtime, tf) {

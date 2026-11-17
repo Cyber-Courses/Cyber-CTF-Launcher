@@ -90,11 +90,7 @@ fn provisioning_needs_a_running_lab_and_a_known_machine() {
 #[test]
 fn a_lab_is_parked_only_in_a_mode_its_page_is_offered() {
     use crate::runtime::lab::Target;
-    // A container lab an earlier version runs inside a helper VM is only stopped.
     let both = [Park::Pause, Park::Shutdown];
-    for mode in both {
-        assert_eq!(park_refusal(mode, None, &both), Some(super::LEFT_IN_A_HELPER_VM));
-    }
     // Containers on Docker pause (frozen) as well as shut down. Regression: a pause on QEMU went
     // to a `vagrant suspend` it refuses (the runner lists no pause for it).
     for mode in both {
@@ -189,9 +185,6 @@ async fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
     // A container lab run as one VM per machine is a VM lab here, repaired as one too.
     record_run(t.data(), "t", None, "vagrant", "ready");
     assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")).await, (true, true, true, true));
-    // Containers an earlier version runs inside a helper VM here: only stopped.
-    record_run(t.data(), "t", None, "docker-vm", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")).await, (false, false, false, false));
     record_run(t.data(), "t", None, "docker", "absent");
     // A cloud-services lab on no account: nothing runs.
     assert_eq!(controls_of(&t, &dir, Runtime::Cloud, None).await, (false, false, false, false));
@@ -207,6 +200,4 @@ async fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
     // On ESXi: provisioning a VM lab, through Vagrant there; never its containers' VM.
     record_run(t.data(), "t", Some(&t.host("esx", "vmware_esxi", serde_json::json!({}))), "vagrant", "ready");
     assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("vmware_esxi")).await, (false, false, true, false));
-    record_run(t.data(), "t", Some("esx"), "docker-vm", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("vmware_esxi")).await, (false, false, false, false));
 }

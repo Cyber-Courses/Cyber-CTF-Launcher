@@ -53,8 +53,7 @@ fn refuse_cloud_park(runtime: Runtime) -> Result<()> {
 /// Why a cloud-services lab isn't parked.
 const CLOUD_PARK: &str = "A cloud lab can't be paused: stop it to end what it costs, and start it again later.";
 
-/// Why a run on this machine for `target` (none: a helper VM an earlier version left), parked in
-/// the ways `parks`, can't be parked in `mode`: the [`local_controls`] it is offered don't hold
+/// Why a run on this machine for `target`, parked in the ways `parks`, can't be parked in `mode`: the [`local_controls`] it is offered don't hold
 /// that mode's control. None when they do.
 fn park_refusal(mode: Park, target: Option<lab::Target>, parks: &[Park]) -> Option<&'static str> {
     let control = match mode {
@@ -64,18 +63,9 @@ fn park_refusal(mode: Park, target: Option<lab::Target>, parks: &[Park]) -> Opti
     if local_controls(target, parks).contains(&control) {
         return None;
     }
-    // Every form here shuts down: only a pause on QEMU (no suspend) is refused, or anything of a
-    // helper VM's run.
-    Some(match target {
-        None => LEFT_IN_A_HELPER_VM,
-        Some(_) => "QEMU can't pause a lab: shut it down instead.",
-    })
+    // Every form here shuts down: only a pause on QEMU (no suspend) is refused.
+    Some("QEMU can't pause a lab: shut it down instead.")
 }
-
-/// Why a container lab an earlier version runs inside a helper VM is only stopped: Cyber CTF no
-/// longer runs that form, so nothing else changes it.
-const LEFT_IN_A_HELPER_VM: &str =
-    "This lab runs Docker inside a VM, as an earlier version of Cyber CTF started it, which this version no longer does: stop it, then start it again.";
 
 /// What can be done on a lab where it runs (`host`, parked in the ways `parks` as its status
 /// reads them): pause and shut down only here ([`park`] refuses elsewhere, and a cloud-services lab, which locates
@@ -94,8 +84,8 @@ pub(crate) fn controls(host: Option<&Host>, parks: &[Park]) -> Vec<Control> {
 
 /// [`controls`] for a run on this machine for `target`, parked in the ways `parks`: the one rule
 /// [`park`] holds too. Its containers freeze (`compose pause`) and its VMs suspend, unless the
-/// provider has no suspend (vagrant-qemu); every form shuts down. None for a helper VM an earlier
-/// version left (no `target`): it is only stopped.
+/// provider has no suspend (vagrant-qemu); every form shuts down. None for a run with no target
+/// (a module of the lab's own, which never runs here).
 fn local_controls(target: Option<lab::Target>, parks: &[Park]) -> Vec<Control> {
     let Some(target) = target else { return Vec::new() };
     let vms = target == lab::Target::Vagrant;
@@ -259,9 +249,8 @@ pub async fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runti
     if recorded.host().is_some() {
         return None;
     }
-    // Its VMs are its machines (a VM lab, or a container lab run as one VM per machine), unless
-    // the one VM is the helper an earlier version ran a container lab inside.
-    Some(if recorded.per_machine() || (in_vm && !recorded.helper_vm()) { Runtime::Vm } else { Runtime::Docker })
+    // Its VMs are its machines: a VM lab, or a container lab run as one VM per machine.
+    Some(if recorded.per_machine() || in_vm { Runtime::Vm } else { Runtime::Docker })
 }
 
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the

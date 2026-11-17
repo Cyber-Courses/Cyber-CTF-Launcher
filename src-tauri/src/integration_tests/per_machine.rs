@@ -96,8 +96,7 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
                     let recorded = Recorded::of(&t.dirs(), &id).await;
                     check(recorded.as_ref().is_ok_and(Recorded::per_machine), "the form is recorded with the run".into(), f);
                     check(recorded.is_ok_and(|r| r.form(Runtime::Docker) == Runtime::Vm), "the lab runs here as a VM lab".into(), f);
-                    check(lab::vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target's files were generated".into(), f);
-                    check(!lab::docker_vm_dir(&dir).exists(), "no helper VM's".into(), f);
+                    check(lab::vagrant_dir(&dir).join("Vagrantfile").is_file(), "the vagrant target's files were generated".into(), f);
                     up_as_vms(&t, &dir, &id, f).await;
                     checks_pass(&t, &id, f).await;
                 }

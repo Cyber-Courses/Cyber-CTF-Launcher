@@ -59,10 +59,10 @@ async fn only_a_local_container_lab_has_a_url_here() {
     use crate::runtime::test_support::record_run;
     let t = crate::testing::test_app::TestApp::new();
     let dir = t.lab("t", &[]);
-    // A VM lab, a lab on a server host, a container lab in a local VM: no Docker probe at all.
+    // A VM lab, a lab on a server host, a container lab as local VMs: no Docker probe at all.
     let _tools = crate::testing::tools::Tools::strict_rules(&[]);
     assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Vm).await, None);
-    record_run(t.data(), "t", None, "docker-vm", "ready");
+    record_run(t.data(), "t", None, "vagrant", "ready");
     assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Docker).await, None);
     record_run(t.data(), "t", Some("h"), "cloud-docker/aws", "ready");
     assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Docker).await, None);
@@ -111,17 +111,14 @@ async fn a_lab_whose_run_cant_be_read_is_taken_for_up_and_says_why() {
 #[tokio::test]
 async fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
     // Regression: an update, a re-import and a start elsewhere asked the lab folder (Vagrant's
-    // `.vagrant`, local Docker), where the runner keeps nothing: a VM, a
-    // docker-in-VM, an ESXi, a Proxmox or a cloud lab run by the runner read as down.
+    // `.vagrant`, local Docker), where the runner keeps nothing: a VM, an ESXi, a Proxmox or a cloud lab run by the runner read as down.
     use crate::runtime::test_support::record_run;
     let t = crate::testing::test_app::TestApp::new();
     let dirs = t.dirs();
     let dir = t.lab("web", &[]);
     let pve = t.host("pve1", "proxmox", serde_json::json!({}));
     assert_eq!(super::still_up(&dirs, "web").await.unwrap(), None, "never started");
-    for (host, target) in
-        [(None, "docker"), (None, "docker-vm"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some(pve.as_str()), "proxmox"), (Some("aws1"), "cloud-vm")]
-    {
+    for (host, target) in [(None, "docker"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some(pve.as_str()), "proxmox"), (Some("aws1"), "cloud-vm")] {
         record_run(t.data(), "web", host, target, "ready");
         let up = super::still_up(&dirs, "web").await.unwrap().unwrap_or_else(|| panic!("{target} on {host:?}"));
         assert_eq!((up.host.as_deref(), up.parked), (host, false), "{target}");

@@ -501,24 +501,15 @@ describe("LabRow", () => {
     expect(h.onOpen).not.toHaveBeenCalled();
   });
 
-  it("doesn't offer to keep a lab on a server or in a helper VM an earlier version left, where the backend offers no shutdown", async () => {
+  it("doesn't offer to keep a lab on a server, where the backend offers no shutdown", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    const { unmount } = render(
-      <LabRow lab={lab} loggedIn hostArch="x86_64" onOpen={vi.fn()} onStop={vi.fn()} status={running({ host: "pve", url: null, controls: [] })} />,
-    );
+    render(<LabRow lab={lab} loggedIn hostArch="x86_64" onOpen={vi.fn()} onStop={vi.fn()} status={running({ host: "pve", url: null, controls: [] })} />);
     expect(screen.queryByRole("button", { name: /^Open$/ })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Stop" }));
     await flush();
     expect(dialogsAsked(calls)).toHaveLength(1);
     expect(dialogsAsked(calls)[0].message).not.toMatch(/To keep them/);
-    unmount();
-    // A container lab an earlier version left in one helper VM here: only stopped.
-    renderRow({ status: running({ url: null, place: "local_vm", provider: "virtualbox", controls: [] }) });
-    await user.click(screen.getByRole("button", { name: "Stop" }));
-    await flush();
-    expect(dialogsAsked(calls)).toHaveLength(2);
-    expect(dialogsAsked(calls)[1].message).not.toMatch(/To keep them/);
   });
 
   it("offers to keep a VM lab's machines by the backend's rule, not by where it runs", async () => {

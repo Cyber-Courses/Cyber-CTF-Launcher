@@ -165,8 +165,7 @@ pub struct Network {
 pub enum Place {
     /// In containers on this machine's Docker.
     Container,
-    /// In VMs on this machine: a VM lab, or a container lab as one VM per machine (or in the
-    /// helper VM an earlier version ran it inside).
+    /// In VMs on this machine: a VM lab, or a container lab as one VM per machine.
     LocalVm,
     /// On a saved server (Proxmox or ESXi).
     Server,
@@ -314,8 +313,8 @@ mod tests {
 
     #[test]
     fn a_failed_launch_reads_as_not_running_even_with_machines_up() {
-        // Regression: only server and cloud labs used to be masked, so a local Docker,
-        // docker-in-VM or VM lab read as running after a failed launch.
+        // Regression: only server and cloud labs used to be masked, so a local Docker or VM lab
+        // read as running after a failed launch.
         let up = || LabStatus { running: true, ..LabStatus::default() };
         assert!(up().unless_launch_failed(false).running, "nothing failed: running");
         assert!(!up().unless_launch_failed(true).running);

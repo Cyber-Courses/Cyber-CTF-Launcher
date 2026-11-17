@@ -14,8 +14,7 @@ use super::{Runtime, docker, isothrum, lab, server};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
-/// A lab's run, where it runs: on this machine (on Docker, as VMs, or in the helper VM an earlier
-/// version ran a container lab inside), on an ESXi server (Vagrant there), on a Proxmox server
+/// A lab's run, where it runs: on this machine (on Docker, or as VMs), on an ESXi server (Vagrant there), on a Proxmox server
 /// (its place for reading it; a change finds its node and SSH jump first), or in a cloud account
 /// (its VMs, its containers on a VM, or its cloud services): where is its run's [`isothrum::Site`].
 pub(crate) struct Host {
@@ -41,7 +40,7 @@ pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let form = recorded.form(runtime);
     let run = match &connection {
         None => return Ok(isothrum::Deployment::local_of(&home, dir, id, runtime, &recorded)?.map(Host::here)),
-        Some(conn) if conn.provider == Provider::VmwareEsxi => super::launch::esxi_run(dirs, dir, id, form, conn)?,
+        Some(conn) if conn.provider == Provider::VmwareEsxi => super::launch::esxi_run(dirs, dir, id, conn)?,
         Some(conn) if conn.provider.is_cloud() => {
             let place = isothrum::CloudPlace::of(conn);
             #[cfg(feature = "cloud-services")]
@@ -93,9 +92,7 @@ impl Host {
         matches!(self.run.site(), isothrum::Site::Esxi(_))
     }
 
-    /// The Isoloom target the run's files are generated for; none for a container lab an earlier
-    /// version runs inside a helper VM (here, on ESXi or on Proxmox), whose files Isoloom no
-    /// longer generates: that run is only read, stopped and removed.
+    /// The Isoloom target the run's files are generated for; none for a module of the lab's own.
     pub(crate) fn target(&self) -> Option<lab::Target> {
         self.run.target()
     }
@@ -193,15 +190,11 @@ mod tests {
         let t = TestApp::new();
         let _tools = Tools::strict_rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
-        // On this machine: as its runtime says, as one VM per machine, or in the helper VM an
-        // earlier version left it in (no target: never generated again); a cloud-services lab on
+        // On this machine: as its runtime says, or as one VM per machine; a cloud-services lab on
         // no account runs nowhere.
         assert_eq!(located(&t, &dir, Runtime::Docker).await, Some(("local", Some(lab::Target::Docker))));
         assert_eq!(located(&t, &dir, Runtime::Vm).await, Some(("local", Some(lab::Target::Vagrant))));
         assert_eq!(located(&t, &dir, Runtime::Cloud).await, None);
-        record_run(t.data(), "t", None, "docker-vm", "ready");
-        assert_eq!(located(&t, &dir, Runtime::Docker).await, Some(("local", None)));
-        assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Docker).await.unwrap().is_none(), "no box goes into it");
         record_run(t.data(), "t", None, "vagrant", "ready");
         assert_eq!(located(&t, &dir, Runtime::Docker).await, Some(("local", Some(lab::Target::Vagrant))));
         // In a cloud account: in the form it was started in, cloud services included.
@@ -223,11 +216,6 @@ mod tests {
         assert_eq!(located(&t, &dir, Runtime::Vm).await, Some(("server", Some(lab::Target::Proxmox))));
         record_run(t.data(), "t", Some(&t.host("esx", "vmware_esxi", serde_json::json!({}))), "vagrant", "ready");
         assert_eq!(located(&t, &dir, Runtime::Vm).await, Some(("esxi", Some(lab::Target::Vagrant))));
-        // A container lab there is the helper VM an earlier version left, on either server.
-        record_run(t.data(), "t", Some("esx"), "docker-vm", "ready");
-        assert_eq!(located(&t, &dir, Runtime::Docker).await, Some(("esxi", None)));
-        record_run(t.data(), "t", Some("pve"), "docker-vm/proxmox", "ready");
-        assert_eq!(located(&t, &dir, Runtime::Docker).await, Some(("server", None)));
     }
 
     #[cfg(feature = "cloud-services")]

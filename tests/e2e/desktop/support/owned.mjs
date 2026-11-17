@@ -253,7 +253,7 @@ export function dropComposeRecord(root, name) {
   return !existsSync(dir);
 }
 
-/** Whether a Vagrant machine was created in the run's folder (a VM lab's, or the helper VM an earlier version ran a container lab in). */
+/** Whether a Vagrant machine was created in the run's folder (a VM lab's). */
 export function runVagrantMachines(root) {
   const found = [];
   const walk = (dir, depth) => {

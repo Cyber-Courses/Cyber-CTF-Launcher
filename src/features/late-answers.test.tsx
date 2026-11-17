@@ -117,8 +117,8 @@ describe("late answers", () => {
       initialProps: { ready: ["utm"] as Provider[] },
     });
     await flush();
-    // UTM alone: no VM form here (Isoloom refuses one VM per machine on UTM, and there is no
-    // helper VM any more), so nothing to choose here but Docker.
+    // UTM alone: no VM form here (Isoloom refuses one VM per machine on UTM), so nothing to
+    // choose here but Docker.
     expect(result.current.perMachine).toBeNull();
     expect(result.current.vmForms).toEqual([]);
     rerender({ ready: ["utm", "qemu"] });

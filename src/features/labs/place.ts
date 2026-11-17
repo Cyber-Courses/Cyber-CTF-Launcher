@@ -10,8 +10,7 @@ import type { T } from "@/lib/i18n";
 export type Place =
   /** Containers on this machine: the engine the lab runs on (null: unknown, the machine report not in). */
   | { kind: "engine"; engine: DockerEngine | null }
-  /** VMs on this machine, on `provider` (a VM lab's, a container lab's one VM per machine, or the
-   *  helper VM an earlier version ran a container lab inside, told the same way). */
+  /** VMs on this machine, on `provider` (a VM lab's, or a container lab's one VM per machine). */
   | { kind: "hypervisor"; provider: string }
   /** One of the player's servers (Proxmox, ESXi): the saved host, when it is still saved. */
   | { kind: "server"; name: string; provider: RemoteProvider | null; address: string | null }

@@ -73,7 +73,7 @@ impl Described {
         let snapshot = lab::resolved(dir)?;
         let check_runners = match form {
             Form::Containers => compose_runners(&snapshot),
-            Form::Vms => vagrant_runners(&lab::vagrant_dir(dir, super::super::Runtime::Vm)),
+            Form::Vms => vagrant_runners(&lab::vagrant_dir(dir)),
         };
         Ok(Described { machines: machines(&snapshot, form), networks: networks(&snapshot), check_runners })
     }
@@ -209,7 +209,7 @@ mod tests {
         assert_eq!(ip(&vms), ["10.41.0.20"], "the spec's own address");
         assert_eq!(ip(&containers).len(), 1, "one address on its one network");
         assert_eq!(vms.check_runners, [] as [String; 0], "no Vagrant project generated yet");
-        let checks = lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm).join("checks");
+        let checks = lab::vagrant_dir(&dir).join("checks");
         std::fs::create_dir_all(&checks).unwrap();
         for f in ["web.sh", "isoloom-controller.sh", "notes.txt"] {
             std::fs::write(checks.join(f), "").unwrap();

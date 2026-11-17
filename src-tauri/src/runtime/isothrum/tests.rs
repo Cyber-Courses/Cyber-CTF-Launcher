@@ -543,10 +543,10 @@ fn a_lab_here_is_run_in_the_form_it_was_started_in() {
     assert_eq!(form(Runtime::Docker), Some((Format::Compose, Some(lab::Target::Docker))));
     assert_eq!(form(Runtime::Vm), Some((Format::Vagrant, Some(lab::Target::Vagrant))));
     assert_eq!(form(Runtime::Cloud), None);
-    // A container lab an earlier version left in a helper VM: that run, read as it is (no target
-    // to generate it again for); one started as one VM per machine, as VMs.
+    // One started as one VM per machine, as VMs. A run from a folder Isoloom no longer generates
+    // (1.9's helper VM, `docker-vm`) is no form of its own: the lab reads as declared.
     record("docker-vm");
-    assert_eq!(form(Runtime::Docker), Some((Format::Vagrant, None)));
+    assert_eq!(form(Runtime::Docker), Some((Format::Compose, Some(lab::Target::Docker))));
     record("vagrant");
     assert_eq!(form(Runtime::Docker), Some((Format::Vagrant, Some(lab::Target::Vagrant))));
     std::fs::remove_dir_all(&dir).unwrap();

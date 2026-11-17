@@ -286,12 +286,3 @@ fn a_server_refusing_the_credentials_is_named_as_servers_names_it() {
     let other = on_server(coded(&report("not_running", None, None)), "Home lab");
     assert!(!other.to_string().contains("sign in"), "{other}");
 }
-
-#[test]
-fn a_helper_vm_the_runner_no_longer_opens_says_what_is_left_and_how_to_remove_it() {
-    let gone = RunnerError::Unsupported { what: "containers run inside the run's VM".into() };
-    let said = of_helper_vm(&gone.report(), "cyberctf-web").to_string();
-    assert!(said.starts_with(HELPER_VM_LEFT) && said.contains("cyberctf-web"), "{said}");
-    let locked = RunnerError::Locked { run: "r".into() };
-    assert_eq!(of_helper_vm(&locked.report(), "r").code(), coded(&locked.report()).code());
-}

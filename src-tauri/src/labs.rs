@@ -690,12 +690,10 @@ mod tests {
         drop(tools);
         // A newer commit while the old one is up, wherever the runner runs it: refused, the
         // running copy left alone. Regression: only this machine's Docker and the lab folder's
-        // Vagrant record were asked, where the runner keeps nothing, so a VM, docker-in-VM,
+        // Vagrant record were asked, where the runner keeps nothing, so a VM,
         // ESXi, Proxmox or cloud run had its folder swapped out from under it.
         let newer = "1123456789abcdef0123456789abcdef01234567";
-        for (host, target) in
-            [(None, "docker"), (None, "docker-vm"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some("pve1"), "proxmox"), (Some("aws1"), "cloud-vm")]
-        {
+        for (host, target) in [(None, "docker"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some("pve1"), "proxmox"), (Some("aws1"), "cloud-vm")] {
             crate::runtime::test_support::record_run(t.data(), "invoice", host, target, "ready");
             let err = install_with(&t.dirs(), invoice("invoice", newer), &log, async || panic!("no download")).await.unwrap_err();
             assert!(err.is_refusal(), "{target}: {err}");
@@ -831,7 +829,7 @@ mod tests {
         let dir = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
         std::fs::write(dir.join("mine"), "kept").unwrap();
         // Up here, as the runner records it (a failed start that left its VM counts too).
-        record_run(t.data(), "local-invoice", None, "docker-vm", "failed");
+        record_run(t.data(), "local-invoice", None, "vagrant", "failed");
         let err = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap_err();
         assert_eq!(err.code(), crate::error::Code::LabRunningHere, "{err:?}");
         assert!(err.to_string().contains("its machines are still there"), "{err}");

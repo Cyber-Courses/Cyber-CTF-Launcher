@@ -117,10 +117,9 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Qemu), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("qemu-system"), "{err}");
-    // The vagrant target's files (one VM per machine), no helper VM's; nothing ran, so nothing
-    // is recorded: the lab still reads as the container lab it is.
-    assert!(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target was generated");
-    assert!(!crate::runtime::lab::docker_vm_dir(&dir).exists(), "no helper VM");
+    // The vagrant target's files (one VM per machine); nothing ran, so nothing is recorded: the
+    // lab still reads as the container lab it is.
+    assert!(vagrant_dir(&dir).join("Vagrantfile").is_file(), "the vagrant target was generated");
     assert_eq!(Recorded::of(&t.dirs(), "both").await.unwrap().form(Runtime::Docker), Runtime::Docker);
     // Once the runner records its run in the vagrant target's folder, the webview keeps calling
     // the lab a container lab: here it is a VM lab.
@@ -366,7 +365,7 @@ fn a_start_with_nowhere_to_run_is_refused_by_its_code_before_anything_is_downloa
     // One VM per machine on a server rather than a cloud account.
     assert_eq!(check(Runtime::Docker, per_machine(None, Some("pve"))).unwrap_err().to_string(), super::PER_MACHINE_NOT_ON_SERVERS);
     assert!(check(Runtime::Docker, per_machine(None, Some("aws1"))).is_ok());
-    // A container lab on a server, whose containers would run inside a helper VM there.
+    // A container lab on a server (ESXi, Proxmox), which runs no containers.
     assert_eq!(check(Runtime::Docker, on("pve")).unwrap_err().to_string(), super::CONTAINERS_NOT_ON_SERVERS);
     assert!(check(Runtime::Docker, on("aws1")).is_ok());
     // A start on a cloud account under DisableCloudLaunches, which needs no spec.

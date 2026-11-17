@@ -46,7 +46,7 @@ async fn shown(l: &Run, machine: &str) -> Option<String> {
 /// `vagrant <args>` on the run's VMs, as a player would in its folder.
 async fn vagrant(l: &Run, args: &[&str]) -> crate::error::Result<String> {
     let env = [("VAGRANT_DOTFILE_PATH".to_owned(), dotfile(l).to_string_lossy().into_owned())];
-    run_env("vagrant", args, Some(&lab::vagrant_dir(&l.dir, Runtime::Vm)), &env).await
+    run_env("vagrant", args, Some(&lab::vagrant_dir(&l.dir)), &env).await
 }
 
 /// The lab started on the hypervisor (the lab page's Start), then up, its URL answering.

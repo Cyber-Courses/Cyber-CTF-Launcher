@@ -191,12 +191,6 @@ pub(crate) fn on_server(e: Error, name: &str) -> Error {
     }
 }
 
-/// Whether the runner refused `report`'s run because it no longer runs that form of project at
-/// all (`unsupported`): a helper VM an earlier version left.
-pub(super) fn form_unsupported(report: &ErrorReport) -> bool {
-    report.code == ErrorCode::Unsupported
-}
-
 /// Whether `report` says nothing of the run is left to resume.
 pub(super) fn nothing_to_resume(report: &ErrorReport) -> bool {
     report.code == ErrorCode::NothingToResume
@@ -206,20 +200,6 @@ pub(super) fn nothing_to_resume(report: &ErrorReport) -> bool {
 /// `result` nor `error`.
 pub(super) fn cancelled_before_it_began() -> ErrorReport {
     ErrorReport::new(ErrorCode::Cancelled, "the operation was cancelled before it began")
-}
-
-/// What is said of a container lab an earlier version runs inside one helper VM (Isoloom's former
-/// `docker-vm`) when the runner no longer opens that run: nothing here reaches the VM any more.
-pub(crate) const HELPER_VM_LEFT: &str = "This lab still runs Docker inside a VM, as an earlier version of Cyber CTF started it, and this version can't reach that VM any more: remove it on the Machine page or in your hypervisor's app, then start the lab again";
-
-/// The runner's refusal to open the run of a helper VM an earlier version left, run `run`: when
-/// it no longer runs that form (`unsupported`), what is left and how to remove it; any other
-/// failure as [`coded`] says it.
-pub(super) fn of_helper_vm(report: &ErrorReport, run: &str) -> Error {
-    match report.code {
-        ErrorCode::Unsupported => Error::Invalid(format!("{HELPER_VM_LEFT} (its name starts with {run}).")),
-        _ => coded(report),
-    }
 }
 
 /// A tool as the player knows it (`vagrant` is Vagrant).

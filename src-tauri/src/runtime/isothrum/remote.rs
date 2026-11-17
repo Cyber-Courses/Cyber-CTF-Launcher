@@ -250,11 +250,6 @@ impl Served {
     pub(super) async fn service_endpoints(&self, opts: &RunOptions) -> std::result::Result<Vec<ServiceEndpoint>, Failure> {
         call(&self.home, |client| async move { client.service_endpoints(&self.name, Some(self.target()), wire(opts)).await }).await
     }
-
-    /// Forgets the run's record: no run is left behind for a lab that isn't there.
-    pub(super) async fn forget(&self) -> Result<()> {
-        forget_run(&self.home, &self.name).await
-    }
 }
 
 /// Every run `home`'s service records, each in the state its last operation left it in.
