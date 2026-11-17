@@ -1,18 +1,13 @@
 //! Can the launcher reach a host: the per-provider "Test connection" dispatch, and the probes
 //! for the player's own servers (TCP, then the SSH banner on ESXi or an API sign-in on Proxmox).
 
-use std::time::{Duration, Instant};
+use isothrum_machine::place::{self, REACH_TIMEOUT, Unreachable, esxi};
 
-use tokio::io::AsyncReadExt;
-use tokio::net::TcpStream;
-
-use super::checks::{TestResult, elapsed_ms};
+use super::checks::TestResult;
 use super::cloud_checks::{test_aws, test_azure, test_digitalocean, test_gcp, test_linode, test_oci};
 use super::profile::HostProfile;
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
-
-const TEST_TIMEOUT: Duration = Duration::from_secs(6);
 
 /// "Test connection" of host `h`, signing in with `password`; a Proxmox node is checked over SSH
 /// with the launcher's key in the app's folders `dirs` (made when there is none).
@@ -28,34 +23,47 @@ pub(crate) async fn test_host(dirs: &AppDirs, h: &HostProfile, password: &str) -
     }
 }
 
-/// A server host: it must accept a TCP connection on its port, then answer as what labs use.
-async fn test_server(dirs: &AppDirs, h: &HostProfile, password: &str) -> TestResult {
-    let started = Instant::now();
-    let mut stream = match tokio::time::timeout(TEST_TIMEOUT, TcpStream::connect((h.host.as_str(), h.port))).await {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) => return TestResult::unreachable(format!("Can't reach {}:{}: {e}", h.host, h.port)),
-        Err(_) => return TestResult::unreachable(format!("Timed out reaching {}:{}", h.host, h.port)),
-    };
-    let latency_ms = Some(elapsed_ms(started));
+/// Why the server couldn't be reached, in the player's words.
+fn unreachable(e: &Unreachable) -> TestResult {
+    TestResult::unreachable(match e {
+        Unreachable::TimedOut { host, port } => format!("Timed out reaching {host}:{port}"),
+        Unreachable::Failed { host, port, why } => format!("Can't reach {host}:{port}: {why}"),
+        other => format!("Can't reach the server: {other}"),
+    })
+}
 
-    match h.provider {
-        // vagrant-vmware-esxi drives ESXi over SSH: check the port actually speaks SSH.
-        Provider::VmwareEsxi => {
-            let mut buf = [0u8; 64];
-            match tokio::time::timeout(TEST_TIMEOUT, stream.read(&mut buf)).await {
-                Ok(Ok(n)) if buf[..n].starts_with(b"SSH-") => TestResult::reached(
-                    true,
-                    None,
-                    latency_ms,
-                    "SSH is up. Make sure SSH is enabled on the ESXi host; the password is checked on first lab start.",
-                ),
-                _ => TestResult::reached(false, None, latency_ms, format!("Port {} is open but doesn't answer as SSH. Enable SSH on the ESXi host.", h.port)),
+/// A connection's time, as the row shows it.
+fn ms(latency: std::time::Duration) -> u64 {
+    u64::try_from(latency.as_millis()).unwrap_or(u64::MAX)
+}
+
+/// A server host: it must accept a TCP connection on its port (isothrum-machine's
+/// [`place::reach`]), then answer as what labs use.
+async fn test_server(dirs: &AppDirs, h: &HostProfile, password: &str) -> TestResult {
+    // vagrant-vmware-esxi drives ESXi over SSH: check the port actually speaks SSH.
+    if h.provider == Provider::VmwareEsxi {
+        return match esxi::ssh(&h.host, h.port, REACH_TIMEOUT).await {
+            Ok(esxi::Ssh::Answers { latency, .. }) => TestResult::reached(
+                true,
+                None,
+                Some(ms(latency)),
+                "SSH is up. Make sure SSH is enabled on the ESXi host; the password is checked on first lab start.",
+            ),
+            Ok(esxi::Ssh::NotSsh { latency }) => {
+                TestResult::reached(false, None, Some(ms(latency)), format!("Port {} is open but doesn't answer as SSH. Enable SSH on the ESXi host.", h.port))
             }
-        }
+            Ok(other) => TestResult::reached(false, None, None, format!("Port {} answered unexpectedly: {other:?}", h.port)),
+            Err(e) => unreachable(&e),
+        };
+    }
+    let latency_ms = match place::reach(&h.host, h.port, REACH_TIMEOUT).await {
+        Ok(latency) => Some(ms(latency)),
+        Err(e) => return unreachable(&e),
+    };
+    match h.provider {
         // Proxmox: sign in to the API (token or user + password), then check what a lab
         // launch needs (node, storage content, bridge, SSH key for token setups).
         Provider::Proxmox => {
-            drop(stream);
             let key = match crate::runtime::ssh::ensure_key(dirs).await {
                 Ok((key, _)) => key,
                 Err(e) => return TestResult::reached(false, None, latency_ms, format!("The launcher's SSH key couldn't be made ({e}).")),
