@@ -297,7 +297,9 @@ impl Deployment {
         let provider = provider.map(runner_provider).transpose()?;
         let opts = self.changing(Some(Start { inputs, provider })).await?;
         self.act(remote::Act::Up, &opts, log).await?;
-        super::described::log_message(&self.dir, self.target(), log);
+        // The ports the run got, which the message names: none read, the spec's.
+        let run = self.read().await.ok();
+        super::described::log_message(&self.dir, self.target(), run.as_ref(), log);
         Ok(())
     }
 

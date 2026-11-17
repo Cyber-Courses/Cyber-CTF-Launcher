@@ -70,12 +70,6 @@ pub fn resolved(dir: &Path) -> Result<serde_json::Value> {
     isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir)).map_err(|e| Error::Invalid(e.to_string()))
 }
 
-/// The lab's message (how to start, in Markdown) as it reads on `target`, its placeholders filled
-/// from its spec; none when it has none.
-pub fn message_on(dir: &Path, target: Target) -> Result<Option<String>> {
-    isoloom_targets::resolved::render_message_on(&lab(dir)?, instance(dir), target).map_err(|e| Error::Invalid(e.to_string()))
-}
-
 /// The VM a VM lab's checks that stand on its networks run in: Isoloom's controller, which halts
 /// once it has set the lab up.
 pub const CONTROLLER: &str = isoloom_spec::contract::CONTROLLER;
