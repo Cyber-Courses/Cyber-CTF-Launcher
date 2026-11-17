@@ -1,19 +1,11 @@
 //! The Docker-compatible engines, as isothrum-machine finds them ([`isothrum_machine::docker`]),
 //! in the launcher's errors; and switching or starting one the way the player would.
 
-use std::time::Duration;
-
-use isothrum_machine::docker::{ContextError, NoAnswer};
+use isothrum_machine::docker::{ContextError, NoAnswer, StartFailed};
 pub use isothrum_machine::docker::{Engine, EngineStatus};
 
 use crate::error::{Error, Result};
-use crate::platform::exec::{docker_denied, docker_denied_error, run};
-use isothrum_machine::HostOs;
-
-/// How many times a started engine is asked whether it answers: 90, [`START_POLL`] apart.
-const START_TRIES: u32 = 90;
-/// How long between two of those tries.
-const START_POLL: Duration = Duration::from_secs(2);
+use crate::platform::exec::docker_denied_error;
 
 /// What isothrum-machine runs Docker with ([`crate::runtime::providers::machine_check`]).
 fn machine() -> isothrum_machine::Context {
@@ -21,18 +13,13 @@ fn machine() -> isothrum_machine::Context {
 }
 
 /// Why the daemon gave no answer, as the launcher's error: a refusal or a stopped daemon as the
-/// Docker call that failed, which [`docker_denied`] reads.
+/// Docker call that failed, its words as the CLI said them ([`isothrum_machine::docker::says_denied`]).
 pub(crate) fn no_answer(why: NoAnswer) -> Error {
     match why {
         NoAnswer::NoCli => Error::ToolMissing { tool: "docker" },
         NoAnswer::Denied(said) | NoAnswer::Down(said) => Error::CommandFailed { command: "docker info".into(), stderr: said },
         empty => Error::Invalid(empty.to_string()),
     }
-}
-
-/// `docker info`'s operating system line: the daemon answers (for this account).
-async fn daemon_os() -> Result<String> {
-    isothrum_machine::docker::daemon_os(&machine()).await.map_err(no_answer)
 }
 
 /// The engine with the webview's id `engine`.
@@ -62,63 +49,26 @@ pub async fn docker_use_engine(engine: String) -> Result<()> {
 }
 
 /// Starts an installed engine that isn't running, the way the player would (open the app or run
-/// its CLI), points Docker at it and waits until it answers. Docker Desktop and OrbStack take a
-/// while on first start, hence the generous wait.
+/// its CLI), points Docker at it and waits until it answers ([`isothrum_machine::docker::start_engine`]).
+/// Docker Desktop and OrbStack take a while on first start, hence the generous wait.
 pub async fn docker_start_engine(engine: String) -> Result<()> {
-    // Running already, but not for this account: starting it again can't help.
-    if let Err(e) = daemon_os().await
-        && docker_denied(&e)
-    {
-        return Err(docker_denied_error());
-    }
-    launch(&engine).await?;
-    for _ in 0..START_TRIES {
-        // The engine's context appears once it is up; point Docker at it, then ask the daemon.
-        let _ = docker_use_engine(engine.clone()).await;
-        match daemon_os().await {
-            Ok(_) => return Ok(()),
-            // Up now, but not for this account: say so instead of waiting out the whole wait.
-            Err(e) if docker_denied(&e) => return Err(docker_denied_error()),
-            Err(_) => {}
+    let Some(id) = Engine::from_id(&engine) else { return Err(cant_start(&engine)) };
+    let elevation = crate::machine::tools::install::elevation();
+    isothrum_machine::docker::start_engine(&machine(), id, elevation, &mut |_| {}).await.map_err(|failed| match failed {
+        StartFailed::NotHere(_) => cant_start(&engine),
+        // Running, but not for this account: starting it again can't help.
+        StartFailed::Denied(_) => docker_denied_error(),
+        StartFailed::Step(failed) => crate::machine::tools::steps::step_failed(failed, false),
+        StartFailed::NoAnswer { waited, .. } => {
+            Error::Invalid(format!("{engine} didn't answer within {} minutes. Check its window, then re-check.", waited.as_secs() / 60))
         }
-        tokio::time::sleep(START_POLL).await;
-    }
-    let minutes = (START_POLL * START_TRIES).as_secs() / 60;
-    Err(Error::Invalid(format!("{engine} didn't answer within {minutes} minutes. Check its window, then re-check.")))
+        other => Error::Invalid(other.to_string()),
+    })
 }
 
-/// Docker Desktop's app on Windows, where its installer puts it.
-const DOCKER_DESKTOP: &str = r"C:\Program Files\Docker\Docker\Docker Desktop.exe";
-
-/// Opens the engine's app, or runs its CLI, on this OS.
-async fn launch(engine: &str) -> Result<String> {
-    match (isothrum_runner::this_host(), engine) {
-        (HostOs::Macos, "docker-desktop") => run("open", &["-a", "Docker"], None).await,
-        (HostOs::Macos, "orbstack") => run("open", &["-a", "OrbStack"], None).await,
-        // Opened by Explorer, the user's shell, which hands the app to the running shell and
-        // returns: the app runs on its own, outside the tool's tree the runner ends, with none of
-        // this process's handles (through `cmd /C start` it inherited them and kept them open, and
-        // a caller waiting for this process's output waited for Docker Desktop to quit). Explorer
-        // exits 1 having opened it: only a missing Explorer is a failure.
-        (HostOs::Windows, "docker-desktop") => match run("explorer", &[DOCKER_DESKTOP], None).await {
-            Err(Error::CommandFailed { .. }) => Ok(String::new()),
-            done => done,
-        },
-        // Unattended (see `platform::elevation`): as root already, or through sudo, never asking.
-        (HostOs::Linux, "docker-engine") if crate::platform::elevation::unattended() => {
-            if crate::platform::elevation::is_root() {
-                run("systemctl", &["start", "docker"], None).await
-            } else {
-                run("sudo", &["-n", "systemctl", "start", "docker"], None).await
-            }
-        }
-        (HostOs::Linux, "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
-            Error::ToolMissing { .. } => Error::Invalid(crate::machine::tools::steps::NO_PKEXEC.into()),
-            e => e,
-        }),
-        (_, "colima") => run("colima", &["start"], None).await,
-        _ => Err(Error::Invalid(format!("Cyber CTF can't start {engine} here; start it yourself, then re-check."))),
-    }
+/// An engine Cyber CTF doesn't start on this OS.
+fn cant_start(engine: &str) -> Error {
+    Error::Invalid(format!("Cyber CTF can't start {engine} here; start it yourself, then re-check."))
 }
 
 #[cfg(test)]

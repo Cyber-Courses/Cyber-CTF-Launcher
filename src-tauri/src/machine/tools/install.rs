@@ -61,13 +61,16 @@ fn windows_plan(dep: Dependency, arch: Arch) -> Result<Plan> {
     isothrum_machine::install::windows::install(dep, arch).map_err(refusal)
 }
 
-/// How root steps run on this Linux machine (isothrum-machine's [`linux::Root`]): through pkexec's
-/// prompt, or unattended (see `platform::elevation`) as root or through `sudo -n`; with this
-/// process's proxy, which a root step reads from a private file.
+/// How root steps run on this Linux machine: through pkexec's prompt, or unattended (see
+/// `platform::elevation`) as root or through `sudo -n`.
+pub(crate) fn elevation() -> Elevation {
+    if crate::platform::elevation::unattended() { Elevation::Unattended { root: crate::platform::elevation::is_root() } } else { Elevation::Prompt }
+}
+
+/// How root steps run on this Linux machine (isothrum-machine's [`linux::Root`]): [`elevation`]'s
+/// way, with this process's proxy, which a root step reads from a private file.
 pub(super) fn linux_root() -> linux::Root {
-    let elevation =
-        if crate::platform::elevation::unattended() { Elevation::Unattended { root: crate::platform::elevation::is_root() } } else { Elevation::Prompt };
-    linux::Root { elevation, proxy: linux::proxy_assignments(|name| std::env::var(name).ok()) }
+    linux::Root { elevation: elevation(), proxy: linux::proxy_assignments(|name| std::env::var(name).ok()) }
 }
 
 /// Why isothrum-machine can't make a plan here, in the player's words.

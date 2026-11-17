@@ -119,7 +119,7 @@ fn known_said(known: Known, removal: bool) -> &'static str {
 }
 
 /// Why a step failed, in the player's words (`removal`: a removal's, for a cancel's words).
-pub(super) fn step_failed(failed: StepFailed, removal: bool) -> Error {
+pub(crate) fn step_failed(failed: StepFailed, removal: bool) -> Error {
     match failed {
         StepFailed::NoPkexec => Error::Invalid(NO_PKEXEC.into()),
         StepFailed::Missing { program } => Error::Invalid(format!("{program} is not available on this machine.")),

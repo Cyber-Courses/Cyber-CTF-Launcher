@@ -27,7 +27,6 @@ const OWN_WINDOWS: &[(&str, &str)] = &[
     ("runtime/terminal_launch.rs", "the player's terminal window; moves to isothrum-machine's terminal"),
     ("terminal.rs", "the in-app terminal's shell, on a pseudo-terminal"),
     ("platform/proxy.rs", "macOS's proxy settings (scutil), read once before the async runtime runs"),
-    ("platform/sys/windows/elevation.rs", "the one UAC prompt that joins Hyper-V Administrators (ShellExecuteExW runas)"),
 ];
 
 /// A process started in `code` other than through the runner, 1-based lines; comments aside.

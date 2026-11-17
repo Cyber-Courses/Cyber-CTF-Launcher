@@ -1,17 +1,8 @@
-//! Elevation: whether this process runs elevated, and starting a program elevated through
-//! a UAC prompt (`ShellExecuteEx` with the `runas` verb).
+//! Elevation: whether this process runs elevated.
 
-use std::path::Path;
-
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetExitCodeProcess, INFINITE, OpenProcessToken, WaitForSingleObject};
-use windows_sys::Win32::UI::Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
-
-use super::wide;
-
-/// `SW_HIDE`: the program keeps its console window hidden.
-const SW_HIDE: i32 = 0;
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
 /// Whether this process runs with an administrator (elevated) token.
 pub fn is_elevated() -> bool {
@@ -28,62 +19,5 @@ pub fn is_elevated() -> bool {
         let ok = GetTokenInformation(token, TokenElevation, std::ptr::from_mut(&mut elevation).cast(), size, &raw mut len) != 0;
         CloseHandle(token);
         ok && elevation.TokenIsElevated != 0
-    }
-}
-
-/// A program started elevated; its handle is closed when dropped.
-pub struct ElevatedProcess(HANDLE);
-
-// SAFETY: a process handle is a kernel handle, usable from any thread.
-unsafe impl Send for ElevatedProcess {}
-
-impl ElevatedProcess {
-    /// Waits for it to end; its exit code.
-    pub fn wait(self) -> u32 {
-        let mut code = 1u32;
-        // SAFETY: the live process handle ShellExecuteExW returned (closed on drop).
-        unsafe {
-            WaitForSingleObject(self.0, INFINITE);
-            if GetExitCodeProcess(self.0, &raw mut code) == 0 {
-                code = 1;
-            }
-        }
-        code
-    }
-}
-
-impl Drop for ElevatedProcess {
-    fn drop(&mut self) {
-        // SAFETY: the handle is ours and closed once.
-        unsafe {
-            CloseHandle(self.0);
-        }
-    }
-}
-
-/// Starts `exe` elevated with `args`, in `dir` (UAC asks first, for the window `owner` when not
-/// 0). The OS error code when it couldn't (1223: the prompt was declined).
-pub fn launch_elevated(exe: &Path, args: &str, dir: &Path, owner: isize) -> Result<ElevatedProcess, i32> {
-    let (verb, file, params, directory) = (wide("runas".as_ref()), wide(exe.as_os_str()), wide(args.as_ref()), wide(dir.as_os_str()));
-    let Ok(size) = u32::try_from(std::mem::size_of::<SHELLEXECUTEINFOW>()) else { return Err(1) };
-    // SAFETY: a zeroed SHELLEXECUTEINFOW is valid (null pointers, no flags); every string it
-    // points to outlives the call.
-    unsafe {
-        let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
-        info.cbSize = size;
-        info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
-        info.hwnd = owner as _;
-        info.lpVerb = verb.as_ptr();
-        info.lpFile = file.as_ptr();
-        info.lpParameters = params.as_ptr();
-        info.lpDirectory = directory.as_ptr();
-        info.nShow = SW_HIDE;
-        if ShellExecuteExW(&raw mut info) == 0 {
-            return Err(GetLastError().cast_signed());
-        }
-        if info.hProcess.is_null() {
-            return Err(1);
-        }
-        Ok(ElevatedProcess(info.hProcess))
     }
 }

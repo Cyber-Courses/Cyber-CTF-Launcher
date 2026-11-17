@@ -308,13 +308,6 @@ fn setup(app: &mut App) {
         let paths = app.path();
         platform::msix_data::migrate(&app.config().identifier, paths.app_local_data_dir().ok().as_deref(), paths.app_data_dir().ok().as_deref());
     }
-    // The window a UAC prompt (Vagrant on Hyper-V) is raised for, here and in deploy workers.
-    #[cfg(windows)]
-    if let Some(w) = app.get_webview_window("main")
-        && let Ok(hwnd) = w.hwnd()
-    {
-        platform::exec::set_owner_window(hwnd.0 as isize);
-    }
     // The app's data (deploy jobs, Terraform state, keys) is this user's alone.
     if let Ok(dir) = app.path().app_data_dir() {
         narrow_to_this_user(&dir);
