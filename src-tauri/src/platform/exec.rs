@@ -48,10 +48,6 @@ pub fn tools_in_use() -> ToolSet {
     ToolSet(0)
 }
 
-/// How long a read-only status probe (docker/vagrant inspect, ps, network ls) may take before
-/// it's treated as a stuck tool. Polled paths use this so a wedged daemon can't hang the UI.
-pub const STATUS_TIMEOUT: Duration = Duration::from_secs(25);
-
 /// The bound on `run`/`run_env` when the caller named none. A read probe or a cloud CLI sets its
 /// own shorter limit, but teardown (`docker compose down`, `docker rm -f`) runs through the plain
 /// path while holding the lab lock, and a wedged daemon there must fail rather than hang the lab
@@ -78,16 +74,6 @@ pub fn timed_out(e: &Error) -> bool {
 /// Runs a program without a shell (arguments are never interpolated) and returns stdout.
 pub async fn run(program: &'static str, args: &[&str], cwd: Option<&Path>) -> Result<String> {
     run_env(program, args, cwd, &[]).await
-}
-
-/// `run` with the shared status timeout, for polled read-only probes.
-pub async fn run_read(program: &'static str, args: &[&str], cwd: Option<&Path>) -> Result<String> {
-    run_inner(program, args, cwd, &[], Some(STATUS_TIMEOUT)).await
-}
-
-/// `run_read` with extra environment variables (a Docker context to probe, say).
-pub async fn run_read_env(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)]) -> Result<String> {
-    run_inner(program, args, cwd, env, Some(STATUS_TIMEOUT)).await
 }
 
 /// `run` with extra environment variables.

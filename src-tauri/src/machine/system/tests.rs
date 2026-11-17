@@ -10,24 +10,29 @@ use crate::runtime::providers::testing::{Machine, host};
 /// The check reports the OVF Tool the setup placed in the app's folder, and where it is.
 #[tokio::test]
 async fn the_check_says_where_the_ovf_tool_was_found() {
-    use crate::machine::tools::ovftool::{Source, managed_dir};
-    use crate::testing::tools::{Tools, ok};
+    use crate::machine::tools::ovftool::managed_dir;
+    use isothrum_machine::tools::ovftool::Source;
+    let root = tempfile::tempdir().unwrap();
+    let tools = FakeProcesses::model(|call| {
+        if std::path::Path::new(&call.program).file_stem().is_some_and(|s| s == "ovftool") {
+            Reply::ok("VMware ovftool 5.1.0 (build-24936374)\n")
+        } else {
+            Reply::missing()
+        }
+    });
+    let _machine = Machine::set(Arc::new(tools), host(root.path()));
     let t = crate::testing::test_app::TestApp::new();
-    let _tools = Tools::new(|program, _| if program == "ovftool" { ok("VMware ovftool 5.1.0 (build-24936374)\n") } else { None });
     let report = super::system_check(t.dirs()).await;
-    let fusion = std::path::Path::new("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool/ovftool").is_file();
     if report.ovftool_location.is_none() {
         assert!(!report.ovftool.installed, "nothing found, nothing installed");
     }
-    let exe = if cfg!(windows) { "ovftool.exe" } else { "ovftool" };
+    let exe = isothrum_machine::tools::ovftool::exe(isothrum_runner::this_host());
     std::fs::create_dir_all(managed_dir(t.data())).unwrap();
     std::fs::write(managed_dir(t.data()).join(exe), "").unwrap();
     let report = super::system_check(t.dirs()).await;
     assert_eq!(report.ovftool.version.as_deref(), Some("VMware ovftool 5.1.0 (build-24936374)"));
     let location = report.ovftool_location.unwrap();
-    if !fusion && !cfg!(windows) {
-        assert_eq!((location.source, std::path::PathBuf::from(&location.path)), (Source::Managed, managed_dir(t.data()).join(exe)));
-    }
+    assert_eq!((location.source, std::path::PathBuf::from(&location.path)), (Source::Managed, managed_dir(t.data()).join(exe)));
     let json = serde_json::to_value(&location).unwrap();
     assert!(json.get("needsRosetta").is_some() && json.get("source").is_some(), "{json}");
 }

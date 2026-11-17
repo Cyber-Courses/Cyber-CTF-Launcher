@@ -48,9 +48,15 @@ async fn remembered_at<E>(key: &str, now: Instant, ask: impl Future<Output = Res
 }
 
 /// The programs whose `--version` the machine check keeps ([`Remembering`]): the ones it read
-/// through [`remembered`] before isothrum-machine ran its probes. A hypervisor's is never kept:
-/// its probe also tells a wedged service.
+/// through [`remembered`] before isothrum-machine ran its probes, and the OVF Tool, asked by its
+/// file. A hypervisor's is never kept: its probe also tells a wedged service.
 const KEPT_VERSIONS: [&str; 4] = ["docker", "vagrant", "aws", "gcloud"];
+
+/// Whether the machine check keeps `program`'s `--version`: one of [`KEPT_VERSIONS`], or an OVF
+/// Tool by its path (`ovftool`, `ovftool.exe`), kept by file.
+fn version_kept(program: &str) -> bool {
+    KEPT_VERSIONS.contains(&program) || std::path::Path::new(program).file_stem().is_some_and(|s| s == "ovftool")
+}
 
 /// isothrum-machine's runner, the `--version` answers of [`KEPT_VERSIONS`] kept as [`remembered`]
 /// keeps them (one that failed is asked again next time); every other call goes to `inner`.
@@ -77,7 +83,7 @@ impl isothrum_runner::ProcessRunner for Remembering {
         spec: &'a isothrum_runner::ProcessSpec,
         on_line: isothrum_runner::OnLine<'a>,
     ) -> isothrum_runner::BoxFuture<'a, std::result::Result<isothrum_runner::Exit, isothrum_runner::ProcessError>> {
-        if spec.args != ["--version"] || !KEPT_VERSIONS.contains(&spec.program.as_str()) || !spec.env.is_empty() {
+        if spec.args != ["--version"] || !version_kept(&spec.program) || !spec.env.is_empty() {
             return self.inner.run(spec, on_line);
         }
         Box::pin(async move {

@@ -85,7 +85,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     crate::platform::env_path::refresh();
     let cx = providers::machine_setup().await;
     let (found, (ovftool, ovftool_location)) =
-        tokio::join!(Box::pin(isothrum_machine::check::check(&cx, wsl::marks(&dirs))), crate::machine::tools::ovftool::probe(data.as_deref()));
+        tokio::join!(Box::pin(isothrum_machine::check::check(&cx, wsl::marks(&dirs))), crate::machine::tools::ovftool::probe(&cx, data.as_deref()));
     let docker_denied = found.daemon.denied();
     let host = &cx.host;
     let mut report = SystemReport {
