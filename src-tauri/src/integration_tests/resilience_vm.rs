@@ -21,7 +21,7 @@ use super::support::lab::{Run, every_machine_runs, vm_inputs};
 use super::support::{Wait, check, eventually, knob, log, refused_by_launcher, scenario};
 use crate::platform::exec::run_env;
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Runtime, docker, isothrum, lab, launch, lifecycle};
+use crate::runtime::{LabStatus, docker, isothrum, lab, launch, lifecycle};
 
 /// The hypervisor under test (`CYBERCTF_TEST_VM_PROVIDER`, default QEMU, as the runner's).
 fn provider() -> Provider {
@@ -46,7 +46,7 @@ async fn shown(l: &Run, machine: &str) -> Option<String> {
 /// `vagrant <args>` on the run's VMs, as a player would in its folder.
 async fn vagrant(l: &Run, args: &[&str]) -> crate::error::Result<String> {
     let env = [("VAGRANT_DOTFILE_PATH".to_owned(), dotfile(l).to_string_lossy().into_owned())];
-    run_env("vagrant", args, Some(&lab::vagrant_dir(&l.dir, Runtime::Vm)), &env).await
+    run_env("vagrant", args, Some(&lab::vagrant_dir(&l.dir)), &env).await
 }
 
 /// The lab started on the hypervisor (the lab page's Start), then up, its URL answering.

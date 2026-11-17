@@ -171,14 +171,12 @@ pub(crate) async fn forget_run(home: &Path, id: &str) -> Result<()> {
 }
 
 /// Lab `id`'s run here, installed in `dir`, opened in the form its record says it was started in
-/// (Docker, VMs, or the helper VM an earlier version ran a container lab in): none without a
-/// record, or for a run recorded on a server or a cloud, which isn't this machine's to read.
+/// (Docker or VMs): none without a record, or for a run recorded on a server or a cloud, which isn't this machine's to read.
 pub(crate) async fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &str) -> Result<Option<Deployment>> {
     let Some(record) = record_of(dirs, id).await? else { return Ok(None) };
     let home = paths::runner_home(dirs)?;
     Ok(Some(match super::recorded::RunForm::of(&record) {
         super::recorded::RunForm::Docker => Deployment::docker(&home, dir, id)?,
-        super::recorded::RunForm::HelperVm => Deployment::docker_in_vm(&home, dir, id)?,
         super::recorded::RunForm::Vagrant if record.host_label.is_none() => Deployment::vm(&home, dir, id)?,
         _ => return Ok(None),
     }))

@@ -42,7 +42,7 @@ pub(super) fn lab_status(lab: &Described, status: &Status, marked: Option<Park>)
 }
 
 /// Whether any of the run's machines runs (an unhealthy one runs too), Isoloom's own included:
-/// what a run with no description to read (the helper VM an earlier version left) goes by.
+/// what a run with no description to read goes by.
 pub(super) fn runs(status: &Status) -> bool {
     status.machines.iter().any(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy))
 }

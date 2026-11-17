@@ -34,10 +34,6 @@ describe("where a lab runs", () => {
     const vm = placeOf(labStatus({ running: true, place: "local_vm", provider: "qemu" }), false, "docker-desktop", hosts);
     expect(vm).toEqual({ kind: "hypervisor", provider: "qemu" });
     expect(placeText(t, must(vm))).toBe('labs.detail.thisMachineWith:{"engine":"QEMU"}');
-    // A container lab an earlier version left in a helper VM: told as any VM here.
-    const inVm = placeOf(labStatus({ running: true, place: "local_vm", provider: "utm" }), true, "docker-desktop", hosts);
-    expect(inVm).toEqual({ kind: "hypervisor", provider: "utm" });
-    expect(placeText(t, must(inVm))).toBe('labs.detail.thisMachineWith:{"engine":"UTM"}');
     // A container lab run as one VM per machine: its VMs are its machines, as a VM lab's are.
     const perMachine = placeOf(labStatus({ running: true, place: "local_vm", provider: "virtualbox", perMachine: true }), true, "docker-desktop", hosts);
     expect(perMachine).toEqual({ kind: "hypervisor", provider: "virtualbox" });

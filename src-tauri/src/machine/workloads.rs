@@ -78,7 +78,7 @@ pub async fn machine_workloads(dirs: AppDirs) -> Result<Vec<Workload>> {
 fn workload(id: String, row: &RunRow) -> Option<Workload> {
     let kind = match RunForm::of(&row.record) {
         RunForm::Docker => WorkloadKind::Docker,
-        RunForm::Vagrant | RunForm::HelperVm => WorkloadKind::Vm,
+        RunForm::Vagrant => WorkloadKind::Vm,
         RunForm::Terraform => return None,
     };
     let provider = row.record.provider.filter(|_| kind == WorkloadKind::Vm).and_then(provider_id);

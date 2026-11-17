@@ -38,7 +38,7 @@ pub(super) async fn start_on_server(
     }
     if conn.provider == Provider::VmwareEsxi {
         lab::prepare(dir, lab::Target::Vagrant)?;
-        return esxi_run(dirs, dir, id, runtime, &conn)?.up(inputs, Some(Provider::VmwareEsxi.id()), log).await;
+        return esxi_run(dirs, dir, id, &conn)?.up(inputs, Some(Provider::VmwareEsxi.id()), log).await;
     }
     lab::prepare(dir, lab::terraform(dir, runtime, "proxmox").1)?;
     let place = server_place(dirs, host, &conn).await?;
@@ -59,7 +59,7 @@ pub(super) fn per_machine_runs_on(provider: Option<Provider>) -> Result<()> {
 }
 
 /// Whether a container lab's containers run on `provider`: a cloud account's VM (Isoloom's
-/// cloud-docker), not a server's (ESXi, Proxmox), which would hold them inside a helper VM.
+/// cloud-docker), not a server (ESXi, Proxmox), which runs VMs only.
 pub(super) fn containers_run_on(provider: Option<Provider>) -> Result<()> {
     match provider {
         Some(p) if p.is_cloud() => Ok(()),
@@ -69,8 +69,8 @@ pub(super) fn containers_run_on(provider: Option<Provider>) -> Result<()> {
 
 /// The runner's run of VM lab `id` (in `dir`) on the ESXi server of connection `c`: its
 /// settings as params, its password as the run's connection.
-pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::Deployment> {
-    isothrum::Deployment::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&c.id, &c.name, &c.env))
+pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, c: &server::Connection) -> Result<isothrum::Deployment> {
+    isothrum::Deployment::on_esxi(&runner_home(dirs)?, dir, id, isothrum::EsxiPlace::from_env(&c.id, &c.name, &c.env))
 }
 
 /// Where a runner's run goes on server `host` (connection `conn`): its variables (with the

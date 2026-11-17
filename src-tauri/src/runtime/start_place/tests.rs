@@ -48,23 +48,13 @@ async fn place(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider]) -> S
 
 /// [`place`], the player preferring hypervisor `preferred`.
 async fn preferring(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider], preferred: Option<Provider>) -> StartPlace {
-    placed(t, (id, runtime), (ready, preferred), false).await
-}
-
-/// [`place`] with this machine's Docker answering (`docker`).
-async fn with_docker(t: &TestApp, id: &str, runtime: Runtime, docker: bool) -> StartPlace {
-    placed(t, (id, runtime), (&[], None), docker).await
-}
-
-/// Where lab `id` starts, as [`preferring`] says, Docker answering here when `docker`.
-async fn placed(t: &TestApp, (id, runtime): (&str, Runtime), (ready, preferred): (&[Provider], Option<Provider>), docker: bool) -> StartPlace {
     let ready = ready.to_vec();
     Box::pin(default_place_with(
         &t.dirs(),
         (id, runtime),
         lab::Source { repository: "CyberCTF/lab", commit: SHA, check: |_, _| Ok(()) },
         preferred,
-        (async move || ready, async move || docker),
+        async move || ready,
     ))
     .await
     .unwrap()
@@ -147,16 +137,8 @@ async fn a_lab_starts_again_where_it_last_ran() {
     record_run(t.data(), "web", None, "vagrant", "parked");
     set_provider(&t, "web", "virtualbox");
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, per_machine_on(Provider::Virtualbox));
-    // Last in a helper VM an earlier version ran it inside: its true form, on Docker when Docker
-    // answers, else as one VM per machine on that hypervisor while its spec runs there.
-    record_run(t.data(), "web", None, "docker-vm", "absent");
-    set_provider(&t, "web", "virtualbox");
-    assert_eq!(with_docker(&t, "web", Runtime::Docker, true).await, StartPlace::default());
-    assert_eq!(with_docker(&t, "web", Runtime::Docker, false).await, per_machine_on(Provider::Virtualbox));
-    set_provider(&t, "web", "utm");
-    assert_eq!(with_docker(&t, "web", Runtime::Docker, false).await, per_machine_on(Provider::Utm));
     // A server no longer saved: as if it never ran there.
-    record_run(t.data(), "web", Some("gone"), "docker-vm", "absent");
+    record_run(t.data(), "web", Some("gone"), "proxmox", "absent");
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace::default());
     // A cloud-services lab is picked on its page.
     assert_eq!(place(&t, "goat", Runtime::Cloud, &[]).await, StartPlace::default());
@@ -196,7 +178,7 @@ async fn a_lab_last_on_a_server_is_an_error_when_the_saved_servers_cant_be_read(
         ("ad", Runtime::Vm),
         lab::Source { repository: "CyberCTF/lab", commit: SHA, check: |_, _| Ok(()) },
         None,
-        (async move || ready, async || false),
+        async move || ready,
     ))
     .await;
     assert!(place.is_err(), "{place:?}");

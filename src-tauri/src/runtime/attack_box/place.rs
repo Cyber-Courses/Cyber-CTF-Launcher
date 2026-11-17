@@ -34,8 +34,7 @@ pub(crate) struct Placed {
 /// its run on this machine, on a Proxmox server or in a cloud account. `None` where the launcher
 /// adds no box: on an ESXi host, not supported yet (a choice, not a limit of the run: the runner
 /// updates an ESXi run like any other), beside cloud services, which have no machines for it
-/// to join ([`Host::has_machines`]), wherever they run, or in a helper VM an earlier version ran
-/// a container lab inside, whose files can't be generated again with the box.
+/// to join ([`Host::has_machines`]), wherever they run.
 pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
     Ok(match host::locate(dirs, dir, id, runtime).await? {
         None => None,

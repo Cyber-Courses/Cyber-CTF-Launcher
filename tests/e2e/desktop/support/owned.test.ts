@@ -120,23 +120,14 @@ describe("the app's record of a run the clean-up took down", () => {
   });
 
   it("stays for anything else: a VM's run, a server's, a lab not the run's, a record that doesn't read", () => {
-    const root = run(["vm-lab", "server-lab", "docker-vm-lab", "odd-lab", "local-lab"]);
+    const root = run(["vm-lab", "server-lab", "odd-lab", "local-lab"]);
     const kept = [
       runRecord(root, "cyberctf-vm-lab", { target: "vagrant", driver: "vagrant", state: "ready" }),
       runRecord(root, "cyberctf-server-lab", { target: "docker", driver: "compose", host_label: "pve1", state: "ready" }),
-      runRecord(root, "cyberctf-docker-vm-lab", { target: "docker-vm", driver: "compose", state: "ready" }),
       runRecord(root, "cyberctf-odd-lab", "not json"),
       runRecord(root, "cyberctf-other-lab", { target: "docker", driver: "compose", state: "ready" }),
     ];
-    for (const name of [
-      "cyberctf-vm-lab",
-      "cyberctf-server-lab",
-      "cyberctf-docker-vm-lab",
-      "cyberctf-odd-lab",
-      "cyberctf-other-lab",
-      "../app",
-      "cyberctf-../labs",
-    ])
+    for (const name of ["cyberctf-vm-lab", "cyberctf-server-lab", "cyberctf-odd-lab", "cyberctf-other-lab", "../app", "cyberctf-../labs"])
       expect(dropComposeRecord(root, name), name).toBe(false);
     for (const dir of kept) expect(existsSync(dir), dir).toBe(true);
     // A record of another run's name in this one's folder.

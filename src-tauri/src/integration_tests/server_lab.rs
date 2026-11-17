@@ -496,7 +496,7 @@ async fn a_vm_lab_runs_on_esxi_through_the_runner() {
     .unwrap_or_else(|e| panic!("the ESXi profile reads: {e}"));
     let env = lab::esxi_env(&profile, &var("CYBERCTF_TEST_ESXI_PASSWORD"));
     let home = std::env::temp_dir().join("cyberctf-esxi-runner-home");
-    let run = Deployment::on_esxi(&home, &dir, "esxi-runner-lab", Runtime::Vm, EsxiPlace::from_env(&profile.id, &profile.name, &env))
+    let run = Deployment::on_esxi(&home, &dir, "esxi-runner-lab", EsxiPlace::from_env(&profile.id, &profile.name, &env))
         .unwrap_or_else(|e| panic!("the lab's run on ESXi opens: {e}"));
     let mut f = Vec::new();
     scenario(

@@ -36,11 +36,8 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
     let per_machine = providers(&o.vms);
     assert!(per_machine.contains(&Provider::Hyperv) && per_machine.contains(&Provider::Utm), "{per_machine:?}");
     assert!(!o.refused.iter().any(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant"), "{:?}", o.refused);
-    // A container lab runs as true containers or true VMs, never containers inside a helper VM:
-    // no server offers it, and no path or refusal names the helper VM's former target.
+    // A container lab runs as true containers or true VMs: no server offers it.
     assert_eq!(o.servers, [] as [RunPath; 0]);
-    let targets = || o.vms.iter().chain(&o.cloud_docker).chain(&o.cloud_vm).map(|p| p.target.as_str()).chain(o.refused.iter().map(|r| r.target.as_str()));
-    assert!(targets().all(|t| t != "docker-vm" && t != "hybrid"), "{:?}", targets().collect::<Vec<_>>());
     assert_eq!(providers(&o.cloud_docker), Provider::CLOUDS);
     assert_eq!(providers(&o.cloud_vm), Provider::CLOUDS);
     assert_eq!(o.cloud_services, [] as [RunPath; 0]);

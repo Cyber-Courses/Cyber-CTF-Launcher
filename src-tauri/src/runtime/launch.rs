@@ -86,10 +86,9 @@ impl Placement {
 /// Starts an installed lab; `env` holds the lab's input values (the evidence claim, the player's
 /// flags).
 ///
-/// - No `host`: Docker labs run on this machine's Docker, or in one VM on this machine with a
-///   local `provider` (Isoloom's docker-vm), or, with `per_machine_vm`, as one VM per machine
-///   like a VM lab when their spec has VM recipes too; VM labs run one VM per machine
-///   (Isoloom's vagrant).
+/// - No `host`: Docker labs run on this machine's Docker, or, with `per_machine_vm`, as one VM
+///   per machine like a VM lab when their spec has VM recipes too; VM labs run one VM per
+///   machine (Isoloom's vagrant).
 /// - With a server `host`: the lab runs there. ESXi runs the same Vagrantfiles; Proxmox and
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
@@ -301,7 +300,7 @@ pub(super) const PER_MACHINE_NOT_ON_SERVERS: &str =
     "One VM per machine runs on this machine or a cloud account: on a server (ESXi, Proxmox), the lab runs as it is published.";
 
 /// A container lab's containers run on this machine's Docker or on a cloud account's VM, not on a
-/// server, where they would run inside a helper VM.
+/// server, which runs VMs only.
 pub(super) const CONTAINERS_NOT_ON_SERVERS: &str =
     "A container lab runs on this machine (on Docker, or as one VM per machine) or in a cloud account, not on a server (ESXi, Proxmox).";
 

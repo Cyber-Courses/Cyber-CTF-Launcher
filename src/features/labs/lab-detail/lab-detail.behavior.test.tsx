@@ -618,7 +618,7 @@ describe("LabDetail: a lab that is up", () => {
     expect(h.onResume).toHaveBeenCalled();
   });
 
-  it("offers Start them where the backend can bring machines back: a container lab run as one VM per machine, not one an earlier version left in a helper VM", async () => {
+  it("offers Start them only where the backend can bring machines back (a container lab run as one VM per machine)", async () => {
     installTauri(quiet);
     const machines = [machine("web", "running"), machine("db", "poweroff")];
     const perMachine = status({ machines, place: "local_vm", provider: "virtualbox", perMachine: true, url: null, controls: VMS_HERE });
@@ -626,7 +626,7 @@ describe("LabDetail: a lab that is up", () => {
     await flush();
     expect(screen.getByRole("button", { name: /Start them/ })).toBeTruthy();
     cleanup();
-    // The helper VM's run is only stopped: the page still shows it, with nothing but its stop.
+    // No repair offered: the page still shows the run, with nothing but its stop.
     renderDetail({ status: { ...perMachine, perMachine: false, controls: [] } });
     await flush();
     expect(screen.queryByRole("button", { name: /Start them/ })).toBeNull();

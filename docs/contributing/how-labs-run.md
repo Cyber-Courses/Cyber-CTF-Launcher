@@ -23,14 +23,10 @@ account, what the player picked); the runner does the work and keeps the run's s
 | Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`       | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
 | Cloud account  | cloud services (no machines)               | `cloud-services` | the lab's own Terraform module and `cloud/lab.yml` (a build feature)  |
 
-A lab runs as true containers or true VMs, never as containers inside a helper VM. A container lab
-an earlier version ran inside one helper VM (Isoloom's former `docker-vm`, here, on ESXi or on
-Proxmox) is still read, stopped and removed through the runner as it was started; nothing else
-changes it, and its next start is in its true form (on Docker when Docker answers here, else as
-one VM per machine). When that run is one this build can't read, the lab's files
-are generated in the true form instead, and the log says so; when the runner no longer opens that
-form at all, its helper-VM mark is cleared and the lab says which VM to remove by hand (the
-Machine page lists it).
+A lab runs as true containers or true VMs, never as containers inside a helper VM. A run 1.9 left
+in its helper VM (Isoloom's former `docker-vm` folder) gets no handling of its own: the lab reads
+as declared, a Stop clears the run's record, and the VM itself is left for the player to remove in
+the hypervisor's app.
 
 The catalogue names a lab by its own runtime (containers or VMs); every operation on a started
 lab finds its run through `runtime::host::locate`, which reads where it runs and the form it was
@@ -41,12 +37,12 @@ actually started in from the runner's record of its run (`runtime::recorded`).
 A running lab is the runner's run `cyberctf-<lab id>`, kept in the runner's home
 (`<app data>/isothrum/`). Its record says:
 
-| Field            | Says                                                                                                                                                  |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host_label`     | the saved server or cloud account it runs on, by id; none: this machine                                                                               |
-| `project`        | the folder Isoloom generated for its target: `vagrant` or `cloud-vm` for one VM per machine, `docker-vm` for the helper VM an earlier version started |
-| `state`          | where it stands; `parked` with `parked` (`pause`, `shutdown`) when a park put it there                                                                |
-| `docker_context` | the Docker context a container lab was started on, when not the current one: every later docker call of the run goes there                            |
+| Field            | Says                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `host_label`     | the saved server or cloud account it runs on, by id; none: this machine                                                    |
+| `project`        | the folder Isoloom generated for its target: `vagrant` or `cloud-vm` for one VM per machine                                |
+| `state`          | where it stands; `parked` with `parked` (`pause`, `shutdown`) when a park put it there                                     |
+| `docker_context` | the Docker context a container lab was started on, when not the current one: every later docker call of the run goes there |
 
 A run taken down reads `absent`, and says nothing: the lab is then read as the catalogue declares
 it, on this machine. Beside the lab, in its folder:

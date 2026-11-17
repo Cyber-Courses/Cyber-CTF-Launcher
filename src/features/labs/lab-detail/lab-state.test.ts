@@ -85,9 +85,6 @@ describe("deriveLabState", () => {
       status: status({ running: true, place: "local_vm", perMachine: true, controls: ["pause", "shutdown", "provision", "repair"] }),
     });
     expect([asVms.canPause, asVms.canShutdown, asVms.canProvision, asVms.canRepair]).toEqual([true, true, true, true]);
-    // A container lab an earlier version runs inside a helper VM: only stopped (no controls).
-    const inVm = derive({ status: status({ running: true, place: "local_vm", controls: [] }) });
-    expect([inVm.canPause, inVm.canShutdown, inVm.canProvision, inVm.canRepair]).toEqual([false, false, false, false]);
     // Nothing the backend doesn't offer, whatever the catalogue says.
     const remote = derive({ runtime: vm, status: status({ running: true, host: "pve", hostId: "pve", place: "server", provider: "proxmox" }) });
     expect([remote.canPause, remote.canShutdown, remote.canProvision, remote.canRepair]).toEqual([false, false, false, false]);
@@ -232,10 +229,6 @@ describe("restartTarget", () => {
     const pick: RunTarget = { kind: "local-vms", provider: "qemu" };
     expect(restartTarget(status({ host: "gone", hostId: "h9", place: "server" }), hosts, "VM", pick, null)).toEqual(pick);
     expect(restartTarget(status({ host: "renamed", hostId: "h1", place: "server" }), hosts, "VM", pick, null)).toEqual({ kind: "host", id: "h1" });
-  });
-  it("starts a container lab an earlier version ran inside a helper VM again on Docker here", () => {
-    const inVm = status({ place: "local_vm", provider: "qemu" });
-    expect(restartTarget(inVm, hosts, "DOCKER", here, "virtualbox")).toEqual({ kind: "local" });
   });
   it("starts a container lab run as one VM per machine again in that form", () => {
     const perMachine = status({ place: "local_vm", provider: "virtualbox", perMachine: true });

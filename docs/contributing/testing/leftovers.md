@@ -79,9 +79,9 @@ slot (1 to 99); `<data>` the launcher's data folder (`org.cyberctf.desktop` unde
 | `docker-volume`    | `cyberctf-<id>_<volume>`, `_<disk>`, `_isoloom-probe-<arch>`; anonymous volumes                                                                                                                                                                                                                                                                                      | a volume labelled `isoloom.persistent=true` outlives a stop                                        |
 | `docker-image`     | pulled: a lab's images, Isoloom's helpers (`curlimages/curl`, `busybox`, `alpine`, `nicolaka/netshoot`, `hashicorp/terraform`), the attack box `cyberctf/attack-box`; built: `localhost/isoloom/<env>-<machine>`, `<run>-<service>`                                                                                                                                  | all: the launcher's cache, recorded by the Isothrum runner, removed by the Machine page's Clean up |
 
-A container lab an earlier version ran inside a helper VM (Isoloom's former `docker-vm`, no longer
-generated) ran Compose inside the VM (project `<env>`): on the machine it left only the VM and its
-port forwards, which a stop still finds and removes.
+A container lab 1.9 ran inside a helper VM (Isoloom's former `docker-vm`, no longer generated) ran
+Compose inside the VM (project `<env>`): on the machine it left only the VM and its port forwards.
+The launcher no longer reaches them; the audit still names them.
 
 ### Vagrant and the hypervisors
 

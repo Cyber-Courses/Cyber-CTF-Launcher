@@ -25,9 +25,6 @@ fn a_run_is_its_labs_containers_or_vms_counted_as_last_seen_running() {
     let vms = row("cyberctf-goad", "/labs/goad/.isoloom/vagrant", "vagrant", Some("virtualbox"), &[("dc01", "running"), ("srv02", "stopped")]);
     let w = super::workload("goad".into(), &vms).unwrap();
     assert_eq!((w.kind, w.count, w.provider.as_deref()), (WorkloadKind::Vm, 1, Some("virtualbox")));
-    // The helper VM an earlier version ran a container lab inside is a VM.
-    let helper = row("cyberctf-old", "/labs/old/.isoloom/docker-vm", "vagrant", Some("hyperv"), &[("default", "running")]);
-    assert_eq!(super::workload("old".into(), &helper).map(|w| (w.kind, w.provider)), Some((WorkloadKind::Vm, Some("hyperv".into()))));
     // A module's run is neither.
     assert!(super::workload("mod".into(), &row("cyberctf-mod", "/labs/mod/.isoloom/proxmox", "terraform", None, &[])).is_none());
 }
