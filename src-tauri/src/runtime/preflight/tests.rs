@@ -163,7 +163,7 @@ async fn a_vm_labs_fixed_forward_already_taken_is_said_too() {
     let port = held.local_addr().unwrap().port();
     let forwarded = vms().replace(
         "networks: { lan: 10 } }",
-        &format!("networks: {{ lan: 10 }}, ports: {{ ssh: {{ port: 22, protocol: ssh, publish: {{ host: {port}, fixed: true }} }} }} }}"),
+        &format!("networks: {{ lan: 10 }}, ports: {{ site: {{ port: 80, protocol: http, publish: {{ host: {port}, fixed: true }} }} }} }}"),
     );
     installed(&t, "ad", &forwarded);
     let _tools = machine(true);
