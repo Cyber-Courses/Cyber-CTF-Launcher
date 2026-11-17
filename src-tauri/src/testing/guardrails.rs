@@ -148,8 +148,6 @@ const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
     ("account/auth/tokens.rs", "serde_json::from_str::<serde_json::Value>(&body)", "the sign-in server's HTTP answer"),
     ("account/api.rs", "serde_json::from_str(text)", "the backend's HTTP answer"),
     ("store.rs", "serde_json::from_str(text)", "the launcher's own store's JSON columns"),
-    ("settings.rs", "serde_json::from_str::<TestRecord>(value)", "a test record 1.9 kept in the webview's storage"),
-    ("settings.rs", "serde_json::from_str(value).unwrap_or_default()", "the servers' VM tests 1.9 kept in the webview's storage"),
     ("english.rs", "serde_json::from_str(source)", "the webview's bundled English messages"),
     ("diagnostics/collect.rs", "serde_json::from_str::<Value>(body)", "an earlier version's deploy verdict file, left in the data folder"),
     ("diagnostics/collect.rs", "serde_json::from_slice::<Value>(&std::fs::read(dir.join(n))", "an earlier version's deploy job files, left in the data folder"),
