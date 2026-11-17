@@ -256,10 +256,12 @@ export const resuming =
     void notify(translate("labs.actions.labReady"), translate("labs.actions.back", { title: lab.title }));
   };
 
-/** Re-run a VM lab's provisioning on one machine (or all), streamed into its deploy log. */
+/** Re-run a VM lab's provisioning on one machine (or all), streamed into its deploy log. On a
+ *  Proxmox server reached through its node, the node's keys are confirmed first, as for a stop. */
 export const provisioning =
   (lab: Lab, machine: string | null): OperationBody =>
   async (log, rt) => {
+    await nodeKeysConfirmed(await serverOf(lab, rt));
     await labProvision(lab.id, rt.runtime, machine, log);
     log(machine ? translate("labs.actions.machineProvisioned", { machine }) : translate("labs.actions.labProvisioned"));
   };

@@ -477,10 +477,17 @@ describe("useLabActions: operations on a built lab", () => {
   });
 });
 
-describe("useLabActions: stop and resume on a Proxmox server reached through its node", () => {
+describe("useLabActions: stop, resume and setup again on a Proxmox server reached through its node", () => {
   /** What each operation runs, and its log's last line once it went through. */
-  const OPS = { stop: { cmd: "lab_stop", done: "✓ Lab stopped" }, resume: { cmd: "lab_resume", done: "✓ Lab is running" } } as const;
+  const OPS = {
+    stop: { cmd: "lab_stop", done: "✓ Lab stopped" },
+    resume: { cmd: "lab_resume", done: "✓ Lab is running" },
+    provision: { cmd: "lab_provision", done: "✓ DC01 provisioned" },
+  } as const;
   type Op = keyof typeof OPS;
+  /** Runs `op` on `lab` (setup again on its machine DC01). */
+  const run = (hook: ReturnType<typeof setup>["hook"], op: Op, lab: Lab) =>
+    op === "provision" ? hook.result.current.provision(lab, "DC01") : hook.result.current[op](lab);
 
   /** `op` on the VM lab as `id`, running on the server "pve" as its status says, whose node's
    *  keys `keys` answers: the hook's answer, to await once asked. */
@@ -491,7 +498,7 @@ describe("useLabActions: stop and resume on a Proxmox server reached through its
     });
     const user = userEvent.setup();
     render(<NodeKeysPrompt />);
-    const done = startInAct(() => hook.result.current[op]({ ...vmLab, id }));
+    const done = startInAct(() => run(hook, op, { ...vmLab, id }));
     await flush();
     return { calls, user, done, refresh };
   }
@@ -548,14 +555,20 @@ describe("useLabActions: stop and resume on a Proxmox server reached through its
   it("asks to confirm keys never confirmed before a resume, as the setup does, then resumes", () => asksThenGoes("resume", "act-resume-new"));
   it("resumes nothing and fails nothing when the player declines", () => declined("resume", "act-resume-declined"));
   it("refuses a resume through a node offering other keys than the confirmed ones, in the host key words", () => refused("resume", "act-resume-changed"));
+  it("sets a machine up again at once when the node's keys are the confirmed ones", () => goesAtOnce("provision", "act-prov-known"));
+  it("asks to confirm keys never confirmed before setting a machine up again, as the setup does, then runs it", () =>
+    asksThenGoes("provision", "act-prov-new"));
+  it("sets nothing up again and fails nothing when the player declines", () => declined("provision", "act-prov-declined"));
+  it("refuses a setup again through a node offering other keys than the confirmed ones, in the host key words", () => refused("provision", "act-prov-changed"));
 
   it("asks nothing of a lab running here or on a cloud account", async () => {
     const inCloud = labStatus({ running: true, host: "aws1", hostId: "aws1", place: "cloud", provider: "aws" });
     const { calls, hook } = setup({ lab_status: (a) => (a?.id === "act-stop-cloud" ? inCloud : labStatus({ running: true, place: "local_vm" })) });
     await act(() => hook.result.current.stop({ ...vmLab, id: "act-stop-cloud" }));
     await act(() => hook.result.current.resume({ ...vmLab, id: "act-resume-here" }));
+    await act(() => hook.result.current.provision({ ...vmLab, id: "act-prov-here" }, null));
     expect(commands(calls)).not.toContain("server_node_host_keys");
-    expect(commands(calls)).toEqual(expect.arrayContaining(["lab_stop", "lab_resume"]));
+    expect(commands(calls)).toEqual(expect.arrayContaining(["lab_stop", "lab_resume", "lab_provision"]));
   });
 });
 
