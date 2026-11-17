@@ -20,7 +20,6 @@ const WINDOWS: Record<string, string[]> = {
     "features/labs/runs/operations.ts",
     "lib/appearance.ts",
     "lib/deep-link.ts",
-    "features/labs/attack-box-auto.ts",
     "lib/use-tauri-event.ts",
     "lib/app-events.ts",
   ],

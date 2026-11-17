@@ -392,10 +392,18 @@ async fn execute(dirs: &AppDirs, request: Request, earlier_ended: impl Future<Ou
         Request::Launch(launch) => {
             let line = |l: String| log(l);
             let crate::labs::PreparedLaunch { launch, place, .. } = crate::labs::prepare_launch(dirs, launch, &line).await?;
-            Box::pin(crate::labs::run(dirs, launch, place.destination(), line)).await.map(drop)
+            let (id, runtime) = (launch.lab_id.clone(), launch.runtime);
+            Box::pin(crate::labs::run(dirs, launch, place.destination(), line)).await?;
+            with_attack_box(dirs, &id, runtime, log).await;
+            Ok(())
         }
         Request::LaunchLocal { lab_id, src } => Box::pin(crate::labs::run_local(dirs, &lab_id, &src, move |l| log(l))).await.map(drop),
-        Request::Resume { lab_id, runtime } => Box::pin(crate::runtime::resume_lab(dirs, &lab_id, runtime, move |l| log(l))).await,
+        Request::Resume { lab_id, runtime } => {
+            let line = Arc::clone(&log);
+            Box::pin(crate::runtime::resume_lab(dirs, &lab_id, runtime, move |l| line(l))).await?;
+            with_attack_box(dirs, &lab_id, runtime, log).await;
+            Ok(())
+        }
         Request::Park { lab_id, runtime, mode } => Box::pin(crate::runtime::park_lab(dirs, &lab_id, runtime, mode, move |l| log(l))).await,
         Request::Provision { lab_id, runtime, machine } => {
             Box::pin(crate::runtime::provision_lab(dirs, &lab_id, runtime, machine.as_deref(), move |l| log(l))).await
@@ -409,6 +417,52 @@ async fn execute(dirs: &AppDirs, request: Request, earlier_ended: impl Future<Ou
         }
         Request::AttachBox { lab_id, runtime, pick } => Box::pin(attach_box(dirs, &lab_id, runtime, pick, log)).await,
         Request::DetachBox { lab_id, runtime } => Box::pin(detach_box(dirs, &lab_id, runtime, log)).await,
+    }
+}
+
+/// Once lab `id` is up (a launch or a resume, from the app, the command line or the website), its
+/// attack box is added in the same operation when the player's setting says so ("start it with
+/// each lab"), wherever the launcher reaches a run to put it in ([`auto_attack_box`]).
+async fn with_attack_box(dirs: &AppDirs, id: &str, runtime: Runtime, log: Log) {
+    let settings = match crate::settings::settings_get(dirs) {
+        Ok(settings) => settings,
+        Err(e) => {
+            log::warn!("the settings can't be read, so {id}'s attack box isn't added: {e}");
+            return;
+        }
+    };
+    let status = async || {
+        let dir = lab_dir(dirs, id)?;
+        match attack_box::locate(dirs, &dir, id, runtime).await? {
+            Some(placed) => placed.status().await,
+            None => Ok(attack_box::AttackStatus::default()),
+        }
+    };
+    let attach = async |pick: AttachPick| Box::pin(attach_box(dirs, id, runtime, pick, Arc::clone(&log))).await;
+    auto_attack_box(&settings, status, attach, &|l| log(l)).await;
+}
+
+/// The attack box added to a lab just up, as `settings` say: only with "start it with each lab"
+/// on, only where the launcher reaches a run to put it in (`status`: not on an ESXi host, nor
+/// beside a cloud-services lab) and the box isn't there already, from the saved image and with
+/// the saved desktop choice (`attach`). The lab stays up and usable whatever happens to its box:
+/// a box that can't be added is said in the log, never a failed launch.
+async fn auto_attack_box(
+    settings: &crate::settings::Settings,
+    status: impl AsyncFnOnce() -> Result<attack_box::AttackStatus>,
+    attach: impl AsyncFnOnce(AttachPick) -> Result<()>,
+    log: &(dyn Fn(String) + Sync),
+) {
+    if !settings.attack_auto {
+        return;
+    }
+    let added = match status().await {
+        Ok(s) if !s.reachable || s.running => return,
+        Ok(_) => attach(AttachPick { network: None, image: settings.attack_image.clone(), desktop: settings.attack_desktop }).await,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = added {
+        log(crate::runtime::deploy_log::attack_box_not_added(&e.to_string()));
     }
 }
 
@@ -436,4 +490,62 @@ async fn detach_box(dirs: &AppDirs, id: &str, runtime: Runtime, log: Log) -> Res
     let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime).await?;
     let mut line = move |l: String| log(l);
     Box::pin(run.remove(dirs, &mut line)).await
+}
+
+#[cfg(test)]
+mod attack_box_tests {
+    use std::sync::Mutex;
+
+    use super::*;
+    use crate::settings::Settings;
+
+    /// The box a launch adds with `settings`, the run reading as `status`, the add answering
+    /// `added`: the pick it was asked for (none: not asked) and what the log said.
+    async fn after_launch(settings: Settings, status: Result<attack_box::AttackStatus>, added: Result<()>) -> (Option<AttachPick>, Vec<String>) {
+        let asked = Mutex::new(None);
+        let said = Mutex::new(Vec::new());
+        let attach = async |pick: AttachPick| {
+            *asked.lock().unwrap() = Some(pick);
+            added
+        };
+        auto_attack_box(&settings, async || status, attach, &|l| said.lock().unwrap().push(l)).await;
+        (asked.into_inner().unwrap(), said.into_inner().unwrap())
+    }
+
+    fn reachable() -> attack_box::AttackStatus {
+        attack_box::AttackStatus { reachable: true, ..attack_box::AttackStatus::default() }
+    }
+
+    fn on() -> Settings {
+        Settings { attack_auto: true, attack_image: Some("kalilinux/kali-rolling:2026.3".into()), attack_desktop: true, ..Settings::default() }
+    }
+
+    #[tokio::test]
+    async fn a_start_with_the_setting_on_adds_the_box_as_the_settings_say() {
+        let (asked, said) = after_launch(on(), Ok(reachable()), Ok(())).await;
+        let pick = asked.expect("the box is added in the launch");
+        assert_eq!((pick.network, pick.image.as_deref(), pick.desktop), (None, Some("kalilinux/kali-rolling:2026.3"), true));
+        assert!(said.is_empty(), "{said:?}");
+    }
+
+    #[tokio::test]
+    async fn a_box_that_cant_be_added_leaves_the_lab_up_and_says_so() {
+        let (asked, said) = after_launch(on(), Ok(reachable()), Err(Error::Invalid("no space left on the device".into()))).await;
+        assert!(asked.is_some());
+        assert_eq!(said, ["The lab is up, but its attack box couldn't be added (no space left on the device). Add it from the lab's page."]);
+        // Its place unreadable: the same, and nothing asked.
+        let (asked, said) = after_launch(on(), Err(Error::Invalid("the run's status can't be read".into())), Ok(())).await;
+        assert!(asked.is_none());
+        assert!(said[0].contains("the run's status can't be read"), "{said:?}");
+    }
+
+    #[tokio::test]
+    async fn no_box_is_added_with_the_setting_off_where_none_is_reached_or_one_runs() {
+        let off = Settings { attack_auto: false, ..on() };
+        assert_eq!(after_launch(off, Ok(reachable()), Ok(())).await, (None, Vec::new()));
+        // On an ESXi host or beside cloud services: no run the launcher reaches.
+        assert_eq!(after_launch(on(), Ok(attack_box::AttackStatus::default()), Ok(())).await, (None, Vec::new()));
+        let running = attack_box::AttackStatus { running: true, ..reachable() };
+        assert_eq!(after_launch(on(), Ok(running), Ok(())).await, (None, Vec::new()));
+    }
 }

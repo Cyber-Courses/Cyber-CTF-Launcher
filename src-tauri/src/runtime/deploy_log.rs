@@ -74,6 +74,11 @@ pub(crate) const RECOVERING: &str = "Docker kept something of an earlier run: cl
 #[cfg(test)]
 pub(crate) const PREPARE: [&str; 5] = [LOW_MEMORY, EMULATING, OPENING_UTM, CLEARING_LEFTOVERS, RECOVERING];
 
+/// A lab up whose attack box, started with each lab, couldn't be added (`why`): the lab stays up.
+pub(crate) fn attack_box_not_added(why: &str) -> String {
+    format!("The lab is up, but its attack box couldn't be added ({why}). Add it from the lab's page.")
+}
+
 /// A lab's VMs asking for `needed_mb` of memory with only `available_mb` free here.
 pub(crate) fn low_memory(needed_mb: u64, available_mb: u64) -> String {
     format!(

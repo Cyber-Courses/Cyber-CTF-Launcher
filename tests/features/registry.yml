@@ -1560,12 +1560,13 @@ areas:
           desktop: container form only
 
       - id: attack-box.auto-start
-        what: The attack box starts with the lab when its launch ends, unless turned off in Settings.
+        what: The attack box starts with the lab, in the same operation as its launch or resume (from the app, the command line or the website), unless turned off in Settings; the lab stays up if only its box failed, and the log says so.
         host: false
         tests:
           unit:
-            - src/features/labs/attack-box.test.tsx > attaches the box of a container lab whose launch just ended
-            - src/features/labs/attack-box.test.tsx > does nothing when disabled or when Settings turn auto-start off
+            - src-tauri/src/run_service/local.rs > a_start_with_the_setting_on_adds_the_box_as_the_settings_say
+            - src-tauri/src/run_service/local.rs > a_box_that_cant_be_added_leaves_the_lab_up_and_says_so
+            - src-tauri/src/run_service/local.rs > no_box_is_added_with_the_setting_off_where_none_is_reached_or_one_runs
             - src/lib/lib.test.ts > starts the attack box automatically unless turned off
             - src/features/settings/settings-rows.test.tsx > turns the auto-start off and on
           desktop:

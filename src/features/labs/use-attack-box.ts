@@ -91,7 +91,7 @@ function useAttackBoxRun(refresh: () => void) {
  * its run (the status says: wherever the lab runs but an ESXi host, and never beside a
  * cloud-services lab), so running / IP stay current,
  * added and taken out with a streamed log. Added with the lab when the Settings preference is on by
- * the app-wide auto-start alone (`useAttackBoxAutoStart`), wherever the lab was started: the page
+ * the backend's launch alone (in the same operation as the lab), wherever it was started: the page
  * shows the box it added on its next read, and a click while it adds joins it. `runtime` is the
  * lab's declared one; what the box is comes from its status
  * (`vm`: a Kali VM among a lab running as VMs, a container lab run as one VM per machine included;
