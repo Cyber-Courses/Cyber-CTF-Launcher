@@ -56,6 +56,11 @@ the end of this page have been done for what the release changes.
 a test that leaves a file or folder there fails the step, so none piles up in the developer's temp
 folder. `CYBERCTF_TEST_TEMP_KEEP=1` keeps the folder to look into.
 
+`unit-rust` and `coverage-rust` need an Isoloom checkout: the contract tests run Isoloom's own
+example labs (`runtime/isothrum/tests/contract/spec_run.rs`) from `CYBERCTF_TEST_ISOLOOM_DIR`, else
+`../isoloom` beside this checkout (the workspace's layout). Without one, `prereqs` fails saying so,
+rather than the tests passing on nothing.
+
 Playwright starts the browser preview (`pnpm dev:web`) on port 3210, or reuses one already there;
 the preview builds into its own folder (`.next-web`), so it runs beside `pnpm tauri dev` and the
 native runner's dev server, which never serve the mock.

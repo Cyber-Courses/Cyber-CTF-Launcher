@@ -62,6 +62,12 @@ prereqs() {
   if wanted e2e-native; then command -v docker >/dev/null || { echo "missing: docker (or SKIP=e2e-native)"; missing=1; }; fi
   node --version | grep -q "^v${NODE_WANTED}\." || { echo "node $(node --version) in use; .nvmrc asks for $NODE_WANTED (nvm install $NODE_WANTED)"; missing=1; }
   if wanted unit-rust || wanted coverage-rust; then cargo nextest --version >/dev/null 2>&1 || { echo "missing: cargo-nextest (cargo install --locked cargo-nextest)"; missing=1; }; fi
+  # The Rust contract tests run Isoloom's own example labs (spec_run.rs), read from a checkout.
+  local isoloom=${CYBERCTF_TEST_ISOLOOM_DIR:-$ROOT/../isoloom}
+  if { wanted unit-rust || wanted coverage-rust; } && [ ! -d "$isoloom/examples" ]; then
+    echo "missing: an Isoloom checkout at $isoloom, for the Rust contract tests (set CYBERCTF_TEST_ISOLOOM_DIR; the workspace's is ../isoloom)"
+    missing=1
+  fi
   if wanted quality; then cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }; fi
   if wanted e2e-native && ! docker info >/dev/null 2>&1; then echo "note: docker is not running; e2e-native skips the scenarios that run a lab"; fi
   [ "$missing" -eq 0 ]

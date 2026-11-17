@@ -308,8 +308,9 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
 
 /// A lab imported from a folder starts with no launch values: the launcher gives it none, not
 /// even empty ones. The lab's spec gives its inputs a default, which its generated files fall
-/// back to (a Compose secret's variable can't be left unset, so the token's file is a config
-/// filled from it or from the default).
+/// back to. In Compose, a one-shot job (`isoloom-inputs-<machine>`) writes each input's file into
+/// a volume the machine mounts it from: the value from a config filled from the variable, else
+/// the default, behind one byte the job drops (so an empty value is an empty file).
 #[tokio::test]
 async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_defaults() {
     let f = Fixture::new();
@@ -319,7 +320,9 @@ async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_def
     assert_eq!(up.env("CTF_LAUNCH_TOKEN"), None, "{}", up.line());
     assert_eq!(up.env("CTF_API_URL"), None, "{}", up.line());
     let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
-    assert!(compose.contains("content: ${CTF_LAUNCH_TOKEN:-dev-launch-token}"), "{compose}");
+    assert!(compose.contains("content: -${CTF_LAUNCH_TOKEN:-dev-launch-token}"), "the token's default, unless a value is given: {compose}");
+    assert!(compose.contains("tail -c +2 /in/0 > /out/0"), "written into the job's volume without its first byte: {compose}");
+    assert!(compose.contains("source: isoloom-inputs-web\n      target: /run/lab/token"), "the machine reads its file from that volume: {compose}");
 }
 
 /// Regression (docs/contributing/testing/resilience.md M4): a container stopped outside the app (`docker stop`,
