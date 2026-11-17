@@ -2,7 +2,7 @@
 import type { OvftoolSource } from "./OvftoolSource";
 
 /**
- * The OVF Tool the machine check found: where it comes from and its file.
+ * The OVF Tool found: where it comes from and its file.
  */
 export type OvftoolLocation = { 
 /**
@@ -14,7 +14,7 @@ source: OvftoolSource,
  */
 path: string, 
 /**
- * It is built for Intel Macs only, this Mac has Apple Silicon and Rosetta isn't installed:
+ * It is built for Intel Macs only, this Mac has Apple silicon and Rosetta isn't installed:
  * it can't run until Rosetta is (`softwareupdate --install-rosetta`).
  */
 needsRosetta: boolean, };

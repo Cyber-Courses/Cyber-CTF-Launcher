@@ -203,7 +203,7 @@ mod tests {
         let picked = t.data().join("not-the-tool");
         std::fs::create_dir_all(&picked).unwrap();
         let outcome = ovftool_place(t.handle().clone(), picked.display().to_string()).await.unwrap();
-        assert_eq!(outcome, ovftool::Outcome::Refused { reason: ovftool::Refusal::NoTool, detail: None });
+        assert_eq!(outcome, ovftool::Outcome::Refused { reason: isothrum_machine::tools::ovftool::Refusal::NoTool, detail: None });
         assert!(!ovftool::managed_dir(t.data()).exists());
     }
 

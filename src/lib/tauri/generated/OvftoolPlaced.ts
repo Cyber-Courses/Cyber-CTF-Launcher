@@ -18,6 +18,7 @@ needsRosetta: boolean, } | { "outcome": "refused",
  */
 reason: OvftoolRefusal, 
 /**
- * What macOS said of the signature, or the team that signed it, when known.
+ * What macOS said of the signature, or the team that signed it instead of VMware, when
+ * known.
  */
 detail: string | null, };
