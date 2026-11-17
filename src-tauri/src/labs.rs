@@ -451,8 +451,11 @@ pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: 
     let listed = catalogue_source(dirs, &request.lab_id, request.offline).await?;
     let (lab_id, placement) = (request.lab_id.clone(), request.placement.clone());
     // Boxed: the preflight reads the spec and asks this machine's tools, which makes its future large.
-    let check = async |at: &CatalogueSource| Box::pin(runtime::preflight::check(dirs, &lab_id, at.runtime, at.source(), &placement)).await;
-    prepare_checked(request, &listed, check, async |request: &LaunchRequest| launch_spec(dirs, &request.lab_id, request.offline, log).await).await
+    let check = |at: CatalogueSource| {
+        let (lab_id, placement) = (&lab_id, &placement);
+        async move { Box::pin(runtime::preflight::check(dirs, lab_id, at.runtime, at.source(), placement)).await }
+    };
+    prepare_checked(request, listed, check, async |request: &LaunchRequest| launch_spec(dirs, &request.lab_id, request.offline, log).await).await
 }
 
 /// [`prepare_launch`] once the catalogue was read (`listed`): `check` (the preflight) of the spec
@@ -460,17 +463,17 @@ pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: 
 /// names the commit that is installed and runs: the catalogue's, unless the lab moved on between
 /// the two reads; then the spec at that commit is checked too, before anything is installed (the
 /// launch is registered by then, but a start that can't run here never begins).
-async fn prepare_checked(
+async fn prepare_checked<F: Future<Output = Result<()>>>(
     request: LaunchRequest,
-    listed: &CatalogueSource,
-    check: impl AsyncFn(&CatalogueSource) -> Result<()>,
+    listed: CatalogueSource,
+    check: impl Fn(CatalogueSource) -> F,
     register: impl AsyncFnOnce(&LaunchRequest) -> Result<Launch>,
 ) -> Result<PreparedLaunch> {
-    check(listed).await?;
+    check(listed.clone()).await?;
     let launch = register(&request).await?;
     let runs = CatalogueSource { runtime: launch.runtime, repository: launch.repository.clone(), commit: launch.commit.clone() };
-    if &runs != listed {
-        check(&runs).await?;
+    if runs != listed {
+        check(runs).await?;
     }
     let docker_context = pinned_context(&request.placement).await?;
     Ok(PreparedLaunch { launch, place: runtime::Placed { placement: request.placement, docker_context } })
@@ -791,16 +794,16 @@ mod tests {
         };
         let listed = CatalogueSource { runtime: Runtime::Docker, repository: "CyberCTF/web".into(), commit: SHA.into() };
         // The preflight refuses: `startLab` is never asked, no launch token spent.
-        let refused = prepare_checked(request(), &listed, async |_: &CatalogueSource| Err(Error::coded(crate::error::Code::NoHypervisor)), register).await;
+        let refused = prepare_checked(request(), listed.clone(), |_| async { Err(Error::coded(crate::error::Code::NoHypervisor)) }, register).await;
         assert_eq!(refused.err().map(|e| e.code()), Some(crate::error::Code::NoHypervisor));
         assert_eq!(registered.load(std::sync::atomic::Ordering::SeqCst), 0);
         // It passes: registered once, its spec checked once (`startLab` installs the commit checked).
         let checks = std::sync::atomic::AtomicUsize::new(0);
-        let check = async |_: &CatalogueSource| {
+        let check = |_| {
             checks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(())
+            async { Ok(()) }
         };
-        let prepared = prepare_checked(request(), &listed, check, register).await.unwrap();
+        let prepared = prepare_checked(request(), listed, check, register).await.unwrap();
         assert_eq!((prepared.launch.lab_id.as_str(), registered.load(std::sync::atomic::Ordering::SeqCst)), ("web", 1));
         assert_eq!(checks.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
@@ -815,12 +818,12 @@ mod tests {
             parse_launch(json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": SHA, "env": [] }))
         };
         let checked = std::sync::Mutex::new(Vec::new());
-        let check = async |at: &CatalogueSource| {
+        let check = |at: CatalogueSource| {
             checked.lock().unwrap().push(at.commit.clone());
-            if at.commit == SHA { Err(Error::coded(crate::error::Code::NoHypervisor)) } else { Ok(()) }
+            async move { if at.commit == SHA { Err(Error::coded(crate::error::Code::NoHypervisor)) } else { Ok(()) } }
         };
         // The spec at the commit `startLab` installs is checked too, and its refusal stops the start.
-        let refused = prepare_checked(request(), &listed, check, register).await;
+        let refused = prepare_checked(request(), listed, check, register).await;
         assert_eq!(refused.err().map(|e| e.code()), Some(crate::error::Code::NoHypervisor));
         assert_eq!(*checked.lock().unwrap(), ["1".repeat(40), SHA.to_owned()]);
     }
