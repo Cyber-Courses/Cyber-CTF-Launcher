@@ -107,6 +107,14 @@ impl DockerSaid {
             DockerSaid::Other
         }
     }
+
+    /// What `err` says, when it is a `docker` call that failed; none for another error.
+    pub fn of_error(err: &Error) -> Option<DockerSaid> {
+        match err {
+            Error::CommandFailed { stderr, .. } => Some(DockerSaid::of(stderr)),
+            _ => None,
+        }
+    }
 }
 
 /// Whether a failed `docker` call means this account can't reach the daemon's socket (not in
@@ -216,6 +224,7 @@ mod tests {
         for (stderr, said) in cases {
             assert_eq!(DockerSaid::of(stderr), said, "{stderr}");
         }
+        assert_eq!(DockerSaid::of_error(&Error::ToolMissing { tool: "docker" }), None);
         assert!(refusal("access is denied.") && refusal("permission denied") && !refusal("denied"));
     }
 
