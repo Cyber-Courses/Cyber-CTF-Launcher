@@ -37,24 +37,15 @@
       "#![cfg_attr(test, allow(clippy::disallowed_methods, reason = \"tests start their stand-in tools directly\"))]": 1,
       "#[allow(clippy::must_use_candidate, reason = \"ExitCode is must_use itself: clippy 1.100 refuses a second one, which 1.99 still asks for\")]": 1
     },
+    "src-tauri/src/machine/system.rs": {
+      "#[expect(dead_code, reason = \"a type only: never built, its variants are the webview's names\")]": 2
+    },
     "src-tauri/src/machine/system/wsl.rs": {
       "#![cfg_attr(not(windows), allow(dead_code, reason = \"off Windows only the UI's types and the tests use most of this\"))]": 1,
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
     },
-    "src-tauri/src/machine/tools/install.rs": {
-      "#[allow(clippy::too_many_lines, reason = \"one row per tool: the table itself\")]": 1
-    },
     "src-tauri/src/platform/env_path.rs": {
       "#[allow(unsafe_code, reason = \"this test runs alone, so it is the only thread\")]": 1
-    },
-    "src-tauri/src/platform/exec.rs": {
-      "#![allow(clippy::disallowed_methods, reason = \"the adapter: every tool the app runs starts here\")]": 1
-    },
-    "src-tauri/src/platform/exec/fake.rs": {
-      "#[expect(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2
-    },
-    "src-tauri/src/platform/exec/group.rs": {
-      "#[cfg_attr(not(unix), allow(dead_code, reason = \"only unix stops a streamed tool gently, with SIGTERM\"))]": 1
     },
     "src-tauri/src/platform/proxy.rs": {
       "#[allow(clippy::disallowed_methods, reason = \"a synchronous read of macOS's proxy settings at start, before the async runtime\")]": 1
@@ -71,15 +62,14 @@
     "src-tauri/src/runtime/deploy_log.rs": {
       "#[cfg_attr(not(test), allow(dead_code, reason = \"the webview's DeployLog.ts carries it, written by ts_bindings\"))]": 3
     },
-    "src-tauri/src/runtime/terminal_launch.rs": {
-      "#[allow(clippy::disallowed_methods, reason = \"a terminal window opens as the player's own app, left running past the call\")]": 2,
-      "#[allow(clippy::disallowed_methods, reason = \"osascript asks Terminal for a window and returns: no tool adapter runs it\")]": 1
-    },
     "src-tauri/src/screen.rs": {
       "#[allow(clippy::disallowed_methods, reason = \"the remote-desktop client opens as the player's own app, left running past the call\")]": 1
     },
     "src-tauri/src/screen/native.rs": {
       "#[allow(clippy::disallowed_methods, reason = \"the hypervisor's own console client, waited for a moment then left to the player\")]": 1
+    },
+    "src-tauri/src/testing/tools.rs": {
+      "#[expect(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2
     },
     "src/app/layout.tsx": {
       "eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode": 1

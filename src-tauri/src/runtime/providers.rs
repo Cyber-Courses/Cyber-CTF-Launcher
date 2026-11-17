@@ -35,13 +35,16 @@ pub(crate) fn machine() -> isothrum_machine::Context {
 /// while ([`crate::platform::remembered::Remembering`]). Its host has no package manager:
 /// [`machine_setup`]'s has.
 pub(crate) fn machine_check() -> isothrum_machine::Context {
-    #[cfg_attr(test, allow(unused_mut))]
-    let mut cx = machine();
+    #[cfg(test)]
+    {
+        machine()
+    }
     #[cfg(not(test))]
     {
+        let mut cx = machine();
         cx.runner = std::sync::Arc::new(crate::platform::remembered::Remembering::new(cx.runner));
+        cx
     }
-    cx
 }
 
 /// [`machine_check`]'s, with this machine's package manager, looked up through its runner

@@ -121,7 +121,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
 /// `Os`: a type only, for the report's TypeScript.)
 #[derive(ts_rs::TS)]
 #[ts(rename = "Os", rename_all = "lowercase")]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "a type only: never built, its variants are the webview's names")]
 enum OsId {
     Macos,
     Windows,
@@ -132,7 +132,7 @@ enum OsId {
 /// `Arch`: a type only, for the report's TypeScript.)
 #[derive(ts_rs::TS)]
 #[ts(rename = "Arch")]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "a type only: never built, its variants are the webview's names")]
 enum CpuName {
     #[ts(rename = "x86_64")]
     X86_64,
