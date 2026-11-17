@@ -143,3 +143,17 @@ fn vms_built_for_another_cpu_are_offered_only_on_an_emulator() {
     assert!(dual.emulated && providers(&dual.vms) == [Provider::Qemu], "its machines as VMs: {:?}", providers(&dual.vms));
     assert_eq!(dual.docker, options_on(DUAL, Runtime::Docker, Arch::Amd64).docker);
 }
+
+#[test]
+fn the_ports_question_is_left_out_when_every_published_port_is_fixed() {
+    let web = |publish: &str| {
+        format!(
+            "version: 1\nname: w\nnetworks: {{ lab: {{ cidr: 10.70.0.0/24 }} }}\nmachines:\n  web:\n    networks: {{ lab: 10 }}\n    ports: {{ site: {{ port: 80, protocol: http{publish} }}, api: {{ port: 8000, protocol: http, publish: {{ host: 8000, fixed: true }} }} }}\n    app: {{ image: nginx:1.27 }}\n"
+        )
+    };
+    // One published port the start picks (or keeps as the lab's own): the question decides it.
+    assert!(!options(&web(", publish: 8080"), Runtime::Docker).ports_fixed);
+    // Every published port fixed (one not published at all): nothing to decide.
+    assert!(options(&web(""), Runtime::Docker).ports_fixed);
+    assert!(options(&web(", publish: { host: 8080, fixed: true }"), Runtime::Docker).ports_fixed);
+}

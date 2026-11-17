@@ -22,13 +22,14 @@ const options: LabRunOptions = {
   cloudServices: [],
   refused: [],
   emulated: false,
+  portsFixed: false,
 };
 const source = { repository: "CyberCTF/lab", commit: "0123456789abcdef0123456789abcdef01234567" };
 const dualForm: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: ["virtualbox", "qemu"], docker: true, vm: true, ...source };
 const ready: Provider[] = ["virtualbox", "qemu"];
 
-async function picker(engines: DockerEngine[] = []) {
-  installTauri({ lab_run_options: () => options });
+async function picker(engines: DockerEngine[] = [], over: Partial<LabRunOptions> = {}) {
+  installTauri({ lab_run_options: () => ({ ...options, ...over }) });
   const hook = renderHook(() => useRunTarget({ id: "lab-t", runtime: dualForm }, ready, engines.at(0) ?? null, engines));
   await act(() => flush());
   return hook.result;
@@ -97,6 +98,28 @@ describe("useRunTarget's steps", () => {
       remembered.current.steps.pickEngine("orbstack");
     });
     expect(remembered.current.steps.step).toBe("engine");
+  });
+});
+
+describe("useRunTarget, a lab whose every published port is fixed", () => {
+  it("has no ports step: the engine (or the place) ends the path, and no ports are sent or saved", async () => {
+    const run = await picker(["docker-desktop", "orbstack"], { portsFixed: true });
+    act(() => {
+      run.current.steps.pickPlatform({ kind: "containers" });
+    });
+    expect(run.current.steps.isLastStep).toBe(true);
+    act(() => {
+      run.current.steps.pickEngine("orbstack");
+      run.current.setPorts("default");
+      run.current.dontAskAgain.set(true);
+    });
+    expect(run.current.steps.step).toBe("engine");
+    expect(run.current.chosen()).toEqual({ kind: "local", ports: undefined, engine: "orbstack" });
+    act(() => {
+      run.current.dontAskAgain.commit();
+    });
+    expect(getPortMode()).toBeNull();
+    expect(getDockerEngine()).toBe("orbstack");
   });
 });
 
