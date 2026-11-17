@@ -215,10 +215,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_start_missing_a_value_or_on_another_clouds_account_is_refused_before_anything_runs() {
-        use crate::testing::tools::Tools;
+        use crate::runtime::providers::testing::no_tools;
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("bucket", &[("cloud/lab.yml", LAB_FILE), ("cloud/main.tf", MODULE)]);
-        let tools = Tools::strict_rules(&[]);
+        let tools = no_tools();
         let start = |host: &'static str, env: Vec<(String, String)>| {
             let (dirs, dir) = (t.dirs(), dir.clone());
             async move {

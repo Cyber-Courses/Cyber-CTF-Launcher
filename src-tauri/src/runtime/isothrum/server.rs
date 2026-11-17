@@ -434,7 +434,7 @@ mod tests {
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
             });
             crate::testing::runner::save_run(&f.home.runner(), &record);
-            let tools = crate::testing::tools::Tools::script().build();
+            let tools = crate::runtime::providers::testing::no_tools();
             assert_eq!(run.status().await.unwrap().url.as_deref(), Some("http://192.0.2.10:8080/"));
             assert!(tools.calls().is_empty(), "no forward");
         }
