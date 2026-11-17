@@ -162,13 +162,7 @@ pub(super) fn check_line(line: &str) -> Option<(String, bool, String)> {
 /// from its spec and its ports where the run published them ([`with_run`]); none when it has none,
 /// or when it can't be read (logged).
 pub(super) fn message(dir: &Path, target: lab::Target, run: Option<&Status>) -> Option<String> {
-    let filled = || -> Result<Option<String>> {
-        let Some(text) = lab::load(dir)?.message else { return Ok(None) };
-        let snapshot = with_run(on_target(lab::resolved(dir)?, target), run);
-        let filled = isoloom_targets::resolved::fill(&text, &snapshot).map_err(|e| crate::error::Error::Invalid(e.to_string()))?;
-        Ok(Some(filled))
-    };
-    filled().unwrap_or_else(|e| {
+    lab::message(dir, |snapshot| with_run(on_target(snapshot, target), run)).unwrap_or_else(|e| {
         log::warn!("{}: the lab's message couldn't be read: {e}", dir.display());
         None
     })

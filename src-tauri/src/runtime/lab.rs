@@ -72,6 +72,14 @@ pub fn resolved(dir: &Path) -> Result<serde_json::Value> {
     isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir)).map_err(|e| Error::Invalid(e.to_string()))
 }
 
+/// The lab in `dir`'s message (how to start, in Markdown), its placeholders filled from its
+/// resolved snapshot ([`resolved`]) as `read` gives it (each machine's addresses on the target it
+/// runs on, the host ports its run published); none when the spec has no message.
+pub fn message(dir: &Path, read: impl FnOnce(serde_json::Value) -> serde_json::Value) -> Result<Option<String>> {
+    let Some(text) = load(dir)?.message else { return Ok(None) };
+    isoloom_targets::resolved::fill(&text, &read(resolved(dir)?)).map(Some).map_err(|e| Error::Invalid(e.to_string()))
+}
+
 /// The VM a VM lab's checks that stand on its networks run in: Isoloom's controller, which halts
 /// once it has set the lab up.
 pub const CONTROLLER: &str = isoloom_spec::contract::CONTROLLER;
