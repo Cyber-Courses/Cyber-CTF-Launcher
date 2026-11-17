@@ -8,7 +8,9 @@
 
 mod provider;
 
-pub use isothrum_machine::providers::{Need, ProviderStatus, Unavailable, UtilityState};
+#[cfg(test)]
+pub use isothrum_machine::providers::UtilityState;
+pub use isothrum_machine::providers::{ProviderStatus, Unavailable};
 pub use provider::Provider;
 
 use crate::platform::host::Os;
@@ -17,7 +19,7 @@ use crate::platform::host::Os;
 /// own when it set one (`testing::Machine`), this machine's in a real-lab scenario
 /// (`testing::read_this_machine`), else every tool missing: a unit test never reads the machine
 /// running it.
-fn machine() -> isothrum_machine::Context {
+pub(crate) fn machine() -> isothrum_machine::Context {
     #[cfg(test)]
     {
         testing::context()
@@ -116,26 +118,11 @@ pub fn said(reason: &Unavailable) -> String {
     }
 }
 
-/// The groups a player joins to use `provider` on `os`, which apply from their next login
-/// (libvirt's and `/dev/kvm`'s, as this machine names `/dev/kvm`'s): none for a provider that
-/// isn't a Vagrant one.
-pub fn login_groups(provider: Provider, os: Os) -> Vec<String> {
-    let Some(vagrant) = provider.vagrant() else { return Vec::new() };
-    let mut host = machine().host;
-    host.os = os.isothrum();
-    isothrum_machine::providers::login_groups(vagrant, &host)
-}
-
 /// The group a player joins to open `/dev/kvm` on this machine: the one it belongs to, else
 /// `kvm` (the setup's shapes name it).
 #[cfg(test)]
 pub fn kvm_group() -> String {
     isothrum_machine::providers::kvm_group(&machine().host)
-}
-
-/// Where HashiCorp's Vagrant VMware Utility stands on this machine.
-pub async fn vmware_utility() -> UtilityState {
-    isothrum_machine::providers::vmware_utility(&machine().host).await
 }
 
 /// UTM's command line tool, which ships inside its app bundle, on no PATH: in the bundle the

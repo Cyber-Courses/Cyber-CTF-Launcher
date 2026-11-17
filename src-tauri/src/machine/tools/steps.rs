@@ -77,7 +77,7 @@ fn is_removal(step: &Step) -> bool {
 /// What a step is, in the player's words, said before it instead of its command line.
 fn said(note: isothrum_machine::install::Note) -> String {
     use isothrum_machine::install::Dependency as Machine;
-    let name = |dep| super::install::Dependency::of_machine(dep).name_on(crate::platform::host::Os::Macos);
+    let name = |dep| super::install::name_on(dep, crate::platform::host::Os::Macos);
     match note {
         Note::Downloading(dep) => format!("Downloading {}…", name(dep)),
         Note::QemuUpdatingHomebrewFirst => "Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into(),

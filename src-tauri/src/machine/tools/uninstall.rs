@@ -19,7 +19,7 @@ use crate::platform::host::{Host, Os, Packages};
 pub struct Installed {
     /// The tool.
     pub dependency: Dependency,
-    /// Its name on this OS ([`Dependency::name`]).
+    /// Its name on this OS, as the setup names it.
     pub name: &'static str,
     /// When Cyber CTF installed it, in seconds since the Unix epoch.
     pub at: u64,
@@ -65,22 +65,10 @@ pub fn outcome(present_before: bool, present_after: bool) -> Outcome {
     }
 }
 
-/// Whether `dep` is installed on this machine; None when that can't be told (WSL).
+/// Whether `dep` is installed on this machine; None when that can't be told (WSL): as
+/// isothrum-machine finds it.
 pub async fn present(dep: Dependency) -> Option<bool> {
-    // A service, not a program on PATH: what the machine check reads.
-    if dep == Dependency::VmwareUtility {
-        return Some(crate::runtime::providers::vmware_utility().await != crate::runtime::providers::UtilityState::Missing);
-    }
-    let row = dep.row();
-    let mac_app = row.mac_app.filter(|_| Os::HERE == Os::Macos);
-    if mac_app.is_some_and(|a| std::path::Path::new(a).exists()) {
-        return Some(true);
-    }
-    match row.probe {
-        Some((program, args)) => Some(crate::platform::exec::run_read(program, args, None).await.is_ok()),
-        None if mac_app.is_some() => Some(false),
-        None => None,
-    }
+    isothrum_machine::install::present(&crate::runtime::providers::machine(), dep).await
 }
 
 /// Records the outcome of an install of `dependency`.
@@ -179,7 +167,7 @@ fn confirmed(tools: Vec<InstalledTool>) -> Vec<InstalledTool> {
 /// opened the vendor's installer count once the tool is found.
 pub async fn installed_tools(dirs: AppDirs) -> Vec<Installed> {
     confirm_pending(&dirs).await;
-    confirmed(load_or_logged(&dirs)).into_iter().map(|t| Installed { dependency: t.dependency, name: t.dependency.name(), at: t.at }).collect()
+    confirmed(load_or_logged(&dirs)).into_iter().map(|t| Installed { dependency: t.dependency, name: super::install::name(t.dependency), at: t.at }).collect()
 }
 
 /// The VirtualBox installer image Homebrew (`brew`) keeps, which its uninstaller runs from
@@ -202,12 +190,12 @@ async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<
 
 /// The removal on macOS: isothrum-machine's (Homebrew's packages, or the vendor's uninstaller).
 fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
-    isothrum_machine::install::macos::uninstall(dep.machine(), packages.map(Packages::isothrum), virtualbox_dmg).map_err(super::install::refusal)
+    isothrum_machine::install::macos::uninstall(dep, packages.map(Packages::isothrum), virtualbox_dmg).map_err(super::install::refusal)
 }
 
 /// The removal on Windows: isothrum-machine's winget packages and VMware's utility's MSI.
 fn windows_plan(dep: Dependency) -> Result<super::steps::Plan> {
-    isothrum_machine::install::windows::uninstall(dep.machine()).map_err(super::install::refusal)
+    isothrum_machine::install::windows::uninstall(dep).map_err(super::install::refusal)
 }
 
 /// How to remove `dep` on Linux: its packages through the package manager that installed them
@@ -216,13 +204,13 @@ fn windows_plan(dep: Dependency) -> Result<super::steps::Plan> {
 /// The removal on Linux: isothrum-machine's root script, through the package manager that
 /// installed the tool.
 fn linux_plan(dep: Dependency, packages: Option<Packages>) -> Result<super::steps::Plan> {
-    isothrum_machine::install::linux::uninstall(dep.machine(), packages.map(Packages::isothrum), &super::install::linux_root()).map_err(super::install::refusal)
+    isothrum_machine::install::linux::uninstall(dep, packages.map(Packages::isothrum), &super::install::linux_root()).map_err(super::install::refusal)
 }
 
 /// How to remove `dep` on `host`. On macOS, VirtualBox's step needs its installer image
 /// (`virtualbox_dmg`).
 pub(super) fn plan_on(dep: Dependency, host: Host, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
-    if !dep.runs_on(host.os) {
+    if !super::install::runs_on(dep, host.os) {
         return Err(super::install::not_here(dep, host.os));
     }
     match host.os {
@@ -346,8 +334,6 @@ mod tests {
         assert_eq!(outcome(false, true), Outcome::Installed);
         assert_eq!(outcome(false, false), Outcome::Pending);
         // WSL can't be told apart from its stub: never recorded.
-        assert!(Dependency::Wsl.row().probe.is_none());
-        assert!(Dependency::Docker.row().probe.is_some() && Dependency::Utm.row().mac_app.is_some());
     }
 
     #[test]

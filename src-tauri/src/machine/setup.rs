@@ -1,318 +1,109 @@
-//! The guided machine setup's plan: what to install, start or restart on this machine, in which
-//! order, for the lab types the player wants (containers, VMs), with which engine and which
-//! hypervisor. The one place these rules live:
+//! The guided machine setup: what to install, start or restart on this machine, in which order,
+//! for the lab types the player wants (containers, VMs), with which engine and which hypervisor.
+//! The rules are isothrum-machine's ([`isothrum_machine::setup`]):
 //! - the machine check carries, for each choice the setup window offers, what that choice takes
 //!   here ([`Options`], the report's `setup`): the window renders those actions and runs each
 //!   through its command, never working them out itself;
-//! - `plan` (in `setup/plan.rs`) puts them in order for a whole setup, from what is wanted, and
-//!   `run::walk` runs it step by step: the command line's `machine setup` and the headless entry
-//!   the test rig runs on a bare machine (`integration_tests::setup`); the window walks the same
-//!   options one click at a time.
+//! - [`plan`] puts them in order for a whole setup, from what is wanted, and `run::walk` runs it
+//!   step by step: the command line's `machine setup` and the headless entry the test rig runs on
+//!   a bare machine (`integration_tests::setup`); the window walks the same options one click at
+//!   a time.
+//!
+//! The launcher's part is the window, the player's words for each reason, and the machines the
+//! webview's tests render the window on (`shapes`).
 
-mod plan;
 pub(crate) mod run;
 #[cfg(test)]
 pub(crate) mod shapes;
 
-pub(crate) use plan::{Plan, SetupPath, Step, Wanted, plan};
+pub use isothrum_machine::setup::{Action, Options, WindowsFeature};
+#[cfg(test)]
+pub(crate) use isothrum_machine::setup::{ManualReason, Step};
+pub(crate) use isothrum_machine::setup::{PassedOver, Plan, SetupPath, Wanted};
 
-use serde::Serialize;
-use ts_rs::TS;
+use isothrum_machine::setup::{DockerFound, Machine};
 
 use crate::machine::system::SystemReport;
+#[cfg(test)]
 use crate::machine::system::docker::Engine;
-use crate::machine::system::wsl::WslState;
-use crate::machine::tools::install::Dependency;
+use crate::machine::tools::install::{Dependency, name};
+#[cfg(test)]
 use crate::platform::host::Os;
-use crate::runtime::providers::{Need, Provider, ProviderStatus, Unavailable};
+use crate::runtime::providers::{self, Provider};
 
-/// One thing the setup does, or leaves to the player, on this machine.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-#[ts(rename = "SetupAction")]
-pub enum Action {
-    /// Installs `dependency` (`install_dependency`): Docker, WSL 2, Vagrant, a hypervisor, the
-    /// Vagrant VMware Utility.
-    Install {
-        /// The tool to install.
-        dependency: Dependency,
-    },
-    /// Installs the Vagrant plugin `plugin` (`install_vagrant_plugin`).
-    Plugin {
-        /// The plugin's name (`vagrant-qemu`, …).
-        plugin: String,
-    },
-    /// Starts the installed engine `engine` (`docker_start_engine`).
-    StartEngine {
-        /// The engine to start.
-        engine: Engine,
-    },
-    /// Points Docker at `engine`, which runs already (`docker_use_engine`).
-    UseEngine {
-        /// The engine Docker is to use.
-        engine: Engine,
-    },
-    /// Restarts the computer, which finishes turning `feature` on (`machine_restart`).
-    Restart {
-        /// The feature the restart starts.
-        feature: WindowsFeature,
-    },
-    /// Signs out and back in: a group the player was added to (Linux's `docker`, `libvirt` and
-    /// `kvm`, the libvirt and QEMU installs' too) applies from the next login.
-    Relogin,
-    /// Not something the setup does here: the player gets it (`dependency`, when it is one the
-    /// setup installs elsewhere; from `url`, when there is one), then checks the machine again.
-    Manual {
-        /// Why it is the player's to get.
-        reason: ManualReason,
-        /// The tool, when it is one the setup installs elsewhere.
-        dependency: Option<Dependency>,
-        /// Where to get it, when there is a page for it.
-        url: Option<String>,
-    },
-    /// Installed, but it can't run here, and nothing the setup installs mends that: `reason`.
-    Blocked {
-        /// Why it can't run here, as a code the webview says in the player's language.
-        reason: crate::runtime::providers::Unavailable,
-    },
-}
-
-/// A Windows feature that starts only after a restart.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum WindowsFeature {
-    /// WSL 2: the Virtual Machine Platform and the Windows Subsystem for Linux.
-    Wsl,
-    /// Hyper-V.
-    Hyperv,
-}
-
-/// Why something is the player's to get.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum ManualReason {
-    /// From its vendor (behind a login or a licence): the setup links out.
-    Vendor,
-    /// The guided setup doesn't install on this Linux distribution yet (it installs through apt).
-    Distribution,
-}
-
-/// What each choice of the setup window takes on this machine (part of the machine check).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename = "SetupOptions")]
-pub struct Options {
-    /// What turns WSL 2 on (Windows): nothing once it is ready, or elsewhere.
-    pub wsl: Vec<Action>,
-    /// The engine the setup installs in one click on this OS.
-    pub recommended_engine: Engine,
-    /// The engine the setup works on until the player picks one: the one in use, else the
-    /// recommended one.
-    pub engine: Engine,
-    /// The engines offered on this OS, in the order shown, each with what makes it the one Docker
-    /// uses here (nothing: it is).
-    pub engines: Vec<EngineOption>,
-    /// The hypervisor the setup works on until the player picks one: an installed one that can
-    /// run labs, else an installed one, else the first the setup installs, else the first.
-    pub hypervisor: Option<Provider>,
-    /// The local hypervisors offered here, in the machine check's order.
-    pub hypervisors: Vec<HypervisorOption>,
-}
-
-impl Options {
-    /// None yet: what a report holds until its options are worked out from it.
-    pub(crate) fn empty() -> Options {
-        Options { wsl: Vec::new(), recommended_engine: Engine::Native, engine: Engine::Native, engines: Vec::new(), hypervisor: None, hypervisors: Vec::new() }
+/// What the setup reads of the machine `r` reports.
+fn machine(r: &SystemReport) -> Machine {
+    let mut host = providers::machine().host;
+    host.os = r.os.isothrum();
+    Machine {
+        host,
+        packages_installed: r.pkg_manager.installed,
+        docker: DockerFound {
+            installed: r.docker.installed,
+            running: r.docker_running,
+            denied: r.docker_denied,
+            engine: r.docker_engine,
+            engines_running: r.docker_engines_running.clone(),
+        },
+        wsl: r.wsl.as_ref().map(|w| w.state),
+        providers: r.vm_providers.clone(),
+        groups_pending: r.groups_pending.clone(),
     }
-}
-
-/// A container engine, and what makes it the one Docker uses here.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct EngineOption {
-    /// Which engine it is (Docker Desktop, Colima, the Linux daemon…).
-    pub engine: Engine,
-    /// What makes it the one Docker uses here, in order: nothing when it is.
-    pub actions: Vec<Action>,
-}
-
-/// A local hypervisor: what gets it here (`get`: nothing once it is installed and can run), then
-/// what Vagrant needs to drive it (`vagrant`: Vagrant, its plugin, VMware's utility, in order).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct HypervisorOption {
-    /// Which hypervisor, as the Vagrant provider that drives it.
-    pub provider: Provider,
-    /// What installs it or turns it on, in order: nothing when it is ready.
-    pub get: Vec<Action>,
-    /// What Vagrant needs to drive it: Vagrant, its plugin, VMware's utility, in order.
-    pub vagrant: Vec<Action>,
 }
 
 /// The engines the setup offers on `os`, in the order it shows them.
+#[cfg(test)]
 pub fn engines_on(os: Os) -> &'static [Engine] {
-    match os {
-        Os::Macos => &[Engine::DockerDesktop, Engine::Orbstack, Engine::Colima],
-        Os::Windows => &[Engine::DockerDesktop],
-        Os::Linux => &[Engine::DockerDesktop, Engine::Native, Engine::Colima],
-    }
+    isothrum_machine::setup::engines_on(os.isothrum())
 }
 
-/// The engine the setup installs in one click on `os`: Docker Desktop on macOS and Windows,
-/// Docker Engine on Linux.
+/// The engine the setup installs in one click on `os`.
+#[cfg(test)]
 pub fn recommended_engine(os: Os) -> Engine {
-    match os {
-        Os::Macos | Os::Windows => Engine::DockerDesktop,
-        Os::Linux => Engine::Native,
-    }
+    isothrum_machine::setup::recommended_engine(os.isothrum())
 }
 
 /// Docker answers: its CLI is installed and its daemon runs for this account.
+#[cfg(test)]
 pub fn docker_ready(r: &SystemReport) -> bool {
     r.docker.installed && r.docker_running
 }
 
-/// Installing `dependency` here: its install, or on a Linux distribution without apt (the guided
-/// setup installs through it), the player's to do.
-fn install(r: &SystemReport, dependency: Dependency) -> Action {
-    if r.os == Os::Linux && !r.pkg_manager.installed {
-        return Action::Manual { reason: ManualReason::Distribution, dependency: Some(dependency), url: dependency.row().own_url.map(str::to_owned) };
-    }
-    Action::Install { dependency }
-}
-
-/// What turns WSL 2 on: nothing off Windows, once it is ready, or once a Docker engine runs
-/// (proof enough, whatever the check could tell: #224); the restart once it waits for one; else
-/// its install (also when the check couldn't tell).
-fn wsl(r: &SystemReport) -> Vec<Action> {
-    if r.os != Os::Windows || docker_ready(r) {
-        return Vec::new();
-    }
-    match r.wsl.as_ref().map_or(WslState::Unknown, |w| w.state) {
-        WslState::Ready => Vec::new(),
-        WslState::NeedsReboot => vec![Action::Restart { feature: WindowsFeature::Wsl }],
-        WslState::Missing | WslState::Unknown => vec![install(r, Dependency::Wsl)],
-    }
-}
-
-/// What makes `engine` the one Docker uses: nothing when it is; switching to it when it runs; a
-/// new login when the daemon refuses this account (Linux's docker group); starting it when Docker
-/// is installed but doesn't answer; installing it when it is the recommended one and there is no
-/// Docker; else its vendor's site.
-fn engine_actions(r: &SystemReport, engine: Engine) -> Vec<Action> {
-    let action = if docker_ready(r) && r.docker_engine == Some(engine) {
-        return Vec::new();
-    } else if r.docker_engines_running.contains(&engine) {
-        Action::UseEngine { engine }
-    } else if r.docker_denied && engine == Engine::Native {
-        Action::Relogin
-    } else if r.docker.installed && !docker_ready(r) {
-        Action::StartEngine { engine }
-    } else if engine == recommended_engine(r.os) && !r.docker.installed {
-        install(r, Dependency::Docker)
-    } else {
-        Action::Manual { reason: ManualReason::Vendor, dependency: None, url: Some(engine.url().to_owned()) }
-    };
-    vec![action]
-}
-
 /// The hypervisor the setup installs as `provider` on `os`, when it installs it.
+#[cfg(test)]
 pub(crate) fn installable(provider: Provider, os: Os) -> Option<Dependency> {
-    Dependency::of_hypervisor(provider).filter(|d| d.runs_on(os))
-}
-
-/// An installed hypervisor that still can't run labs once everything Vagrant needs is in (no
-/// `/dev/kvm`, not in the kvm group, a stuck service): its `reason` says why.
-pub fn cant_run(p: &ProviderStatus) -> bool {
-    p.hypervisor == Some(true) && !p.available && p.reason.is_some() && p.needs.is_empty()
-}
-
-/// What gets hypervisor `p` here: nothing once it is installed (a new login when the player joined
-/// its groups since logging in, libvirt's or `/dev/kvm`'s; else why it still can't run); the restart Hyper-V waits for
-/// once the setup turned it on (`hyperv_restart`); its install; else its vendor's site.
-fn hypervisor_get(r: &SystemReport, p: &ProviderStatus, hyperv_restart: bool) -> Vec<Action> {
-    // Nothing installed mends it (KVM holding the CPU's virtualization, for VirtualBox): never
-    // installed, nor readied, for nothing.
-    if let Some(reason @ Unavailable::KvmHoldsVirtualization) = &p.reason {
-        return vec![Action::Blocked { reason: reason.clone() }];
-    }
-    if p.hypervisor == Some(true) {
-        // The groups its install added the player to (libvirt's, /dev/kvm's) apply from the next
-        // login: the setup asks for it, as it does for the docker group.
-        let groups = crate::runtime::providers::login_groups(p.provider.into(), r.os);
-        if r.groups_pending.iter().any(|g| groups.contains(g)) {
-            return vec![Action::Relogin];
-        }
-        return match &p.reason {
-            Some(reason) if cant_run(p) => vec![Action::Blocked { reason: reason.clone() }],
-            _ => Vec::new(),
-        };
-    }
-    if p.provider == Provider::Hyperv && hyperv_restart {
-        return vec![Action::Restart { feature: WindowsFeature::Hyperv }];
-    }
-    vec![match installable(p.provider.into(), r.os) {
-        Some(dependency) => install(r, dependency),
-        None => Action::Manual { reason: ManualReason::Vendor, dependency: None, url: Provider::from(p.provider).vendor().map(str::to_owned) },
-    }]
-}
-
-/// What Vagrant needs to drive `p` ([`ProviderStatus::needs`], the list readiness reads), each
-/// with the item it is about: `vagrant`, `plugin:<name>`, `vmware-utility`.
-fn vagrant_steps(r: &SystemReport, p: &ProviderStatus) -> Vec<(String, Action)> {
-    p.needs
-        .iter()
-        .filter_map(|need| {
-            Some(match need {
-                Need::Vagrant => ("vagrant".to_owned(), install(r, Dependency::Vagrant)),
-                Need::Plugin => {
-                    let plugin = p.plugin.clone()?;
-                    (format!("plugin:{plugin}"), Action::Plugin { plugin })
-                }
-                Need::VmwareUtility => ("vmware-utility".to_owned(), install(r, Dependency::VmwareUtility)),
-            })
-        })
-        .collect()
-}
-
-/// The local hypervisors of the machine check.
-fn local(r: &SystemReport) -> impl Iterator<Item = &ProviderStatus> {
-    r.vm_providers.iter().filter(|p| !p.remote)
+    isothrum_machine::setup::installable(provider.vagrant()?, os.isothrum())
 }
 
 /// What each choice takes on the machine `r` reports; `hyperv_restart`: the setup turned Hyper-V
 /// on in this boot, so it waits for a restart.
 pub fn options(r: &SystemReport, hyperv_restart: bool) -> Options {
-    let offered = engines_on(r.os);
-    let recommended = recommended_engine(r.os);
-    let engine = match r.docker_engine {
-        Some(e) if offered.contains(&e) => e,
-        Some(_) => offered[0],
-        None => recommended,
-    };
-    let hypervisors: Vec<HypervisorOption> = local(r)
-        .map(|p| HypervisorOption {
-            provider: p.provider.into(),
-            get: hypervisor_get(r, p, hyperv_restart),
-            vagrant: vagrant_steps(r, p).into_iter().map(|(_, action)| action).collect(),
-        })
-        .collect();
-    let installed = |o: &&HypervisorOption| local(r).any(|p| p.provider == o.provider && p.hypervisor == Some(true));
-    let hypervisor = hypervisors
-        .iter()
-        .find(|o| installed(o) && o.get.is_empty())
-        .or_else(|| hypervisors.iter().find(installed))
-        .or_else(|| hypervisors.iter().find(|o| matches!(o.get.first(), Some(Action::Install { .. }))))
-        .or_else(|| hypervisors.first())
-        .map(|o| o.provider);
-    Options {
-        wsl: wsl(r),
-        recommended_engine: recommended,
-        engine,
-        engines: offered.iter().map(|&e| EngineOption { engine: e, actions: engine_actions(r, e) }).collect(),
-        hypervisor,
-        hypervisors,
+    isothrum_machine::setup::options(&machine(r), hyperv_restart)
+}
+
+/// The whole setup `wanted` on the machine `r` reports, with its `options` (the report's `setup`).
+pub fn plan(r: &SystemReport, options: &Options, wanted: &Wanted) -> Plan {
+    isothrum_machine::setup::plan(&machine(r), options, wanted)
+}
+
+/// Why a wanted hypervisor isn't the one the setup sets up, as the command line and the test rig
+/// say it.
+pub fn passed_over_said(provider: isothrum_machine::providers::Provider, why: &PassedOver) -> String {
+    match why {
+        PassedOver::LinksOut { url } => format!("links out: {}", url.as_deref().unwrap_or("its vendor's site")),
+        PassedOver::Distribution => {
+            format!("this distribution isn't supported by the guided setup yet: install {} yourself", Provider::from(provider).label())
+        }
+        PassedOver::CantRun { reason } => format!("can't run here: {}", providers::said(reason)),
+        PassedOver::NotOffered => "not offered on this machine".to_owned(),
+        PassedOver::NotNeeded { chosen } => format!("not needed: {} is set up", Provider::from(*chosen).label()),
+        _ => format!("{why:?}"),
     }
+}
+
+/// Whether `dependency`'s install is left to the player here, as the reason words it.
+pub(crate) fn distribution_said(dependency: Option<Dependency>) -> String {
+    format!("this distribution isn't supported by the guided setup yet: install {} yourself", dependency.map_or("it", name))
 }
 
 #[cfg(test)]

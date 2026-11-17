@@ -3,10 +3,10 @@ use crate::platform::host::LinuxPackages;
 
 #[test]
 fn docker_is_named_as_the_setup_installs_it_on_each_os() {
-    assert_eq!(Dependency::Docker.name_on(Os::Linux), "Docker Engine");
-    assert_eq!(Dependency::Docker.name_on(Os::Macos), "Docker Desktop");
-    assert_eq!(Dependency::Docker.name_on(Os::Windows), "Docker Desktop");
-    assert_eq!(Dependency::Awscli.name_on(Os::Linux), "AWS CLI");
+    assert_eq!(name_on(Dependency::Docker, Os::Linux), "Docker Engine");
+    assert_eq!(name_on(Dependency::Docker, Os::Macos), "Docker Desktop");
+    assert_eq!(name_on(Dependency::Docker, Os::Windows), "Docker Desktop");
+    assert_eq!(name_on(Dependency::Awscli, Os::Linux), "AWS CLI");
 }
 
 #[test]
@@ -20,16 +20,16 @@ fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
         (Dependency::Qemu, &[Os::Macos, Os::Linux]),
     ] {
         for os in Os::ALL {
-            assert_eq!(dep.runs_on(os), oses.contains(&os), "{dep:?} on {os:?}");
+            assert_eq!(runs_on(dep, os), oses.contains(&os), "{dep:?} on {os:?}");
         }
     }
     // Every tool an OS doesn't have is refused there before any step, saying so, and its
     // removal the same way.
     for host in hosts() {
-        for dep in Dependency::ALL.into_iter().filter(|d| !d.runs_on(host.os)) {
+        for dep in Dependency::ALL.into_iter().filter(|d| !runs_on(*d, host.os)) {
             let said = plan_on(dep, host, None).err().map(|e| e.to_string()).unwrap_or_default();
             assert_eq!(said, super::not_here(dep, host.os).to_string(), "{host:?}");
-            assert!(said.starts_with(&format!("{} doesn't run on {}", dep.name_on(host.os), host.os.name())), "{said}");
+            assert!(said.starts_with(&format!("{} doesn't run on {}", name_on(dep, host.os), host.os.name())), "{said}");
             assert_eq!(uninstall::plan_on(dep, host, None).err().map(|e| e.to_string()), Some(said), "{host:?}");
         }
     }
@@ -85,7 +85,7 @@ fn every_tool_on_every_computer_installs_or_says_why_and_each_install_has_a_way_
 #[test]
 fn every_local_hypervisor_is_installed_by_the_setup_or_linked_to_its_vendor() {
     for p in Provider::ALL.into_iter().filter(|p| !p.is_remote()) {
-        assert!(Dependency::of_hypervisor(p).is_some() || p.vendor().is_some(), "{p:?}: neither installed nor linked");
+        assert!(p.vagrant().and_then(Dependency::of_hypervisor).is_some() || p.vendor().is_some(), "{p:?}: neither installed nor linked");
     }
 }
 
@@ -96,7 +96,7 @@ fn a_hypervisor_is_installed_exactly_where_it_runs_and_its_provider_names_the_to
         let Some(provider) = dep.hypervisor() else { continue };
         assert_eq!(Dependency::of_hypervisor(provider), Some(dep), "{provider:?}");
         for os in Os::ALL {
-            assert_eq!(dep.runs_on(os), provider.runs_on(os), "{dep:?} on {os:?}");
+            assert_eq!(runs_on(dep, os), Provider::from(provider).runs_on(os), "{dep:?} on {os:?}");
         }
     }
     assert!(plan_on(Dependency::Qemu, WINDOWS, None).is_err());
@@ -124,13 +124,6 @@ async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
     let err = install_vagrant_plugin("vagrant-vmware-esxi".into(), |_| {}).await.unwrap_err();
     assert!(err.to_string().contains("DisableToolInstalls"), "{err}");
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-}
-
-#[test]
-fn only_vagrant_plugin_names_are_installed() {
-    assert!(valid_plugin("vagrant-vmware-esxi") && valid_plugin("vagrant_proxmox"));
-    assert!(!valid_plugin("vagrant-x; touch /tmp/x") && !valid_plugin("--plugin-source") && !valid_plugin("rails"));
-    assert!(!valid_plugin(&format!("vagrant-{}", "a".repeat(64))));
 }
 
 /// The plan for every dependency on `host`: the ones that install there have steps, the
