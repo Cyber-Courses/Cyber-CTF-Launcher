@@ -84,6 +84,13 @@ pub(crate) fn kept(run: &str) -> Values {
     values
 }
 
+/// Every value held in this process (kept, or read once, here), the store never asked: what a
+/// diagnostics bundle replaces. A read of the store would be a keychain prompt on macOS, which
+/// saving a bundle must never bring.
+pub(crate) fn held() -> Vec<String> {
+    with_held(|held| held.values().flatten().map(|(_, value)| value.clone()).collect())
+}
+
 /// Forgets the values run `run` was launched with, here and in the store; none kept is forgotten
 /// already.
 ///

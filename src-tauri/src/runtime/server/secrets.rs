@@ -57,6 +57,8 @@ pub(crate) fn delete_named(name: &str) -> Result<()> {
 
 /// The secret under `key` in the file, or keychain entry `entry`.
 fn read(key: &str, entry: &str) -> Result<Option<String>> {
+    #[cfg(test)]
+    READS.with(|reads| reads.set(reads.get() + 1));
     if in_a_file() { Ok(dev_file::read()?.remove(key)) } else { blocking(|| keychain::get_whole(entry)) }
 }
 
@@ -170,6 +172,19 @@ mod dev_file {
         crate::platform::atomic_file::write_private(path, raw)?;
         Ok(())
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The store's reads on this thread, each one a keychain read in a release build ([`reads`]).
+    static READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times this thread read the store: a test checks some code path asks it nothing (on
+/// macOS a keychain read may be a prompt).
+#[cfg(test)]
+pub(crate) fn reads() -> usize {
+    READS.with(std::cell::Cell::get)
 }
 
 /// Keeps this thread's secrets in `file` instead of the player's (a test that saves one).

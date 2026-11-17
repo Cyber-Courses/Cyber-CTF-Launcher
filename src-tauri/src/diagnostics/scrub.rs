@@ -1,6 +1,6 @@
 //! What keeps a diagnostics bundle safe to send: every text that goes into it passes through
-//! [`Scrubber::scrub`]. It replaces, in order, the secrets the launcher knows by value (a running
-//! lab's launch values: its token, its flags), every secret shape the log files' redaction knows
+//! [`Scrubber::scrub`]. It replaces, in order, the secrets the launcher knows by value (the launch
+//! values this process holds: a run's token, its flags), every secret shape the log files' redaction knows
 //! (`platform::redact`: tokens, passwords, keys, the secrets this process registered), e-mail
 //! addresses, CTF flags (`flag{…}`, `CTF{…}`, `<event>ctf{…}`), and finally the user's home
 //! folder, written as `~`.
