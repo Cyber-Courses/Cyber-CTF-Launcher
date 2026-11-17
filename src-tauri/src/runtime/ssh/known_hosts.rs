@@ -8,9 +8,9 @@
 use std::path::{Path, PathBuf};
 
 use isothrum_machine::place::ssh::known_hosts as machine;
-pub use isothrum_machine::place::ssh::known_hosts::Offered;
 #[cfg(test)]
-pub use isothrum_machine::place::ssh::known_hosts::{Shown, State};
+pub use isothrum_machine::place::ssh::known_hosts::Shown;
+pub use isothrum_machine::place::ssh::known_hosts::{Offered, State};
 
 use crate::error::{Error, Result};
 

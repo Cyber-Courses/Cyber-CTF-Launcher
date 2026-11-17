@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServerScreen } from "@/features/servers/servers-screen";
+import { NodeKeysPrompt } from "@/features/servers/node-keys-prompt";
 import { HostRow, type HostView } from "@/features/servers/host-row";
 import { SELFTEST_PLAN, ServerSelfTest, selfTestOutcome } from "@/features/servers/server-self-test";
 import { loadVmTests } from "@/features/servers/vm-tests";
@@ -86,6 +87,46 @@ describe("ServerScreen", () => {
     await user.click(within(row).getByRole("button", { name: /^\s*test$/i }));
     await flush();
     expect(argsOf(calls, "server_test")).toEqual([{ id: "esxi" }]);
+  });
+
+  it("confirms a node's never-confirmed SSH host keys at a Test the player asks for, never at the page's own", async () => {
+    const fingerprint = "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ";
+    const keys = { pattern: "10.0.0.5", keys: [{ algorithm: "ssh-ed25519", fingerprint }], state: "new" };
+    const calls = installTauri({ server_node_host_keys: (a) => (a?.id === "pve" ? keys : null) });
+    const user = userEvent.setup();
+    render(<NodeKeysPrompt />);
+    await renderScreen();
+    expect(commands(calls)).not.toContain("server_node_host_keys");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const row = screen.getByText("homelab-pve").closest(".border-t") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: /^\s*test$/i }));
+    await flush();
+    const dialog = screen.getByRole("dialog", { name: "Confirm this server's identity" });
+    expect(dialog.textContent).toContain(fingerprint);
+    await user.click(screen.getByRole("button", { name: "They match: trust this server" }));
+    await flush();
+    expect(argsOf(calls, "server_trust_node_host_keys")).toEqual([{ id: "pve", fingerprints: [fingerprint] }]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("asks nothing at Test when the node offers other keys than the confirmed ones", async () => {
+    const calls = installTauri({
+      server_node_host_keys: rejects({
+        code: "sshHostKeyRefused",
+        args: { host: "10.0.0.5" },
+        message: "The SSH host key of 10.0.0.5 isn't the one confirmed for it.",
+      }),
+    });
+    const user = userEvent.setup();
+    render(<NodeKeysPrompt />);
+    await renderScreen();
+    const row = screen.getByText("homelab-pve").closest(".border-t") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: /^\s*test$/i }));
+    await flush();
+    expect(argsOf(calls, "server_node_host_keys")).toEqual([{ id: "pve" }]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+    expect(screen.getAllByText("Online")).toHaveLength(2);
   });
 
   it("shows a host that is testing, then its failure, without a phantom running count", async () => {

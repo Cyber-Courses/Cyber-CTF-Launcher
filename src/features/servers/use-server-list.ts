@@ -65,8 +65,9 @@ export function useSavedHosts(): { hosts: ServerHost[]; defaultId: string | null
 
 const NO_HOSTS: ServerHost[] = [];
 
-/** The last test of each host ("testing" while one runs), and `test(id)` to run one. A second
- *  test of a host supersedes the first: whichever answers last, the newest one is shown. */
+/** The last test of each host ("testing" while one runs), and `test(id)` to run one, which
+ *  resolves to it. A second test of a host supersedes the first: whichever answers last, the
+ *  newest one is shown. */
 export function useHostTests() {
   const [tests, setTests] = useState<HostTests>({});
   const begin = useLatest();
@@ -76,6 +77,7 @@ export function useHostTests() {
       setTests((t) => ({ ...t, [id]: "testing" }));
       const r = await testHost(id);
       if (isLatest()) setTests((t) => ({ ...t, [id]: r }));
+      return r;
     },
     [begin],
   );

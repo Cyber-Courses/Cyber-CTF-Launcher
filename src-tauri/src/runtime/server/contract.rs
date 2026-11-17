@@ -199,6 +199,22 @@ fn default_of(store: Store) -> Option<(String, Provider)> {
 /// unless the host signs in with an API token. None for another kind of host, or a bridge the
 /// launcher reaches directly.
 pub async fn proxmox_jump_for_host(dirs: &AppDirs, id: &str, identity: &Path, public: &str) -> Result<Option<String>> {
+    let Some((host, secret)) = behind_node(dirs, id).await? else { return Ok(None) };
+    if !proxmox::is_token(&host.username) {
+        proxmox::authorize_launcher_key(&host, &secret, identity, public).await?;
+    }
+    Ok(Some(proxmox::node_login(&host)))
+}
+
+/// The address of the node saved host `id`'s labs are reached through ([`proxmox_jump_for_host`]),
+/// whose SSH host keys a run checks against the confirmed ones. None when they aren't.
+pub(crate) async fn proxmox_jump_node(dirs: &AppDirs, id: &str) -> Result<Option<String>> {
+    Ok(behind_node(dirs, id).await?.map(|(host, _)| host.host))
+}
+
+/// Saved host `id` and its secret when its labs are reached through its node: a Proxmox server
+/// whose lab bridge is internal to the node.
+async fn behind_node(dirs: &AppDirs, id: &str) -> Result<Option<(HostProfile, String)>> {
     let host = load_host(dirs, id)?;
     if host.provider != Provider::Proxmox {
         return Ok(None);
@@ -207,10 +223,7 @@ pub async fn proxmox_jump_for_host(dirs: &AppDirs, id: &str, identity: &Path, pu
     if !proxmox::bridge_is_internal(&host, &secret).await? {
         return Ok(None);
     }
-    if !proxmox::is_token(&host.username) {
-        proxmox::authorize_launcher_key(&host, &secret, identity, public).await?;
-    }
-    Ok(Some(proxmox::node_login(&host)))
+    Ok(Some((host, secret)))
 }
 
 /// The node a Proxmox host's labs go on when its profile names none: the server's first, as its

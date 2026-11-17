@@ -88,7 +88,7 @@ function HostRows({ page, hosts }: { page: ServerHosts; hosts: ServerHost[] }) {
   const [now] = useNow(30_000);
   const actionsFor = (h: ServerHost): HostActions => ({
     onTest: () => {
-      void page.test(h.id);
+      void page.testAsked(h.id);
     },
     onVmTest: () => {
       setVmTestId(vmTestId === h.id ? null : h.id);
