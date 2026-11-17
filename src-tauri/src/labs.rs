@@ -10,7 +10,7 @@ use serde_json::json;
 
 use crate::account::api;
 use crate::error::{Error, Result};
-use crate::runtime::{self, Runtime, providers::Provider};
+use crate::runtime::{self, Runtime};
 
 mod archive;
 pub(crate) mod ctf;

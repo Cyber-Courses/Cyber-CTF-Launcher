@@ -15,7 +15,6 @@ use crate::run_service::{self, AttachPick, OperationId, Request};
 use crate::runtime::attack_box::AttackStatus;
 use crate::runtime::paths::{installed_lab_dir, lab_dir};
 use crate::runtime::placement::{self, Placement};
-use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, attack_box, docker, lab, status, terminal_launch};
 
 /// Starts a lab where `placement` says, taken as it is (see [`labs::prepare_launch`]): the
