@@ -11,34 +11,6 @@ fn scan_of(pattern: &str, key: &str) -> String {
     format!("{pattern} ssh-ed25519 {key}\n")
 }
 
-#[test]
-fn a_key_reads_as_openssh_prints_its_fingerprint() {
-    let key = HostKey { algorithm: "ssh-ed25519".into(), blob: KEY_1.into() };
-    assert_eq!(key.fingerprint().as_deref(), Some(FINGERPRINT_1));
-    assert_eq!(HostKey { algorithm: "x".into(), blob: "not base64!".into() }.fingerprint(), None);
-    assert_eq!(pattern("10.0.0.50", 22), "10.0.0.50");
-    assert_eq!(pattern("pve.lan", 2222), "[pve.lan]:2222");
-}
-
-#[test]
-fn only_the_named_hosts_keys_are_read() {
-    let text = format!(
-        "# pve:22 SSH-2.0-OpenSSH_9.2\n{}other ssh-ed25519 {KEY_2}\n@revoked pve ssh-ed25519 {KEY_2}\n|1|c2FsdA==|aGFzaA== ssh-ed25519 {KEY_2}\n",
-        scan_of("pve", KEY_1)
-    );
-    let keys = keys_in(&text, "pve");
-    assert_eq!(keys.iter().map(|k| k.blob.as_str()).collect::<Vec<_>>(), [KEY_1, KEY_2], "the named one, and a hashed one ssh-keygen found");
-}
-
-#[test]
-fn the_offered_keys_are_new_confirmed_or_changed() {
-    let k1 = HostKey { algorithm: "ssh-ed25519".into(), blob: KEY_1.into() };
-    let k2 = HostKey { algorithm: "ssh-ed25519".into(), blob: KEY_2.into() };
-    assert_eq!(state(std::slice::from_ref(&k1), &[]), State::New);
-    assert_eq!(state(&[k1.clone(), k2.clone()], std::slice::from_ref(&k1)), State::Confirmed);
-    assert_eq!(state(std::slice::from_ref(&k2), std::slice::from_ref(&k1)), State::Changed);
-}
-
 #[tokio::test]
 async fn a_new_node_is_shown_with_its_fingerprints_and_confirmed_into_every_file() {
     let dir = crate::testing::temp_dir("known-hosts");
@@ -98,11 +70,6 @@ async fn a_node_that_offers_no_key_or_cant_be_reached_says_so() {
 
 #[test]
 fn a_refused_host_key_is_the_learners_error() {
-    let refused = Error::CommandFailed {
-        command: "ssh".into(),
-        stderr: "No ED25519 host key is known for pve and you have requested strict checking.\r\nHost key verification failed.".into(),
-    };
-    assert_eq!(refused_key("pve", refused).code(), crate::error::Code::SshHostKeyRefused { host: "pve".into() });
-    let other = Error::CommandFailed { command: "ssh".into(), stderr: "Permission denied (publickey).".into() };
-    assert!(matches!(refused_key("pve", other), Error::CommandFailed { .. }));
+    let refused = super::super::ssh_error("pve", super::super::SshError::HostKeyRefused { host: "pve".into() });
+    assert_eq!(refused.code(), crate::error::Code::SshHostKeyRefused { host: "pve".into() });
 }

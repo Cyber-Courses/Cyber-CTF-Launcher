@@ -3,11 +3,11 @@ import type { SshHostKey } from "./SshHostKey";
 import type { SshHostKeyState } from "./SshHostKeyState";
 
 /**
- * The keys a node offers and whether they are the confirmed ones.
+ * The keys a server offers and whether they are the confirmed ones.
  */
 export type SshHostKeys = { 
 /**
- * The node's address and SSH port, as `known_hosts` names it (`pve.lan`, `[pve.lan]:2222`).
+ * The server's address and SSH port, as `known_hosts` names it (`pve.lan`, `[pve.lan]:2222`).
  */
 pattern: string, 
 /**

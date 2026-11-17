@@ -1,25 +1,26 @@
 //! Setting up a Proxmox node with an SSH key the player already has: the launcher signs in to
 //! the node over SSH with that key and, there, makes an API token for itself (`pveum user token
 //! add`) and lets its own key into the user's `authorized_keys`. The setup then runs exactly like
-//! a token one: the token for the API, the launcher's key for SSH and the jump to lab VMs.
+//! a token one: the token for the API, the launcher's key for SSH and the jump to lab VMs. The
+//! setup itself is isothrum-machine's (`place::proxmox::bootstrap`); the launcher keeps which key
+//! the player picked and what they are told.
 //!
 //! Only those two commands ever run on the node, and only the key's path is ever used (ssh
 //! reads the key itself): its contents are never read, kept or logged.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-use sha2::{Digest, Sha256};
+use isothrum_machine::place::proxmox::bootstrap::{self, BootstrapError};
+use isothrum_machine::place::ssh::Target;
 
-use super::{is_token, ssh};
-use crate::error::Error;
+use super::ssh;
 use crate::runtime::server::SshKeySignIn;
-
-/// The most one SSH call to the node may take.
-const SSH_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The keys tried, in order, when the player hasn't picked one (under `~/.ssh`).
 const DEFAULT_KEYS: [&str; 3] = ["id_ed25519", "id_ecdsa", "id_rsa"];
+
+/// What the launcher's token names begin with.
+const TOKEN_PREFIX: &str = "cyberctf";
 
 /// The first of `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` that exists under `home`.
 pub fn default_key(home: &Path) -> Option<PathBuf> {
@@ -30,71 +31,7 @@ pub fn default_key(home: &Path) -> Option<PathBuf> {
 /// 8 hex digits of its public key's SHA-256), so two machines set up on the same node each keep
 /// their own token, and setting up again from this one replaces its own.
 pub fn token_name(launcher_public: &str) -> String {
-    let digest = Sha256::digest(launcher_public.trim().as_bytes());
-    format!("cyberctf-{}", crate::platform::hex(&digest[..4]))
-}
-
-/// The node command that (re)makes the token: an older token of the same name is removed first,
-/// since Proxmox shows a token's secret only when it is made. Privilege separation off: the token
-/// acts as its user (root can create VMs, upload snippets).
-pub(crate) fn token_command(user: &str, name: &str) -> String {
-    format!("pveum user token remove {user}@pam {name} >/dev/null 2>&1; pveum user token add {user}@pam {name} --privsep 0 --output-format json")
-}
-
-/// The node command that adds the launcher's public key to the user's `authorized_keys` unless
-/// it is there already, printing `added` or `present`.
-pub(crate) fn authorize_command(public: &str) -> String {
-    let key = ssh::sh_quote(public.trim());
-    format!(
-        "umask 077; mkdir -p ~/.ssh; if grep -qxF {key} ~/.ssh/authorized_keys 2>/dev/null; then echo present; else echo {key} >> ~/.ssh/authorized_keys && echo added; fi"
-    )
-}
-
-/// An API token `pveum user token add` made: its full id (`user@realm!name`) and its secret.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ApiToken {
-    /// `user@realm!name`.
-    pub(crate) id: String,
-    /// The value the API is called with; shown once by `pveum`.
-    pub(crate) secret: String,
-}
-
-/// Why `pveum`'s answer gave no token.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TokenError {
-    /// No JSON line in what it printed (the text, trimmed).
-    NoToken(String),
-    /// Its JSON line doesn't parse (serde's words).
-    NotJson(String),
-    /// The JSON holds no well-formed token id and secret.
-    Malformed,
-}
-
-impl std::fmt::Display for TokenError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TokenError::NoToken(out) => write!(f, "pveum gave no token: {out}"),
-            TokenError::NotJson(e) => write!(f, "pveum's answer isn't JSON ({e})"),
-            TokenError::Malformed => f.write_str("pveum's answer has no token id and secret"),
-        }
-    }
-}
-
-/// The longest token secret taken from `pveum`'s answer: Proxmox's are UUIDs (36 characters);
-/// anything far longer is not a secret but something else printed.
-const MAX_SECRET_LEN: usize = 128;
-
-/// The token in `pveum user token add --output-format json`'s answer.
-pub(crate) fn parse_token(out: &str) -> Result<ApiToken, TokenError> {
-    let json = out.lines().find(|l| l.trim_start().starts_with('{')).ok_or_else(|| TokenError::NoToken(out.trim().to_owned()))?;
-    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| TokenError::NotJson(e.to_string()))?;
-    let id = v["full-tokenid"].as_str().unwrap_or_default().to_string();
-    let secret = v["value"].as_str().unwrap_or_default().to_string();
-    let secret_ok = !secret.is_empty() && secret.len() <= MAX_SECRET_LEN && secret.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
-    if !is_token(&id) || !secret_ok {
-        return Err(TokenError::Malformed);
-    }
-    Ok(ApiToken { id, secret })
+    bootstrap::token_name(TOKEN_PREFIX, launcher_public)
 }
 
 /// Which part of the setup failed.
@@ -127,45 +64,23 @@ impl std::fmt::Display for Failure {
     }
 }
 
-/// What the node said: the stderr of a failed ssh call, else the error.
-fn detail(e: &Error) -> String {
-    match e {
-        Error::CommandFailed { stderr, .. } => stderr.trim().to_string(),
-        e => e.to_string(),
+impl From<BootstrapError> for Failure {
+    fn from(e: BootstrapError) -> Failure {
+        let part = match e.part {
+            bootstrap::Part::Token => Part::Token,
+            bootstrap::Part::Key => Part::Key,
+            _ => Part::Ssh,
+        };
+        // What the node or ssh said, without the runner's exit code after it.
+        let detail = e.detail.split(" (exited with code").next().unwrap_or_default().trim().to_owned();
+        Failure { part, detail }
     }
 }
 
-/// Which part failed when ssh gave `e`: ssh itself (no connection, the key refused, a host key
-/// that isn't the confirmed one), else `command`'s part.
-fn failed_part(e: &Error, command: Part) -> Part {
-    let refused = matches!(e, Error::Coded { code: crate::error::Code::SshHostKeyRefused { .. }, .. });
-    if refused || ssh_failed(&detail(e)) { Part::Ssh } else { command }
-}
-
-/// Whether ssh itself failed (no connection, the key refused, an unknown host key), rather than
-/// the command it ran on the node.
-fn ssh_failed(stderr: &str) -> bool {
-    [
-        "Permission denied",
-        "Connection refused",
-        "Connection timed out",
-        "Operation timed out",
-        "No route to host",
-        "Could not resolve",
-        "Host key verification failed",
-        "Too many authentication failures",
-        "Load key",
-        "Connection closed",
-        "timed out after",
-        "kex_exchange_identification",
-    ]
-    .iter()
-    .any(|m| stderr.contains(m))
-}
-
-/// The node reached over SSH with the player's key.
-pub fn target(host: &str, key: &SshKeySignIn) -> ssh::Target {
-    ssh::Target { port: key.port, ..ssh::Target::direct(host, key.user.as_str(), PathBuf::from(&key.path)) }
+/// The node reached over SSH with the player's key, its host keys the ones confirmed in
+/// `known_hosts`.
+pub fn target(host: &str, key: &SshKeySignIn, known_hosts: &Path) -> Target {
+    Target::new(host, key.user.as_str(), PathBuf::from(&key.path), known_hosts.to_path_buf()).on_port(key.port)
 }
 
 /// Lets the launcher's key (`public`) into the node's `authorized_keys` for the key's user, over
@@ -173,12 +88,7 @@ pub fn target(host: &str, key: &SshKeySignIn) -> ssh::Target {
 /// node's host key must be one the learner confirmed in the launcher's node `known_hosts`
 /// (`known_hosts`).
 pub async fn authorize(host: &str, key: &SshKeySignIn, known_hosts: &Path, public: &str) -> Result<bool, Failure> {
-    match target(host, key).exec_timed(known_hosts, &authorize_command(public), SSH_TIMEOUT).await {
-        Ok(out) if out.lines().any(|l| l.trim() == "added") => Ok(true),
-        Ok(out) if out.lines().any(|l| l.trim() == "present") => Ok(false),
-        Ok(out) => Err(Failure { part: Part::Key, detail: format!("unexpected answer: {}", out.trim()) }),
-        Err(e) => Err(Failure { part: failed_part(&e, Part::Key), detail: detail(&e) }),
-    }
+    bootstrap::authorize(&ssh::machine(), &target(host, key, known_hosts), public).await.map_err(Failure::from)
 }
 
 /// The token made on the node, and whether the launcher's key was added (or there already).
@@ -195,14 +105,8 @@ pub struct Made {
 /// Sets the node up with the player's key: lets the launcher's key in (first: it also proves SSH
 /// works before anything is changed), then (re)makes the launcher's token.
 pub async fn bootstrap(host: &str, key: &SshKeySignIn, known_hosts: &Path, public: &str) -> Result<Made, Failure> {
-    let key_added = authorize(host, key, known_hosts, public).await?;
-    let command = token_command(&key.user, &token_name(public));
-    let out = target(host, key)
-        .exec_timed(known_hosts, &command, SSH_TIMEOUT)
-        .await
-        .map_err(|e| Failure { part: failed_part(&e, Part::Token), detail: detail(&e) })?;
-    let ApiToken { id: token_id, secret } = parse_token(&out).map_err(|e| Failure { part: Part::Token, detail: e.to_string() })?;
-    Ok(Made { token_id, secret, key_added })
+    let made = bootstrap::bootstrap(&ssh::machine(), &target(host, key, known_hosts), public, &token_name(public)).await?;
+    Ok(Made { token_id: made.token.id, secret: made.token.secret, key_added: made.key_added })
 }
 
 #[cfg(test)]
@@ -216,8 +120,6 @@ mod tests {
         SshKeySignIn { path: "/Users/me/.ssh/id_ed25519".into(), user: "root".into(), port: 22 }
     }
 
-    /// The value pveum's fake answer carries (not a real one: the shape of one).
-    const PVEUM_VALUE: &str = "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab";
     const ANSWER: &str = r#"{"full-tokenid":"root@pam!cyberctf-0a1b2c3d","info":{"privsep":"0"},"value":"6f1d2c3b-aaaa-bbbb-cccc-0123456789ab"}"#;
 
     #[test]
@@ -226,29 +128,6 @@ mod tests {
         assert!(name.starts_with("cyberctf-") && name.len() == "cyberctf-".len() + 8, "{name}");
         assert_eq!(token_name(&format!("{PUBLIC}\n")), name, "stable for the same key");
         assert_ne!(token_name("ssh-ed25519 BBBB other"), name);
-    }
-
-    #[test]
-    fn the_node_commands_are_the_two_expected() {
-        assert_eq!(
-            token_command("root", "cyberctf-0a1b2c3d"),
-            "pveum user token remove root@pam cyberctf-0a1b2c3d >/dev/null 2>&1; pveum user token add root@pam cyberctf-0a1b2c3d --privsep 0 --output-format json"
-        );
-        let add = authorize_command(PUBLIC);
-        assert!(add.contains("grep -qxF 'ssh-ed25519 AAAAC3launcher cyberctf-launcher' ~/.ssh/authorized_keys"), "{add}");
-        assert!(add.contains("echo 'ssh-ed25519 AAAAC3launcher cyberctf-launcher' >> ~/.ssh/authorized_keys"), "{add}");
-        // A quote in the key can't end the quoting.
-        assert!(authorize_command("ssh-ed25519 AA'; rm -rf ~ #").contains(r"'ssh-ed25519 AA'\''; rm -rf ~ #'"));
-    }
-
-    #[test]
-    fn the_token_comes_from_pveums_json() {
-        assert_eq!(parse_token(ANSWER).unwrap(), ApiToken { id: "root@pam!cyberctf-0a1b2c3d".into(), secret: PVEUM_VALUE.into() });
-        assert_eq!(parse_token(&format!("warning: something\n{ANSWER}\n")).unwrap().id, "root@pam!cyberctf-0a1b2c3d");
-        assert_eq!(parse_token(""), Err(TokenError::NoToken(String::new())));
-        assert_eq!(parse_token(r#"{"full-tokenid":"root@pam","value":"x"}"#), Err(TokenError::Malformed));
-        assert_eq!(parse_token(r#"{"full-tokenid":"root@pam!n","value":"a b"}"#), Err(TokenError::Malformed));
-        assert!(matches!(parse_token("{not json"), Err(TokenError::NotJson(_))));
     }
 
     #[test]
@@ -273,7 +152,10 @@ mod tests {
         let calls = tools.calls();
         assert_eq!(calls.len(), 2, "only the two node commands run: {calls:?}");
         assert!(calls.iter().all(|c| c.starts_with("ssh -i /Users/me/.ssh/id_ed25519 -p 22 ") && c.contains(" root@10.0.0.50 ")), "{calls:?}");
-        assert!(calls[0].contains("authorized_keys") && calls[1].contains(&token_command("root", &token_name(PUBLIC))), "{calls:?}");
+        assert!(
+            calls[0].contains("authorized_keys") && calls[1].contains(&format!("pveum user token add 'root@pam' '{}' --privsep 0", token_name(PUBLIC))),
+            "{calls:?}"
+        );
         assert!(calls.iter().all(|c| c.contains("BatchMode=yes")), "never prompts");
     }
 
@@ -282,10 +164,6 @@ mod tests {
         let _tools = Tools::strict_rules(&[("authorized_keys", ok("present\n")), ("pveum user token", ok(ANSWER))]);
         let made = bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap();
         assert!(!made.key_added);
-        // The command itself only appends when grep finds no identical line.
-        let cmd = authorize_command(PUBLIC);
-        let (check, add) = cmd.split_once("then echo present; else").unwrap();
-        assert!(check.contains("if grep -qxF") && add.contains(">> ~/.ssh/authorized_keys"));
     }
 
     #[tokio::test]

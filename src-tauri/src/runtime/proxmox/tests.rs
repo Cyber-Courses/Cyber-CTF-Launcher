@@ -1,5 +1,4 @@
 use super::*;
-use crate::runtime::ssh::CommandLine;
 use serde_json::json;
 
 /// `json`, a list of what a path answers, read.
@@ -125,55 +124,6 @@ fn the_outcome_lists_every_problem() {
     assert_eq!(bad.message, "Signed in, but a lab launch would fail:\n• one\n• two");
 }
 
-#[test]
-fn authorizing_the_key_signs_in_by_password_once() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-pve-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let identity = dir.join("id_ed25519");
-    let askpass = write_askpass(&identity).unwrap();
-    assert_eq!(askpass, dir.join(if cfg!(windows) { "askpass.cmd" } else { "askpass.sh" }));
-    assert!(std::fs::read_to_string(&askpass).unwrap().contains("CYBERCTF_SSH_PASSWORD"));
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&askpass).unwrap().permissions().mode() & 0o777, 0o700);
-    }
-    let args = authorize_args(&host("pve.lan", None), &identity, "ssh-ed25519 AAAA launcher\n");
-    assert_eq!(args[..4], ["-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "NumberOfPasswordPrompts=1"]);
-    // A node that doesn't answer fails the connection in seconds, not at the OS's TCP timeout.
-    assert_eq!(args[4..6], ["-o", "ConnectTimeout=10"]);
-    // Escaped for ssh's option parser (a Windows path's backslashes, a space).
-    assert!(args.contains(&format!("UserKnownHostsFile={}", ssh::ssh_config_path(&dir.join("nodes_known_hosts").display().to_string()))));
-    assert_eq!(args[args.len() - 3..args.len() - 1], ["--", "root@pve.lan"]);
-    assert!(args.last().unwrap().contains("grep -qxF 'ssh-ed25519 AAAA launcher' ~/.ssh/authorized_keys"), "{args:?}");
-    std::fs::remove_dir_all(dir).unwrap();
-}
-
-/// Windows' OpenSSH runs the askpass as a program: a `sh` script there never answered, so a
-/// password host behind an internal bridge couldn't launch from Windows.
-#[test]
-fn the_askpass_helper_is_a_cmd_on_windows_and_sh_elsewhere() {
-    let (name, script) = askpass_script(CommandLine::Windows);
-    assert_eq!(name, "askpass.cmd");
-    assert!(script.starts_with("@echo off\r\n") && script.contains("EnableDelayedExpansion") && script.contains("echo(!CYBERCTF_SSH_PASSWORD!"));
-    let (name, script) = askpass_script(CommandLine::Sh);
-    assert_eq!(name, "askpass.sh");
-    assert!(script.starts_with("#!/bin/sh\n"));
-}
-
-/// The sh helper prints the password exactly, whatever it holds.
-#[cfg(unix)]
-#[test]
-fn the_sh_askpass_prints_the_password_as_is() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-askpass-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let askpass = write_askpass(&dir.join("id_ed25519")).unwrap();
-    let password = "p@ss w$rd'&|%!\\n";
-    let out = std::process::Command::new(&askpass).env("CYBERCTF_SSH_PASSWORD", password).output().unwrap();
-    assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("{password}\n"));
-    std::fs::remove_dir_all(dir).unwrap();
-}
-
 #[tokio::test]
 async fn an_unreachable_host_fails_to_sign_in() {
     // Port 1 on the loopback refuses at once: no network beyond this machine.
@@ -190,39 +140,15 @@ async fn an_unreachable_host_fails_to_sign_in() {
     assert!(matches!(sign_in(&h, "pw").await, Err(SignInError::Failed(_))));
 }
 
-/// The SDN check is a read-only grep that finds `source /etc/network/interfaces.d/*` (or `/sdn`)
-/// and nothing else.
-#[cfg(unix)]
-#[test]
-fn the_sdn_check_finds_only_a_real_source_directive() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-sdn-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("interfaces");
-    let has_directive = |body: &str| {
-        std::fs::write(&file, body).unwrap();
-        let command = format!("{}{}", SDN_SOURCE_CHECK.strip_suffix("/etc/network/interfaces").unwrap(), file.display());
-        std::process::Command::new("sh").args(["-c", &command]).status().unwrap().success()
-    };
-    let base = "auto lo\niface lo inet loopback\n\nauto vmbr0\niface vmbr0 inet static\n";
-    assert!(has_directive(&format!("{base}\nsource /etc/network/interfaces.d/*\n")));
-    assert!(has_directive(&format!("{base}  source  /etc/network/interfaces.d/sdn\n")));
-    assert!(!has_directive(base), "the stock PVE file without the directive");
-    assert!(!has_directive(&format!("{base}# source /etc/network/interfaces.d/*\n")), "commented out");
-    assert!(!has_directive(&format!("{base}source /etc/network/interfaces.d/other\n")));
-    assert!(SDN_SOURCE_CHECK.starts_with("grep -Eq ") && !SDN_SOURCE_CHECK.contains(';'), "one read-only command");
-    std::fs::remove_dir_all(dir).unwrap();
-}
-
 #[test]
 fn a_missing_sdn_directive_is_reported_with_its_fix() {
-    use crate::error::Error;
-    let grep_found_nothing = || Err(Error::CommandFailed { command: "ssh".into(), stderr: String::new() });
-    let missing = sdn_outcome(grep_found_nothing(), None).unwrap();
+    use isothrum_machine::place::ssh::SshError;
+    let missing = sdn_outcome(Ok(false), None).unwrap();
     assert_eq!(missing, SDN_MISSING);
     assert!(missing.contains("source /etc/network/interfaces.d/*") && missing.contains("ifreload -a"), "{missing}");
-    assert_eq!(sdn_outcome(Ok(String::new()), Some("root@pve".into())), None);
+    assert_eq!(sdn_outcome(Ok(true), Some("root@pve".into())), None);
     // SSH itself failing: a token setup's SSH problem is reported elsewhere; a password one's here.
-    let refused = || Err(Error::CommandFailed { command: "ssh".into(), stderr: "Permission denied".into() });
+    let refused = || Err(SshError::Failed("Permission denied".into()));
     assert_eq!(sdn_outcome(refused(), None), None);
     assert!(
         sdn_outcome(refused(), Some("root@pve.lan".into())).unwrap().starts_with("Couldn't check the node's network configuration over SSH as root@pve.lan")
@@ -240,7 +166,7 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
     let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     assert_eq!(sdn_problem(&token, "secret", &key).await.as_deref(), Some(SDN_MISSING));
     let call = tools.calls().pop().unwrap();
-    assert!(call.starts_with("ssh -i ") && call.contains(" root@10.0.0.50 ") && call.ends_with(SDN_SOURCE_CHECK), "{call}");
+    assert!(call.starts_with("ssh -i ") && call.contains(" root@10.0.0.50 ") && call.ends_with("/etc/network/interfaces"), "{call}");
     drop(tools);
     let tools = Tools::strict_rules(&[("/etc/network/interfaces", ok(""))]);
     assert_eq!(sdn_problem(&token, "secret", &key).await, None);
@@ -248,7 +174,7 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
     // A password setup: the password, through the askpass helper.
     let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     assert_eq!(sdn_problem(&host("10.0.0.50", None), "pw", &key).await.as_deref(), Some(SDN_MISSING));
-    assert_eq!(tools.env_of("/etc/network/interfaces", "CYBERCTF_SSH_PASSWORD").as_deref(), Some("pw"));
+    assert_eq!(tools.env_of("/etc/network/interfaces", "ISOTHRUM_SSH_PASSWORD").as_deref(), Some("pw"));
     assert!(tools.calls().pop().unwrap().contains("PreferredAuthentications=password"));
 }
 
@@ -266,7 +192,7 @@ async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
         std::fs::create_dir_all(key.parent().unwrap()).unwrap();
         sdn_problem(&host("10.0.0.50", None), "pw", &key).await;
     }
-    let askpass = askpass_script(CommandLine::HERE).0;
+    let askpass = if cfg!(windows) { "askpass.cmd" } else { "askpass.sh" };
     for app in [&first, &second] {
         assert!(app.data().join("ssh").join(askpass).is_file(), "{}", app.data().display());
     }

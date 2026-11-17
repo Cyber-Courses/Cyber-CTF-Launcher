@@ -77,6 +77,8 @@ fn copy_lab(knob: &str, name: &str, target: lab::Target) -> PathBuf {
 /// node key file beside each of `identities` (`ssh::node_known_hosts`).
 async fn trust_on_first_use(address: &str, identities: &[&Path]) {
     use crate::runtime::ssh::{known_hosts, node_known_hosts};
+    // The real ssh-keyscan and ssh-keygen: a unit test's machine has no tools.
+    crate::runtime::providers::testing::read_this_machine();
     let files: Vec<PathBuf> = identities.iter().map(|k| node_known_hosts(k)).collect();
     let offered = known_hosts::offered(address, 22, &files[0]).await.unwrap_or_else(|e| panic!("{address} offers its SSH host keys: {e}"));
     let shown: Vec<String> = offered.keys.into_iter().map(|k| k.fingerprint).collect();
@@ -144,7 +146,7 @@ async fn a_proxmox_host_passes_the_connection_test() {
     // The setup's Placement step: the server's nodes, storages and bridges, each with its default.
     match crate::runtime::proxmox::placement::read_host(&profile("root@pam", &bridge), &password, address.parse().ok()).await {
         Ok(p) => {
-            check(p.nodes.iter().any(|n| n.default_bridge.is_some() && n.default_disk.is_some()), format!("the placement choices are read ({p:?})"), &mut f)
+            check(p.nodes.iter().any(|n| n.default_bridge.is_some() && n.default_disk.is_some()), format!("the placement choices are read ({p:?})"), &mut f);
         }
         Err(e) => check(false, format!("the placement choices are read ({e})"), &mut f),
     }
@@ -158,6 +160,118 @@ async fn a_proxmox_host_passes_the_connection_test() {
         println!("the token checks left out: CYBERCTF_TEST_PVE_TOKEN_ID, _TOKEN_SECRET and _SSH_KEY aren't all set");
     }
     assert!(f.is_empty(), "{f:#?}");
+}
+
+/// The Servers page's three ways to set up a Proxmox server, as the player goes through them: its
+/// identity read (the certificate's fingerprint, the node's SSH host keys) and confirmed, then
+/// saved with root's password, with an API token, and with an SSH key the node already lets in
+/// (the launcher's token made on the node with it, the launcher's key let in), each passing its
+/// Test connection. What the key setup made on the node is taken off again.
+///
+/// ```text
+/// CYBERCTF_TEST_PVE_HOST=<address> CYBERCTF_TEST_PVE_PASSWORD=<root's password> \
+/// CYBERCTF_TEST_PVE_TOKEN_ID='<user@realm!name>' CYBERCTF_TEST_PVE_TOKEN_SECRET=<its secret> \
+/// CYBERCTF_TEST_PVE_SSH_KEY=<a private key the node lets root in with> CYBERCTF_TEST_PVE_FINGERPRINT=<its certificate's SHA-256> \
+/// [CYBERCTF_TEST_PVE_STORAGE=<storage>] [CYBERCTF_TEST_PVE_BRIDGE=<bridge>] [CYBERCTF_TEST_PVE_NODE=<node>] \
+/// cargo test --lib -- --ignored --nocapture --exact integration_tests::server_lab::a_proxmox_server_is_set_up_three_ways
+/// ```
+#[cfg(debug_assertions)]
+#[tokio::test]
+#[ignore = "needs a Proxmox server; see the module docs"]
+async fn a_proxmox_server_is_set_up_three_ways() {
+    use crate::runtime::server::{connection_test, setup};
+    let (address, password, token, secret, key) = (
+        var("CYBERCTF_TEST_PVE_HOST"),
+        var("CYBERCTF_TEST_PVE_PASSWORD"),
+        var("CYBERCTF_TEST_PVE_TOKEN_ID"),
+        var("CYBERCTF_TEST_PVE_TOKEN_SECRET"),
+        var("CYBERCTF_TEST_PVE_SSH_KEY"),
+    );
+    crate::runtime::providers::testing::read_this_machine();
+    let app = crate::testing::test_app::TestApp::scenario();
+    crate::runtime::server::secrets::use_test_file(app.data().join("secrets.json"));
+    let form = |username: &str, secret: Option<&str>, ssh_key: Option<&str>, fingerprint: &str| setup_form(&address, username, secret, ssh_key, fingerprint);
+    let mut f = Vec::new();
+
+    // First use: the server's identity, confirmed as the player confirms it.
+    let shown = setup::identity(&app.dirs(), &form("root", None, None, "")).await.unwrap_or_else(|e| panic!("the server's identity is read: {e}"));
+    let fingerprint = shown.tls.clone().unwrap_or_default();
+    check(
+        Some(fingerprint.clone()) == super::support::var("CYBERCTF_TEST_PVE_FINGERPRINT"),
+        format!("the certificate shown is the server's ({fingerprint})"),
+        &mut f,
+    );
+    let ssh = shown.ssh.unwrap_or_else(|| panic!("the node's SSH host keys are shown ({:?})", shown.ssh_error));
+    let keys: Vec<String> = ssh.keys.iter().map(|k| k.fingerprint.clone()).collect();
+    setup::trust_ssh_keys(&app.dirs(), &form("root", None, None, &fingerprint), &keys)
+        .await
+        .unwrap_or_else(|e| panic!("the node's SSH host keys are confirmed: {e}"));
+    let again = setup::identity(&app.dirs(), &form("root", None, None, "")).await.unwrap();
+    check(again.ssh.is_some_and(|s| s.state == crate::runtime::ssh::known_hosts::State::Confirmed), "the node's host keys read as confirmed".into(), &mut f);
+
+    // Each way, saved, then its Test connection.
+    let ways = [
+        ("by password", setup::save(&app.dirs(), form("root", Some(&password), None, &fingerprint)).await),
+        ("by API token", setup::save(&app.dirs(), form(&token, Some(&secret), None, &fingerprint)).await),
+        ("by SSH key", setup::save_with_ssh_key(&app.dirs(), form("", None, Some(&key), &fingerprint)).await),
+    ];
+    let mut made_token = None;
+    for (way, saved) in ways {
+        let saved = match saved {
+            Ok(saved) => saved,
+            Err(e) => {
+                check(false, format!("set up {way} ({e})"), &mut f);
+                continue;
+            }
+        };
+        if saved.ssh_key.is_some() {
+            made_token = Some(saved.username.clone());
+        }
+        match connection_test::test_connection(&app.dirs(), &saved.id).await {
+            Ok(r) => check(r.ok, format!("set up {way}, Test connection passes ({})", serde_json::to_string(&r).unwrap_or_default()), &mut f),
+            Err(e) => check(false, format!("set up {way}, Test connection ({e})"), &mut f),
+        }
+    }
+
+    let undone = undo_key_setup(&app, &address, &key, made_token.as_deref()).await;
+    check(undone.is_ok(), format!("what the key setup made is taken off the node ({undone:?})"), &mut f);
+    assert!(f.is_empty(), "{f:#?}");
+}
+
+/// The Servers page's form for a Proxmox server at `address`, named after how it signs in, the
+/// storage, bridge and node from the knobs.
+#[cfg(debug_assertions)]
+fn setup_form(address: &str, username: &str, secret: Option<&str>, ssh_key: Option<&str>, fingerprint: &str) -> crate::runtime::server::HostInput {
+    let opt = super::support::var;
+    serde_json::from_value(serde_json::json!({
+        "id": null, "name": format!("Pve {username}{}", if ssh_key.is_some() { "key" } else { "" }), "provider": "proxmox", "host": address, "port": 8006, "username": username,
+        "datastore": opt("CYBERCTF_TEST_PVE_STORAGE"), "network": opt("CYBERCTF_TEST_PVE_BRIDGE"), "node": opt("CYBERCTF_TEST_PVE_NODE"),
+        "insecureTls": true, "tlsFingerprint": fingerprint, "autoStopHours": null, "password": secret,
+        "sshKey": ssh_key.map(|path| serde_json::json!({ "path": path, "user": "root", "port": 22 })),
+        "imageStorage": opt("CYBERCTF_TEST_PVE_STORAGE"), "snippetStorage": opt("CYBERCTF_TEST_PVE_STORAGE"),
+    }))
+    .unwrap()
+}
+
+/// Takes what an SSH-key setup made on the node at `address` off again, with the player's `key`:
+/// the launcher's key from root's `authorized_keys`, and its token `made_token`.
+#[cfg(debug_assertions)]
+async fn undo_key_setup(
+    app: &crate::testing::test_app::TestApp,
+    address: &str,
+    key: &str,
+    made_token: Option<&str>,
+) -> Result<String, isothrum_machine::place::ssh::SshError> {
+    let (launcher, public) = crate::runtime::ssh::ensure_key(&app.dirs()).await.unwrap();
+    let node = isothrum_machine::place::ssh::Target::new(address, "root", PathBuf::from(key), crate::runtime::ssh::node_known_hosts(&launcher));
+    let mut undo = format!(
+        "grep -vxF {} ~/.ssh/authorized_keys > ~/.ssh/ak.tmp; cat ~/.ssh/ak.tmp > ~/.ssh/authorized_keys; rm -f ~/.ssh/ak.tmp",
+        isothrum_machine::place::ssh::sh_quote(public.trim())
+    );
+    if let Some(name) = made_token.and_then(|t| t.split_once('!')).map(|(_, n)| n.to_owned()) {
+        undo = format!("pveum user token remove root@pam {name}; {undo}");
+    }
+    node.exec(&crate::runtime::ssh::machine(), &undo, std::time::Duration::from_secs(60)).await
 }
 
 #[tokio::test]
