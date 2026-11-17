@@ -48,6 +48,15 @@ pub fn serve_home(config: RunnerConfig) {
     }
 }
 
+/// Serves `home` as [`serve_home`] does, on a runner whose every tool answers with nothing (an
+/// engine with no network, Vagrant with no box): for a test that only needs the runner never to
+/// reach this host's tools.
+pub fn serve_silent(home: &Path) {
+    let mut config = RunnerConfig::new(home);
+    config.processes = Arc::new(isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::ok("")));
+    serve_home(config);
+}
+
 /// Notes `home` as served by a test; false when it was already.
 fn register(home: &Path) -> bool {
     std::fs::create_dir_all(home).unwrap();

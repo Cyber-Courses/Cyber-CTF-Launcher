@@ -6,6 +6,8 @@ use std::time::Duration;
 use serde::Serialize;
 use sysinfo::{Disks, System};
 
+use crate::platform::exec::run_read;
+
 /// CPU usage needs two samples a moment apart.
 const CPU_SAMPLE_GAP: Duration = Duration::from_millis(220);
 
@@ -82,16 +84,13 @@ fn disk_holding(mounts: &[(&Path, (u64, u64))], path: &Path) -> Option<(u64, u64
     mounts.iter().filter(|(m, _)| path.starts_with(key(m))).max_by_key(|(m, _)| m.as_os_str().len()).map(|(_, s)| *s)
 }
 
-/// The containers the current Docker engine runs, as it counts them (isothrum-machine's `docker
-/// info`); 0 when no engine answers.
 async fn running_containers() -> u32 {
-    let cx = crate::runtime::providers::machine_check();
-    isothrum_machine::docker::daemon_info(&cx, "{{.ContainersRunning}}", None).await.ok().map_or(0, |n| count(&n))
+    run_read("docker", &["ps", "--format", "{{.ID}}"], None).await.ok().map_or(0, |o| count_ids(&o))
 }
 
-/// The engine's count, 0 when it isn't one.
-fn count(answer: &str) -> u32 {
-    answer.trim().parse().unwrap_or(0)
+/// The container ids in `docker ps` output, one per non-empty line.
+fn count_ids(out: &str) -> u32 {
+    u32::try_from(out.lines().filter(|l| !l.trim().is_empty()).count()).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -100,7 +99,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_metrics_describe_this_machine_and_its_running_containers() {
-        let tools = crate::platform::exec::fake::Tools::expect(&[("docker info", crate::platform::exec::fake::ok("2\n"))]);
+        let tools = crate::platform::exec::fake::Tools::expect(&[("docker ps", crate::platform::exec::fake::ok("a1\nb2\n"))]);
         let m = machine_metrics().await;
         assert!(m.cores > 0 && m.mem_total > 0 && m.mem_used <= m.mem_total, "{} {} {}", m.cores, m.mem_used, m.mem_total);
         assert!(m.disk_used <= m.disk_total);
@@ -108,16 +107,16 @@ mod tests {
         assert_eq!(m.containers, 2);
         drop(tools);
         // The engine down: none.
-        let _tools = crate::platform::exec::fake::Tools::expect(&[("docker info", crate::platform::exec::fake::fail(DOCKER_DOWN))]);
+        let _tools = crate::platform::exec::fake::Tools::expect(&[("docker ps", crate::platform::exec::fake::fail(DOCKER_DOWN))]);
         assert_eq!(machine_metrics().await.containers, 0);
     }
 
     const DOCKER_DOWN: &str = "Cannot connect to the Docker daemon";
 
     #[test]
-    fn the_engines_count_is_read_and_anything_else_is_none() {
-        assert_eq!(count(" 3\n"), 3);
-        assert_eq!((count(""), count("<no value>")), (0, 0));
+    fn counts_one_container_per_non_empty_line() {
+        assert_eq!(count_ids("abc\n\n def \n"), 2);
+        assert_eq!(count_ids(""), 0);
     }
 
     #[test]

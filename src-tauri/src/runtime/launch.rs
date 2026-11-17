@@ -10,7 +10,7 @@ use super::cloud_services;
 pub(crate) use super::isothrum::Inputs;
 use super::paths::runner_home;
 use super::providers::Provider;
-use super::{LabRef, Runtime, docker, isothrum, lab, server};
+use super::{LabRef, Runtime, isothrum, lab, server};
 use crate::error::{Code, Error, Result};
 use crate::platform::policy::Key;
 
@@ -203,7 +203,7 @@ async fn start_here(
 /// The runner's start of a container lab (runner home `home`): its files generated, then up, or resumed as it was when it is parked (the runner's own rule).
 /// Takes no app handle, so the integration tests run exactly this.
 pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, inputs: Inputs<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    recheck_instance(dir, id, log).await?;
+    recheck_instance(home, dir, id, log).await?;
     lab::prepare(dir, lab::Target::Docker)?;
     isothrum::Deployment::docker(home, dir, id)?.up(inputs, None, log).await
 }
@@ -248,10 +248,10 @@ pub(crate) fn refusal_here(dir: &Path, target: lab::Target, provider: Provider) 
 /// Checks the lab's instance against the networks Docker has now (an install with Docker down
 /// picked it blind), moving the lab (stopped: its slot was cleared) to a free one if its blocks
 /// are taken. With Docker down there is nothing to check against, and the start says so next.
-async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
+async fn recheck_instance(home: &Path, dir: &Path, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
     let Some(labs) = dir.parent() else { return Ok(()) };
     let before = lab::instance(dir);
-    let now = lab::recheck_instance(labs, dir, &docker::subnets_in_use(id).await)?;
+    let now = lab::recheck_instance(labs, dir, &isothrum::address_blocks_in_use(home, id).await)?;
     if before.is_some_and(|b| b != now) {
         log(format!("Another Docker network took this lab's addresses: it moves to free ones (instance {now})."));
     }

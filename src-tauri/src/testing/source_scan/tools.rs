@@ -21,12 +21,12 @@ const ALLOWED: &[(&str, &str)] = &[
     ("machine/selftest/vm/leftover.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/selftest/vm/networks.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/storage/owned.rs", "L-14: what a self-test downloaded, until the self-tests run through the runner (I-15)"),
+    ("machine/system/metrics.rs", "L-14: live metrics read the runner's own per-machine resources (docker stats today)"),
     ("machine/tools/install.rs", "L-14: tool and hypervisor installs move to isothrum-machine (I-14)"),
     ("machine/workloads/docker.rs", "L-14: machine/workloads is rebuilt on the runner's list, status and Down"),
     ("machine/workloads/vm.rs", "L-14: machine/workloads is rebuilt on the runner's list, status and Down"),
     ("platform/exec/elevate.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
     ("platform/exec/vagrant.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
-    ("runtime/docker/inspect/networks.rs", "I-4 follow-up: the runner says which address blocks the engine's networks hold (plan, docker: subnets_in_use)"),
     (
         "runtime/server/azure_size.rs",
         "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
