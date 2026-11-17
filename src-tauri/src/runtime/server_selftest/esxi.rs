@@ -20,11 +20,10 @@ use super::wait_tcp;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::docker::Check;
-use crate::runtime::isothrum::Deployment;
 use crate::runtime::lab::esxi::{DATASTORE, HOSTNAME, HOSTPORT, VIRTUAL_NETWORK};
 use crate::runtime::launch::{Inputs, esxi_run};
 use crate::runtime::providers::{self, Provider};
-use crate::runtime::{Runtime, lab, server};
+use crate::runtime::{Runtime, isothrum::Deployment, lab, server};
 
 /// The steps of its own the run reports, in order (the frontend shows the same plan).
 const IMAGE: Step = ("image", "Upload the test VM to the ESXi datastore");
