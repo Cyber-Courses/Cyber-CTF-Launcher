@@ -7,15 +7,16 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
+use super::collect::{Operation, Runner};
 use super::{Sources, write};
 use crate::platform::AppDirs;
 
 /// A lab's spec, as small as one reads.
 const SPEC: &str = "version: 1\nname: invoice-portal\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";
 
-/// The launch token a running job carries (no pattern takes it: only its value does).
+/// The launch token a lab's run was launched with (no pattern takes it: only its value does).
 const LAUNCH_TOKEN: &str = "ltk-9f8e7d6c5b4a3921";
-/// A flag a running job gives its lab, of no flag shape.
+/// A flag a lab's run was launched with, of no flag shape.
 const JOB_FLAG: &str = "a1b2c3d4e5f60718";
 /// The player's e-mail address.
 const EMAIL: &str = "ada.lovelace@example.org";
@@ -45,6 +46,7 @@ impl Drop for Seeded {
     fn drop(&mut self) {
         // The store this process keeps open on the data folder goes before the folder.
         crate::store::forget(&self.data);
+        let _ = crate::runtime::launch_values::forget_lab("web");
     }
 }
 
@@ -76,12 +78,11 @@ impl Seeded {
         Seeded::file(self.data.join("labs/web/isoloom.yml"), SPEC);
         Seeded::file(self.data.join("labs/web/.cyberctf-commit"), "0123abcd\n");
         Seeded::file(self.data.join("labs/local-notes/isoloom.yml"), &SPEC.replace("invoice-portal", "notes-app"));
-        Seeded::file(self.data.join("deploys/web.status"), "ok");
-        Seeded::file(self.data.join("deploys/web.log"), &format!("==> Starting\n{line}✓ Lab is running\n"));
-        Seeded::file(self.data.join("deploys/api.status"), r#"error: {"code":"portInUse","message":"Host port 8000 is already in use"}"#);
-        let job = json!({ "lab_id": "api", "op": "launch", "launch": { "labId": "api", "env": [{ "name": "CTF_LAUNCH_TOKEN", "value": LAUNCH_TOKEN }, { "name": "CTF_FLAG_MAIN", "value": JOB_FLAG }] } });
-        Seeded::file(self.data.join("deploys/api.json"), &job.to_string());
-        Seeded::file(self.data.join("deploys/api.log"), &line);
+        // The values web's run was launched with, kept while it lasts (`runtime::launch_values`).
+        let launched = [("CTF_LAUNCH_TOKEN", LAUNCH_TOKEN), ("CTF_FLAG_MAIN", JOB_FLAG)].map(|(n, v)| (n.to_owned(), v.to_owned()));
+        crate::runtime::launch_values::keep("cyberctf-web", &launched);
+        let runner_home = crate::runtime::paths::runner_home_in(&self.data);
+        Seeded::file(runner_home.join("service.log"), &format!("isothrum serve: listening\n{line}"));
         let host = json!({ "id": "srv1", "name": "Garage Proxmox", "provider": "proxmox", "host": "192.0.2.44", "port": 8006, "username": "root@pam" });
         let host: crate::runtime::server::profile::HostProfile = serde_json::from_value(host).unwrap();
         crate::runtime::server::store::update(&self.sources().dirs, |s| {
@@ -91,7 +92,6 @@ impl Seeded {
         })
         .unwrap();
         Seeded::file(self.logs.join("cyberctf.log"), &format!("[info] Cyber CTF app starting\n{line}"));
-        Seeded::file(self.logs.join("deploy-api.log"), &line);
     }
 
     fn sources(&self) -> Sources {
@@ -111,9 +111,14 @@ impl Seeded {
 
     /// The bundle written, as its files' paths and texts.
     fn bundle(&self) -> BTreeMap<String, String> {
+        self.bundle_with(Ok(Runner::default()))
+    }
+
+    /// [`Seeded::bundle`] with what the runner service says of the runs (`runner`).
+    fn bundle_with(&self, runner: crate::error::Result<Runner>) -> BTreeMap<String, String> {
         let report = json!({ "os": "linux", "docker": { "installed": true, "version": "27.1" }, "ovftoolLocation": { "path": self.home.join("bin").join("ovftool").display().to_string() }, "hint": self.secret_line() });
         let out = self.home.join("diagnostics.tar.gz");
-        write(&self.sources(), &report, Ok(Vec::new()), &out).unwrap();
+        write(&self.sources(), &report, runner, &out).unwrap();
         unpack(&out)
     }
 }
@@ -159,7 +164,7 @@ fn no_seeded_secret_and_no_home_path_is_in_the_bundle() {
 fn the_bundle_holds_the_summary_the_report_and_the_logs() {
     let files = Seeded::new().bundle();
     let names: Vec<&str> = files.keys().map(String::as_str).collect();
-    for expected in ["README.txt", "summary.json", "host-report.json", "logs/cyberctf.log", "logs/deploy-api.log", "operations/web.log", "operations/api.log"] {
+    for expected in ["README.txt", "summary.json", "host-report.json", "logs/cyberctf.log", "runner/service.log"] {
         assert!(names.contains(&expected), "{expected} missing from {names:?}");
     }
     let report: Value = serde_json::from_str(&files["host-report.json"]).unwrap();
@@ -179,11 +184,51 @@ fn the_bundle_holds_the_summary_the_report_and_the_logs() {
             { "id": "web", "slug": "invoice-portal", "commit": "0123abcd", "imported": false },
         ])
     );
-    let operations: BTreeMap<String, (Value, Value)> =
-        summary["operations"].as_array().unwrap().iter().map(|o| (o["id"].as_str().unwrap().to_owned(), (o["outcome"].clone(), o["code"].clone()))).collect();
-    assert_eq!(operations["web"], (json!("succeeded"), Value::Null));
-    assert_eq!(operations["api"], (json!("failed"), json!("portInUse")));
+    assert_eq!(summary["operations"], json!([]), "the runner recorded none");
     assert_eq!(summary["problems"], json!([]), "everything could be read");
+}
+
+/// The runner service runs the labs' operations: the bundle holds each run's last one in the
+/// summary and each lab's run's journal (what `cyberctf labs logs <lab> --json` lists), read from
+/// a service that took web's run down, its launch values as secrets.
+#[tokio::test]
+async fn the_bundle_holds_the_runner_services_operations() {
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+    let seeded = Seeded::new();
+    let dirs = seeded.sources().dirs;
+    let home = crate::runtime::paths::runner_home(&dirs).unwrap();
+    let module = seeded.data.join("module-web");
+    Seeded::file(module.join("main.tf"), "variable \"region\" {\n  default = \"eu-west-3\"\n}\n");
+    let record = json!({ "version": 0, "name": "cyberctf-web", "project": module, "format": "terraform", "cloud": "aws", "state": "ready", "expires_at": 1 });
+    crate::testing::runner::save_run(&home, &record);
+    let mut config = isothrum_runner::RunnerConfig::new(&home);
+    config.processes = std::sync::Arc::new(FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
+        Some("version") => Reply::ok(r#"{"terraform_version":"1.10.5"}"#),
+        Some("show") => Reply::ok(r#"{"values":{"root_module":{"resources":[]}}}"#),
+        Some("output") => Reply::ok("{}"),
+        _ => Reply::ok(""),
+    }));
+    crate::testing::service::serve_home(config);
+    let record = crate::runtime::isothrum::records(&home).await.unwrap().into_iter().find(|r| r.name.as_str() == "cyberctf-web").unwrap();
+    let launched = [("CTF_LAUNCH_TOKEN".to_owned(), LAUNCH_TOKEN.to_owned())];
+    crate::runtime::isothrum::destroy_expired(&home, &record, &launched).await.unwrap();
+
+    let files = seeded.bundle_with(super::collect::runner_operations(&dirs).await);
+    let journal: Value = serde_json::from_str(&files["operations/web.json"]).unwrap();
+    let ops: Vec<(&Value, &Value)> = journal.as_array().unwrap().iter().map(|o| (&o["op"], &o["ended"]["outcome"])).collect();
+    assert_eq!(ops, [(&json!("down"), &json!("succeeded"))], "{journal}");
+    let summary: Value = serde_json::from_str(&files["summary.json"]).unwrap();
+    let last = &summary["operations"][0];
+    assert_eq!(
+        (&last["source"], &last["id"], &last["lab"], &last["op"], &last["outcome"]),
+        (&json!("isothrum"), &json!("cyberctf-web"), &json!("web"), &json!("down"), &json!("succeeded"))
+    );
+    assert_eq!(summary["problems"], json!([]), "everything could be read");
+    for (name, text) in &files {
+        for secret in SECRETS {
+            assert!(!text.contains(secret), "{secret} is in {name}:\n{text}");
+        }
+    }
 }
 
 #[test]
@@ -191,7 +236,7 @@ fn an_empty_data_folder_still_makes_a_bundle() {
     let root = tempfile::tempdir().unwrap();
     let sources = Sources { dirs: AppDirs::new(Some(root.path().join("data")), None), log_dir: None, home: None, settings: BTreeMap::new() };
     let out = root.path().join("d.tar.gz");
-    write(&sources, &json!({}), Ok(Vec::new()), &out).unwrap();
+    write(&sources, &json!({}), Ok(Runner::default()), &out).unwrap();
     let files = unpack(&out);
     assert_eq!(files.keys().map(String::as_str).collect::<Vec<_>>(), ["README.txt", "host-report.json", "summary.json"]);
     let summary: Value = serde_json::from_str(&files["summary.json"]).unwrap();
@@ -200,9 +245,9 @@ fn an_empty_data_folder_still_makes_a_bundle() {
 
 #[test]
 fn operations_are_listed_newest_first_and_capped() {
-    use super::collect::{Operation, newest};
+    use super::collect::newest;
     let op = |id: &str, at: Option<&str>| Operation {
-        source: "launcher",
+        source: "isothrum",
         id: id.into(),
         lab: id.into(),
         op: None,

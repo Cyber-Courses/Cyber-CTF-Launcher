@@ -143,7 +143,7 @@ pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime) -> Result<
 }
 
 /// What lab `id` looks like right now, wherever it runs; not running when its last launch or
-/// resume failed in its worker, whatever machines it left up, nor when it isn't installed (never
+/// resume failed in the runner service, whatever machines it left up, nor when it isn't installed (never
 /// started here, or a launch that failed before its install). That last one was an error: the
 /// attack box started "with the lab" when a launch ends read it, after a launch that failed in
 /// its download, as a failure of its own ("lab … is not installed").
@@ -724,7 +724,6 @@ mod tests {
         let id = lab_launch(t.handle().clone(), "invoice".into(), here, Some(true)).await.unwrap();
         let (outcome, _) = finished(t.handle(), &id).await;
         assert!(outcome.is_err(), "{outcome:?}");
-        assert!(!t.data().join("deploys").join("invoice.pid").exists(), "no worker");
     }
 
     #[tokio::test]

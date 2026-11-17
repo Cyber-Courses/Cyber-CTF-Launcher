@@ -22,9 +22,8 @@ pub(crate) mod remove;
 use archive::extract;
 use launch_env::{EnvVar, launch_env};
 
-/// A lab to download and run, as the backend's `startLab` and `claimLaunch` answer it (and as a
-/// launch's job file carries it to its worker). Its `Debug` leaves the values out: they carry the
-/// launch token.
+/// A lab to download and run, as the backend's `startLab` and `claimLaunch` answer it. Its `Debug`
+/// leaves the values out: they carry the launch token.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Launch {

@@ -148,7 +148,7 @@ fn what_couldnt_be_deleted_is_reported_and_the_rest_goes() {
     let run = t.data().join("offline").join("local-invoice.json");
     let held = |path: &Path| if path == run { Err(std::io::Error::other("held by another program")) } else { delete(path) };
 
-    let removal = remove_files(t.data(), "local-invoice", &[], |a, b| std::fs::rename(a, b), held).unwrap();
+    let removal = remove_files(t.data(), "local-invoice", |a, b| std::fs::rename(a, b), held).unwrap();
 
     assert_eq!(removal.left, [Leftover { path: run.display().to_string(), error: "held by another program".into() }]);
     assert!(run.is_file(), "what failed is still there");
@@ -163,7 +163,7 @@ fn a_copy_that_wont_move_aside_refuses_the_removal_with_nothing_deleted() {
     records(t.data(), "local-invoice");
     let denied = |_: &Path, _: &Path| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
 
-    let err = remove_files(t.data(), "local-invoice", &[], denied, delete).unwrap_err();
+    let err = remove_files(t.data(), "local-invoice", denied, delete).unwrap_err();
 
     assert!(err.is_refusal() && err.to_string().contains("is open in another program") && err.to_string().contains("nothing was deleted"), "{err}");
     assert!(dir.join("isoloom.yml").is_file() && leftovers(t.data(), "local-invoice").iter().all(|d| d.is_dir()));
@@ -176,7 +176,7 @@ fn an_earlier_removals_leftover_copy_goes_with_this_one() {
     let dir = t.lab("local-invoice", &[("isoloom.yml", SPEC)]);
     let earlier = t.data().join("labs").join(".local-invoice.removing");
     std::fs::create_dir_all(earlier.join("left")).unwrap();
-    assert_eq!(remove_files(t.data(), "local-invoice", &[], |a, b| std::fs::rename(a, b), delete).unwrap(), Removal::default());
+    assert_eq!(remove_files(t.data(), "local-invoice", |a, b| std::fs::rename(a, b), delete).unwrap(), Removal::default());
     assert!(!dir.exists() && !earlier.exists());
 }
 

@@ -100,8 +100,8 @@ export async function runOperation(
       restoreDeploy(lab.id, previous);
       return CALLED_OFF;
     }
-    // The backend's answer to an operation started while another one runs on the lab
-    // (deploy_worker::start_worker): refused, not failed.
+    // The backend's answer to an operation started while another one runs on the lab (the
+    // launcher's own, or the runner service's on the lab's run): refused, not failed.
     if (errorCode(e) === "alreadyInProgress") {
       // The backend refused it (another operation on the lab is in flight): nothing ran, so
       // nothing failed. Keep the run that was there and say why instead of a ✗ in its log,

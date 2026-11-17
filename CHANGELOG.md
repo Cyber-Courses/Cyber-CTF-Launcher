@@ -16,9 +16,9 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   JSON object a line, and its exit codes tell a failure (1) from a usage error (2) and from
   something to put right first (3). See docs/players/cli.md.
 - **Save diagnostics.** Settings > About saves one file to attach to a bug report: the version,
-  the OS, the machine check, the installed labs, the last lab operations and the end of the logs,
-  with tokens, passwords, keys, flags and e-mail addresses removed and the home folder written
-  `~`. **Send to support** saves it and opens a mail to support to attach it to.
+  the OS, the machine check, the installed labs, the lab operations the runner service journals
+  and the end of the app's and the runner service's logs, with tokens, passwords, keys, flags,
+  launch values and e-mail addresses removed and the home folder written `~`. **Send to support** saves it and opens a mail to support to attach it to.
 
 - **A VM lab runs on UTM again, one VM per machine.** Isoloom's `vagrant` target has a UTM
   provider again: each lab network is an isolated vmnet network its VMs are attached to (the Mac

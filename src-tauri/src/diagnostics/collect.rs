@@ -1,9 +1,9 @@
-//! What a diagnostics bundle says, read from the launcher's own data: the installed labs, the
-//! last operations (each run's last operation as the Isothrum runner's API records it, and the
-//! verdicts the deploy workers of an earlier launcher left in `deploys/`), the saved servers'
-//! kinds, the policy, and the recent logs. Read only: nothing here starts, settles or changes
-//! anything. Values that could identify a host or an account (a server's name, address and user,
-//! a run's params) are left out, not scrubbed.
+//! What a diagnostics bundle says, read from the launcher's own data and the Isothrum runner
+//! service that runs the labs' operations: the installed labs, the last operations (each run's
+//! last operation as the runner records it, and each lab's run's journal), the saved servers'
+//! kinds, the policy, and the recent logs (the app's and the runner service's). Read only: nothing
+//! here starts, settles or changes anything. Values that could identify a host or an account (a
+//! server's name, address and user, a run's params) are left out, not scrubbed.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -41,10 +41,9 @@ pub(crate) struct InstalledLab {
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Operation {
-    /// Who recorded it: `launcher` (a verdict an older launcher's deploy worker left) or `isothrum` (the runner's record
-    /// of the run's last operation).
+    /// Who recorded it: `isothrum` (the runner's record of the run's last operation).
     pub source: &'static str,
-    /// Its id: the lab's key in `deploys/`, or the runner's run name.
+    /// Its id: the runner's run name.
     pub id: String,
     /// The lab it acted on.
     pub lab: String,
@@ -80,68 +79,50 @@ fn names_in(dir: &Path) -> Vec<String> {
     std::fs::read_dir(dir).map(|entries| entries.flatten().filter_map(|e| e.file_name().into_string().ok()).collect()).unwrap_or_default()
 }
 
-/// The operations the deploy workers of an earlier launcher left in `deploys/`: each lab's last
-/// verdict (`<key>.status`), or one in progress (its job file there, no verdict yet). This
-/// launcher writes none.
-pub(crate) fn worker_operations(dirs: &AppDirs) -> Vec<Operation> {
-    let Ok(base) = dirs.data() else { return Vec::new() };
-    let dir = base.join("deploys");
-    let mut keys: Vec<String> = names_in(&dir)
-        .iter()
-        .filter_map(|n| n.strip_suffix(".status").or_else(|| n.strip_suffix(".json")))
-        .filter(|k| is_lab_id(k))
-        .map(str::to_owned)
-        .collect();
-    keys.sort();
-    keys.dedup();
-    keys.into_iter().map(|key| worker_operation(&dir, key)).collect()
+/// What the Isothrum runner service says of the labs' runs.
+#[derive(Debug, Default)]
+pub(crate) struct Runner {
+    /// Each run's last operation, as the runner records it.
+    pub last: Vec<Operation>,
+    /// Each lab's run's operations, as the service journals them.
+    pub journals: Vec<Journal>,
+    /// The journals that couldn't be read, and why.
+    pub problems: Vec<String>,
 }
 
-/// The last operation of the deploy worker of `key` in the workers' folder `dir`.
-fn worker_operation(dir: &Path, key: String) -> Operation {
-    let status = dir.join(format!("{key}.status"));
-    let (outcome, code, at) = match std::fs::read_to_string(&status) {
-        Ok(text) => {
-            let (outcome, code) = verdict(&text);
-            (outcome, code, modified(&status))
-        }
-        Err(_) => ("inProgress", None, modified(&dir.join(format!("{key}.json")))),
-    };
-    Operation { source: "launcher", lab: key.clone(), id: key, op: None, outcome, code, at }
-}
-
-/// A status file's verdict (`ok`, or `error: {"code":…}` as the worker writes it): the outcome
-/// and the error's code when it gives one.
-fn verdict(status: &str) -> (&'static str, Option<Value>) {
-    let s = status.trim();
-    if s == "ok" {
-        return ("succeeded", None);
-    }
-    let body = s.strip_prefix("error: ").unwrap_or(s);
-    let code = serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("code").cloned());
-    ("failed", code)
-}
-
-/// When `path` was last written, as RFC 3339; none when unknown.
-fn modified(path: &Path) -> Option<String> {
-    std::fs::metadata(path).and_then(|m| m.modified()).ok().map(isothrum_runner::rfc3339)
+/// A lab's run's operations as the runner service journals them, newest first: what
+/// `cyberctf labs logs <lab> --json` lists.
+#[derive(Debug)]
+pub(crate) struct Journal {
+    /// The lab.
+    pub lab: String,
+    /// Its operations (each one's op, when it was queued, started and ended, and how).
+    pub operations: Value,
 }
 
 /// Each run's last operation, as the Isothrum runner records it (its `runs()`, the launcher's
-/// one way to read the runner's records); an error when the records can't be read.
-pub(crate) async fn runner_operations(dirs: &AppDirs) -> crate::error::Result<Vec<Operation>> {
+/// one way to read the runner's records), and each lab's run's journal; an error when the records
+/// can't be read.
+pub(crate) async fn runner_operations(dirs: &AppDirs) -> crate::error::Result<Runner> {
     let records = runtime::isothrum::records(&runtime::paths::runner_home(dirs)?).await?;
-    Ok(records
-        .into_iter()
-        .filter_map(|r| {
-            let last = r.last?;
-            let name = r.name.as_str().to_owned();
-            let lab = name.strip_prefix("cyberctf-").unwrap_or(&name).to_owned();
-            let outcome = if last.ok { "succeeded" } else { "failed" };
-            let code = last.code.and_then(|c| serde_json::to_value(c).ok());
-            Some(Operation { source: "isothrum", id: name, lab, op: serde_json::to_value(last.op).ok(), outcome, code, at: Some(last.at) })
-        })
-        .collect())
+    let mut runner = Runner::default();
+    for r in records {
+        let name = r.name.as_str().to_owned();
+        let lab = name.strip_prefix("cyberctf-").filter(|l| is_lab_id(l)).map(str::to_owned);
+        if let Some(lab) = &lab {
+            match runtime::isothrum::journal_of(dirs, lab).await {
+                Ok(operations) => runner.journals.push(Journal { lab: lab.clone(), operations }),
+                Err(e) => runner.problems.push(format!("the operations of {lab}'s run: {e}")),
+            }
+        }
+        let Some(last) = r.last else { continue };
+        let outcome = if last.ok { "succeeded" } else { "failed" };
+        let code = last.code.and_then(|c| serde_json::to_value(c).ok());
+        let lab = lab.unwrap_or_else(|| name.clone());
+        runner.last.push(Operation { source: "isothrum", id: name, lab, op: serde_json::to_value(last.op).ok(), outcome, code, at: Some(last.at) });
+    }
+    runner.journals.sort_by(|a, b| a.lab.cmp(&b.lab));
+    Ok(runner)
 }
 
 /// The newest `n` of `operations`, newest first (one with no time last).
@@ -160,23 +141,20 @@ pub(crate) fn servers(dirs: &AppDirs) -> crate::error::Result<Value> {
     Ok(Value::Array(hosts))
 }
 
-/// The values a running or lost deploy job gives its lab (its launch token, its flags): secrets
-/// the bundle replaces wherever they show.
-pub(crate) fn job_secrets(dirs: &AppDirs) -> Vec<String> {
-    let Ok(base) = dirs.data() else { return Vec::new() };
-    let dir = base.join("deploys");
-    names_in(&dir)
-        .into_iter()
-        .filter(|n| Path::new(n).extension().is_some_and(|e| e.eq_ignore_ascii_case("json")))
-        .filter_map(|n| serde_json::from_slice::<Value>(&std::fs::read(dir.join(n)).ok()?).ok())
-        .flat_map(|job| env_values(&job))
-        .collect()
+/// The values each installed lab's run was launched with (its launch token, its flags, kept in
+/// the keychain while the run lasts: `runtime::launch_values`): secrets the bundle replaces
+/// wherever they show.
+pub(crate) fn launch_values(dirs: &AppDirs) -> Vec<String> {
+    installed_labs(dirs).into_iter().flat_map(|lab| runtime::launch_values::kept(&runtime::docker::project(&lab.id))).map(|(_, value)| value).collect()
 }
 
-/// The `value` of each entry of a job's launch `env`.
-fn env_values(job: &Value) -> Vec<String> {
-    let entries = job.pointer("/launch/env").and_then(Value::as_array).cloned().unwrap_or_default();
-    entries.iter().filter_map(|e| e.get("value").and_then(Value::as_str).map(str::to_owned)).collect()
+/// The end of the runner service's log (`<runner home>/service.log`, where the service it starts
+/// writes its output: Isothrum's `ServicePaths::log`), named `runner/service.log` in the bundle;
+/// none when it can't be read.
+pub(crate) fn service_log(dirs: &AppDirs) -> Option<LogFile> {
+    let home = runtime::paths::runner_home(dirs).ok()?;
+    let text = tail(&isothrum_client::ServicePaths::new(home).log()).ok()?;
+    Some(LogFile { name: "runner/service.log".to_owned(), text })
 }
 
 /// A log file a bundle carries: its name in the bundle and its last lines.

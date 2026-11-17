@@ -5,16 +5,21 @@
 //! - `summary.json`: the launcher's version and the engines it bundles, the OS and its
 //!   architecture, the settings that matter (the window's, and the policy, the update channel and
 //!   the saved servers' kinds), the installed labs (id, slug, commit), the last operations (id,
-//!   lab, what, outcome, failure code, when), and what couldn't be read;
+//!   lab, what, outcome, failure code, when, as the Isothrum runner records each run's last), and
+//!   what couldn't be read;
 //! - `host-report.json`: the machine check (the Machine page's report: tools and versions,
 //!   engines, hypervisors);
-//! - `logs/`: the end of the newest log files (the app's);
-//! - `operations/`: the end of the newest lab operation logs.
+//! - `logs/`: the end of the newest log files (the app's: `cyberctf.log`);
+//! - `runner/service.log`: the end of the log of the runner service, which runs the labs'
+//!   operations;
+//! - `operations/<lab>.json`: each lab's run's operations as the runner service journals them
+//!   (what `cyberctf labs logs <lab> --json` lists).
 //!
-//! Every text in it passes through [`scrub::Scrubber`] (tokens, passwords, keys, flags, a running
-//! lab's launch values, e-mail addresses; the home folder written `~`), and what would identify a
-//! host or an account (a server's address, a run's params) is never read into it. It needs no
-//! window or Tauri app: the app's command and the command line build the same bundle.
+//! Every text in it passes through [`scrub::Scrubber`] (tokens, passwords, keys, flags, the values
+//! each installed lab's run was launched with, e-mail addresses; the home folder written `~`), and
+//! what would identify a host or an account (a server's address, a run's params) is never read into
+//! it. It needs no window or Tauri app: the app's command and the command line build the same
+//! bundle.
 
 mod collect;
 mod scrub;
@@ -57,22 +62,24 @@ pub(crate) async fn export(sources: &Sources, out: &Path) -> Result<()> {
     write(sources, &report, runner, out)
 }
 
-/// Writes the bundle of `sources`, with the machine check `host_report` and the runner's
-/// operations as its service lists them (`runner`), to `out`.
+/// Writes the bundle of `sources`, with the machine check `host_report` and the runs' operations
+/// as the runner service lists them (`runner`), to `out`.
 ///
 /// # Errors
 ///
 /// The file can't be written.
-pub(crate) fn write(sources: &Sources, host_report: &Value, runner: Result<Vec<collect::Operation>>, out: &Path) -> Result<()> {
-    let scrubber = scrub::Scrubber::new(sources.home.as_deref(), collect::job_secrets(&sources.dirs));
+pub(crate) fn write(sources: &Sources, host_report: &Value, runner: Result<collect::Runner>, out: &Path) -> Result<()> {
+    let scrubber = scrub::Scrubber::new(sources.home.as_deref(), collect::launch_values(&sources.dirs));
+    let collect::Runner { last, journals, mut problems } =
+        runner.unwrap_or_else(|e| collect::Runner { problems: vec![format!("the runs' records: {e}")], ..collect::Runner::default() });
     let mut files = vec![
         ("README.txt".to_owned(), README.to_owned()),
-        ("summary.json".to_owned(), pretty(&summary(sources, runner))),
+        ("summary.json".to_owned(), pretty(&summary(sources, last, &mut problems))),
         ("host-report.json".to_owned(), pretty(host_report)),
     ];
     let logs = sources.log_dir.as_deref().map(|d| collect::logs(d, "logs")).unwrap_or_default();
-    let operations = sources.dirs.data().map(|d| collect::logs(&d.join("deploys"), "operations")).unwrap_or_default();
-    files.extend(logs.into_iter().chain(operations).map(|f| (f.name, f.text)));
+    files.extend(logs.into_iter().chain(collect::service_log(&sources.dirs)).map(|f| (f.name, f.text)));
+    files.extend(journals.into_iter().map(|j| (format!("operations/{}.json", j.lab), pretty(&j.operations))));
     let clean: Vec<(String, String)> = files.into_iter().map(|(name, text)| (name, scrubber.scrub(&text))).collect();
     let bytes = archive(&clean).map_err(|e| Error::Invalid(format!("the diagnostics bundle couldn't be built: {e}")))?;
     crate::platform::atomic_file::write_private(out, bytes)
@@ -80,22 +87,18 @@ pub(crate) fn write(sources: &Sources, host_report: &Value, runner: Result<Vec<c
 }
 
 /// What the bundle's `README.txt` says.
-const README: &str = "Cyber CTF diagnostics\n\nAttach this file to your bug report or support request. It holds the launcher's version,\nthis computer's OS and the tools the machine check found, the installed labs, the last lab\noperations and the end of the launcher's logs. Tokens, passwords, keys, flags and e-mail\naddresses were removed, and your home folder is written ~.\n";
+const README: &str = "Cyber CTF diagnostics\n\nAttach this file to your bug report or support request. It holds the launcher's version,\nthis computer's OS and the tools the machine check found, the installed labs, the last lab\noperations and the end of the launcher's logs and of its runner service's. Tokens,\npasswords, keys, flags and e-mail addresses were removed, and your home folder is written ~.\n";
 
 /// `value` as indented JSON.
 fn pretty(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_default()
 }
 
-/// `summary.json` (see the module): what couldn't be read listed under `problems`.
-fn summary(sources: &Sources, runner: Result<Vec<collect::Operation>>) -> Value {
+/// `summary.json` (see the module), with the runs' last operations `last`: what couldn't be read
+/// listed under `problems`, after those already there.
+fn summary(sources: &Sources, last: Vec<collect::Operation>, problems: &mut Vec<String>) -> Value {
     let dirs = &sources.dirs;
-    let mut problems = Vec::new();
-    let runner = runner.unwrap_or_else(|e| {
-        problems.push(format!("the runs' records: {e}"));
-        Vec::new()
-    });
-    let operations = collect::newest(collect::worker_operations(dirs).into_iter().chain(runner).collect(), collect::OPERATIONS);
+    let operations = collect::newest(last, collect::OPERATIONS);
     let servers = collect::servers(dirs).unwrap_or_else(|e| {
         problems.push(format!("the saved servers: {e}"));
         Value::Null
