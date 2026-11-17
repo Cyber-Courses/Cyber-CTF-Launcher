@@ -46,7 +46,9 @@ the fixture lab (the Invoice Portal API lab, under `tests/e2e/desktop/.state/lab
 It is safe on a machine someone uses: the app keeps all of its own (data, settings, logs, webview
 data, session, secrets) in a folder made for the run and removed after it, and every clean-up
 removes only what the run made, by the records it wrote: never the user's labs, images, boxes or
-apps ([tests/README.md](../../../tests/README.md#a-desktop-runs-own-folder)).
+apps ([tests/README.md](../../../tests/README.md#a-desktop-runs-own-folder)). Before that folder goes, the runner stops
+the Isothrum runner services the run's apps started (`<app> serve --home <home> --detach`, which
+outlive the app), those whose home is in the folder only.
 
 ## Results
 

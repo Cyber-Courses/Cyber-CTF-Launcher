@@ -756,6 +756,41 @@ describe.skipIf(!unix)("run.mjs and the apps a spec leaves", () => {
   });
 });
 
+describe.skipIf(!unix)("run.mjs and the runner services the apps leave", () => {
+  it("stops the services whose home is in the run's folder before it goes, one that ignores SIGTERM too, never another's", () => {
+    const other = mkdtempSync(join(tmpdir(), "desktop-other-"));
+    dirs.push(other);
+    const pids = join(other, "pids");
+    mkdirSync(pids);
+    pidDirs.push(pids);
+    // A spec whose app left three detached services: its own (one deaf to SIGTERM), the signed-out
+    // run's, and one of another home that must outlive the run.
+    const leaves = `import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const root = process.env.CYBERCTF_WDIO_ROOT;
+const serve = (name, home, deaf) => {
+  const keep = (deaf ? 'process.on("SIGTERM", () => {});' : "") + "setInterval(() => {}, 1000);";
+  const p = spawn(process.execPath, ["-e", keep, "serve", "--home", home, "--detach"], { detached: true, stdio: "ignore" });
+  p.unref();
+  writeFileSync(${JSON.stringify(pids)} + "/" + name, String(p.pid));
+  writeFileSync(${JSON.stringify(pids)} + "/" + p.pid, "");
+};
+serve("own", root + "/app/isothrum", true);
+serve("signed-out", root + "/signed-out/app/isothrum", false);
+serve("other", ${JSON.stringify(join(other, "isothrum"))}, false);
+await new Promise((r) => setTimeout(r, 300));
+console.log("ok: left (0s) three services"); process.exit(0);`;
+    const r = runRunner(fakePlan({ a: { body: leaves } }), ["--all"]);
+    expect(r.status, r.out).toBe(0);
+    const pid = (name: string) => Number(readFileSync(join(pids, name), "utf8"));
+    expect(alive(pid("own"))).toBe(false);
+    expect(alive(pid("signed-out"))).toBe(false);
+    expect(alive(pid("other"))).toBe(true);
+    expect(r.out).toMatch(/cleanup: the run's runner services stopped \(\d+, \d+\)/);
+    process.kill(pid("other"), "SIGKILL");
+  });
+});
+
 describe("the apps' logs", () => {
   it("are kept without the lines that may name a secret", () => {
     expect(withoutSecrets("started\nthe launch token is abc\nPassword: x\nfailed: no engine\n")).toBe("started\nfailed: no engine\n");

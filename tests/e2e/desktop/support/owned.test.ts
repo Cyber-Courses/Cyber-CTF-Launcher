@@ -10,6 +10,7 @@ import {
   ownedDownloads,
   ownedProjects,
   projectVolumes,
+  runServices,
   removeDangling,
   parseBoxList,
   parseComposeLs,
@@ -79,6 +80,33 @@ function runRecord(root: string, name: string, record: Record<string, unknown> |
   writeFileSync(join(dir, "ports.yml"), "services: {}\n");
   return dir;
 }
+
+describe("the run's runner services", () => {
+  const root = "/tmp/cyberctf-e2e.abc";
+  const listing = [
+    "  101 /opt/app/cyberctf-desktop serve --home /tmp/cyberctf-e2e.abc/app/isothrum --detach",
+    "  102 /opt/app/cyberctf-desktop serve --home /tmp/cyberctf-e2e.abc/signed-out/app/isothrum --detach",
+    // Another run's, whose folder only starts like this one's, and the user's own.
+    "  103 /opt/app/cyberctf-desktop serve --home /tmp/cyberctf-e2e.abcd/app/isothrum --detach",
+    "  104 /usr/bin/cyberctf-desktop serve --home /home/player/.local/share/cyberctf/isothrum --detach",
+    // The app itself, and a process that only names the folder.
+    "  105 /opt/app/cyberctf-desktop",
+    "  106 tail -f /tmp/cyberctf-e2e.abc/app/logs/cyberctf.log",
+    "",
+  ].join("\n");
+
+  it("are the ones whose home is in the run's folder, the signed-out run's too, never another run's or the user's", () => {
+    expect(runServices(listing, root, "linux")).toEqual([101, 102]);
+    expect(runServices(listing, `${root}/`, "linux")).toEqual([101, 102]);
+    expect(runServices("", root, "linux")).toEqual([]);
+  });
+
+  it("read a Windows command line: a quoted home, either separator, any case", () => {
+    const win =
+      '7 "C:\\Apps\\Cyber CTF\\cyberctf-desktop.exe" serve --home "C:\\Users\\p\\AppData\\Local\\Temp\\cyberctf-e2e.X1\\app\\isothrum" --detach\r\n8 C:\\Apps\\cyberctf-desktop.exe serve --home C:\\Other\\isothrum --detach\r\n';
+    expect(runServices(win, "c:/users/p/appdata/local/temp/cyberctf-e2e.x1", "win32")).toEqual([7]);
+  });
+});
 
 describe("the app's record of a run the clean-up took down", () => {
   it("goes when it is a Compose run on this machine of a lab installed in the run's folder", () => {

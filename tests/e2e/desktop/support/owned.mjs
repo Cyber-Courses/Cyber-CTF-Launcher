@@ -55,6 +55,24 @@ export function isUnder(path, root, platform = process.platform) {
   return r !== "" && (p === r || p.startsWith(`${r}/`));
 }
 
+/** The Isothrum runner services the run's apps started (`<app> serve --home <home> --detach`,
+ *  which outlives the app until it idles out), from `listing`: a line per process, its pid then
+ *  its command line (`ps -eo pid=,args=`). Only those whose home lies in the run's folder `root`
+ *  (the app's, the signed-out run's): another run's service, or the user's, has its home elsewhere.
+ *  @param {string} listing
+ *  @param {string} root
+ *  @param {string} [platform]
+ *  @returns {number[]} */
+export function runServices(listing, root, platform = process.platform) {
+  const pids = [];
+  for (const line of listing.split(/\r?\n/)) {
+    const m = /^\s*(\d+)\s+(.*)$/.exec(line);
+    const home = m && /\sserve\s+--home\s+(?:"([^"]+)"|(\S+))/.exec(` ${m[2]}`);
+    if (m && home && isUnder(home[1] ?? home[2], root, platform)) pids.push(Number(m[1]));
+  }
+  return pids;
+}
+
 /** `docker compose ls -a --format json`, read: each project's name and the Compose files its
  *  containers were started from. */
 export function parseComposeLs(json) {
