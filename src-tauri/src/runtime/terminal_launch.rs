@@ -47,18 +47,22 @@ fn applescript_string(s: &str) -> String {
 /// a failure is an error with what it printed. Only spawned, it was never waited on (a zombie
 /// per terminal opened) and its failure went unseen: with the Automation permission for Terminal
 /// denied, the button did nothing and said nothing.
+/// Run through the app's runner ([`crate::platform::exec::run`]).
 #[cfg(any(target_os = "macos", all(unix, test)))]
-fn run_to_end(program: &str, args: &[&str]) -> Result<()> {
-    #[allow(clippy::disallowed_methods, reason = "osascript asks Terminal for a window and returns: no tool adapter runs it")]
-    let out = std::process::Command::new(program).args(args).stdin(std::process::Stdio::null()).output()?;
-    if out.status.success() {
-        return Ok(());
+async fn run_to_end(program: &'static str, args: &[&str]) -> Result<()> {
+    match crate::platform::exec::run(program, args, None).await {
+        Ok(_) => Ok(()),
+        Err(Error::CommandFailed { stderr: said, .. }) => {
+            // AppleScript's "not authorized to send Apple events" (-1743): the Automation permission.
+            let hint = if said.contains("-1743") {
+                " Allow Cyber CTF to control Terminal in System Settings > Privacy & Security > Automation, then try again."
+            } else {
+                ""
+            };
+            Err(Error::Invalid(format!("couldn't open Terminal: {said}.{hint}")))
+        }
+        Err(e) => Err(e),
     }
-    let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-    // AppleScript's "not authorized to send Apple events" (-1743): the Automation permission.
-    let hint =
-        if said.contains("-1743") { " Allow Cyber CTF to control Terminal in System Settings > Privacy & Security > Automation, then try again." } else { "" };
-    Err(Error::Invalid(format!("couldn't open Terminal ({}): {said}.{hint}", out.status)))
 }
 
 /// Opens the OS terminal on `command`, titled "Cyber CTF attack box". The command line itself
@@ -81,7 +85,8 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
              set title displays device name of t to false\nset title displays shell path of t to false\n\
              set title displays file name of t to false\nend tell"
         );
-        run_to_end("osascript", &["-e", &script])
+        // On the blocking thread `open_terminal_async` runs it on, inside the async runtime.
+        tokio::runtime::Handle::current().block_on(run_to_end("osascript", &["-e", &script]))
     }
     #[cfg(target_os = "windows")]
     {
@@ -267,12 +272,13 @@ mod tests {
     /// Regression: osascript was only spawned, so a refusal (the Automation permission for
     /// Terminal denied) left the button doing nothing, silently.
     #[cfg(unix)]
-    #[test]
-    fn a_terminal_that_fails_to_open_says_why() {
-        let denied = run_to_end("sh", &["-c", "echo 'execution error: Not authorized to send Apple events to Terminal. (-1743)' >&2; exit 1"]).unwrap_err();
+    #[tokio::test]
+    async fn a_terminal_that_fails_to_open_says_why() {
+        let denied =
+            run_to_end("sh", &["-c", "echo 'execution error: Not authorized to send Apple events to Terminal. (-1743)' >&2; exit 1"]).await.unwrap_err();
         let said = denied.to_string();
         assert!(said.contains("Not authorized to send Apple events to Terminal") && said.contains("Privacy & Security > Automation"), "{said}");
-        assert!(run_to_end("sh", &["-c", "exit 0"]).is_ok());
+        assert!(run_to_end("sh", &["-c", "exit 0"]).await.is_ok());
     }
 
     #[test]

@@ -19,7 +19,6 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
-use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 pub use background::{Background, background};
@@ -37,7 +36,7 @@ pub use ledger::{DIR as TOOLS_DIR, end_orphans as end_orphaned_tools, record_too
 pub(crate) use tool::Tool;
 
 use crate::error::{Error, Result};
-use crate::platform::tool_output::text::{decode, locale};
+use crate::platform::tool_output::text::locale;
 
 /// Which tools answer this thread's calls: the machine's own, or a unit test's scripted ones
 /// (`fake::Tools`, each with a set of its own). A cache of the tools' answers keys by it, so one
@@ -76,16 +75,15 @@ pub const STATUS_TIMEOUT: Duration = Duration::from_secs(25);
 /// The bound on `run`/`run_env` when the caller named none. A read probe or a cloud CLI sets its
 /// own shorter limit, but teardown (`docker compose down`, `docker rm -f`) runs through the plain
 /// path while holding the lab lock, and a wedged daemon there must fail rather than hang the lab
-/// for good. Generous, since a real teardown can be slow; the post-exit drain cap
-/// ([`DRAIN_AFTER_EXIT`]) returns a finished-but-leftover-held run far sooner.
+/// for good. Generous, since a real teardown can be slow; the runner returns a finished run whose
+/// leftovers hold its output open far sooner.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// stderr lines kept for a streamed tool's error.
 const STREAM_ERROR_LINES: usize = 10;
 
-/// How long a tool's pipes are still read once it has exited: its last lines are in them, but a
-/// process it left running (an ssh `ControlMaster`, a Terraform provider plugin) can hold them open
-/// for good, and waiting for them to close hung the run (and the lab's lock) forever.
+/// How long a background tool's error output is still read once it has exited: its last lines
+/// are in it, but a process it left running can hold it open for good.
 const DRAIN_AFTER_EXIT: Duration = Duration::from_secs(2);
 
 /// Keeps a child process off the screen on Windows (no-op elsewhere).
@@ -104,27 +102,6 @@ pub fn headless_std(cmd: &mut std::process::Command) -> &mut std::process::Comma
     use std::os::windows::process::CommandExt;
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
-}
-
-/// Starts a desktop app and returns at once, the app on its own: no console window, none of this
-/// process's standard handles (a child given them keeps them open as long as it runs, and whoever
-/// waits for this process's output then waits for the app: Docker Desktop, started by the guided
-/// setup under a test harness whose output a script redirected, held the script until the
-/// harness's budget ended it), its own process group. Windows only: macOS opens apps with
-/// `open -a`, which returns by itself.
-#[cfg(windows)]
-pub fn launch_detached(program: &str) -> Result<()> {
-    use std::os::windows::process::CommandExt;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    std::process::Command::new(program)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-        .spawn()
-        .map(drop)
-        .map_err(|e| Error::Invalid(format!("couldn't start {program}: {e}")))
 }
 
 /// Builds the Command: headless, Windows batch-wrapper tools routed through `cmd /C` so they
@@ -181,6 +158,7 @@ fn timed_out_after(limit: Duration) -> String {
 
 /// The error of a tool that ran and exited with `code`: missing when cmd.exe, which runs it on
 /// Windows, said it found no such command; else its failure.
+#[cfg(test)]
 fn exit_error(program: &'static str, args: &[&str], code: Option<i32>, stderr: String) -> Error {
     if shim::missing_behind_cmd(program, code) {
         return Error::ToolMissing { tool: program };
@@ -287,56 +265,32 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
             fake::FakeOutcome::Hang => std::future::pending::<Result<String>>().await,
         };
     }
-    let mut cmd = piped_command(program, args, cwd, env, Stdio::null());
-    // Its own group, so a timeout or cancellation ends the whole tree: `vagrant` is a wrapper
-    // around `ruby` (an orphaned ruby per timed-out poll deadlocked on Vagrant's lock), and
-    // `cmd /C az` around `python` (a cancelled `az login` left it running).
-    let (child, group) = spawn_group(&mut cmd, false).map_err(spawn_error(program))?;
+    let mut spec = isothrum_runner::ProcessSpec::new(program, args.iter().copied());
+    spec.cwd = cwd.map(Path::to_path_buf);
+    spec.env = env.to_vec();
+    let runner = crate::platform::processes::system();
     // The plain `run`/`run_env` path names no timeout, but it is what teardown runs through while
     // holding the lab lock: a generous default ([`DEFAULT_TIMEOUT`]) bounds a wedged daemon so it
-    // can't hang the lab for good. A read/CLI caller's own, shorter, limit is used as given.
+    // can't hang the lab for good. A read/CLI caller's own, shorter, limit is used as given. Given
+    // up on, the call's future is dropped, and the runner ends the tool's whole tree.
     let limit = timeout.unwrap_or(DEFAULT_TIMEOUT);
-    let waited = tokio::time::timeout(limit, wait_output_drained(child)).await.map_err(|_| failed(program, args, timed_out_after(limit)))?;
-    group.disarm();
-    let output = waited.map_err(spawn_error(program))?;
-    if !output.status.success() {
-        return Err(exit_error(program, args, output.status.code(), decode(&output.stderr).trim().to_string()));
+    let captured = tokio::time::timeout(limit, isothrum_runner::capture(runner.as_ref(), &spec))
+        .await
+        .map_err(|_| failed(program, args, timed_out_after(limit)))?
+        .map_err(|e| not_run(program, e))?;
+    if !captured.success() {
+        return Err(failed(program, args, captured.stderr_tail.join("\n").trim().to_owned()));
     }
-    Ok(decode(&output.stdout))
+    Ok(captured.stdout.join("\n"))
 }
 
-/// Waits for a piped child to exit and returns its output, but once it has exited waits at most
-/// [`DRAIN_AFTER_EXIT`] for its pipes to close. `wait_with_output` reads them to EOF, and a
-/// process the tool left running (an ssh `ControlMaster`, a Terraform provider plugin) can hold
-/// them open for good: that hung a `run`/`run_env` teardown, and the lab lock it holds, forever.
-/// The bytes are returned raw and decoded by the caller, exactly as `wait_with_output`.
-async fn wait_output_drained(mut child: Tool) -> std::io::Result<std::process::Output> {
-    let mut out_pipe = child.stdout.take().ok_or_else(|| std::io::Error::other("the tool's output wasn't piped"))?;
-    let mut err_pipe = child.stderr.take().ok_or_else(|| std::io::Error::other("the tool's error output wasn't piped"))?;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let status;
-    {
-        // Both pipes read to EOF while the exit is awaited, so the child never blocks on a full
-        // one. If it exits before they close (a leftover holding them open), they get only the
-        // bounded grace, never an unbounded wait.
-        let read_both = async {
-            tokio::try_join!(out_pipe.read_to_end(&mut stdout), err_pipe.read_to_end(&mut stderr))?;
-            std::io::Result::Ok(())
-        };
-        tokio::pin!(read_both);
-        tokio::select! {
-            read = &mut read_both => {
-                read?;
-                status = child.wait().await?;
-            }
-            exit = child.wait() => {
-                status = exit?;
-                let _ = tokio::time::timeout(DRAIN_AFTER_EXIT, &mut read_both).await;
-            }
-        }
+/// The error of a tool the runner couldn't run to its end: missing, refused, or the OS's reason.
+fn not_run(program: &'static str, e: isothrum_runner::ProcessError) -> Error {
+    match e {
+        isothrum_runner::ProcessError::Missing { .. } => Error::ToolMissing { tool: program },
+        isothrum_runner::ProcessError::Io { source, .. } => Error::Io(source),
+        other => Error::Invalid(other.to_string()),
     }
-    Ok(std::process::Output { status, stdout, stderr })
 }
 
 #[cfg(test)]

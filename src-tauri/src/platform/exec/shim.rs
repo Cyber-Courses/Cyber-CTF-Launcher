@@ -20,11 +20,13 @@ const CMD_OPERATORS: &[char] = &['&', '|', '<', '>', '^', '%', '"', '\n', '\r'];
 
 /// cmd.exe's exit code when it finds no such command ("'oci' is not recognized as an internal
 /// or external command, operable program or batch file.").
+#[cfg(test)]
 const CMD_NOT_FOUND: i32 = 9009;
 
 /// Whether `program`, run through cmd.exe, isn't installed: cmd itself started (so spawning it
 /// succeeded) but exited with its own "not found" code. No tool exits with it elsewhere (unix
 /// exit codes stop at 255).
+#[cfg(test)]
 pub(super) fn missing_behind_cmd(program: &str, code: Option<i32>) -> bool {
     SHIMMED.contains(&program) && code == Some(CMD_NOT_FOUND)
 }

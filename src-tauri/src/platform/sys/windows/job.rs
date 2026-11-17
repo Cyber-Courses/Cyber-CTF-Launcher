@@ -25,7 +25,7 @@ unsafe impl Sync for Job {}
 
 impl Job {
     /// A new job, ending every process in it when its last handle closes (this process's exit,
-    /// however it exits) until [`Job::release`]d.
+    /// however it exits).
     pub fn new() -> std::io::Result<Job> {
         // SAFETY: no attributes, no name: a new job's handle, or null.
         let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
@@ -56,11 +56,6 @@ impl Job {
         unsafe {
             TerminateJobObject(self.0, 1);
         }
-    }
-
-    /// The tool is done: closing the job no longer ends what it left running.
-    pub fn release(&self) {
-        self.set_limit_flags(0);
     }
 }
 

@@ -87,18 +87,23 @@ pub async fn docker_start_engine(engine: String) -> Result<()> {
     Err(Error::Invalid(format!("{engine} didn't answer within {minutes} minutes. Check its window, then re-check.")))
 }
 
+/// Docker Desktop's app on Windows, where its installer puts it.
+const DOCKER_DESKTOP: &str = r"C:\Program Files\Docker\Docker\Docker Desktop.exe";
+
 /// Opens the engine's app, or runs its CLI, on this OS.
 async fn launch(engine: &str) -> Result<String> {
     match (isothrum_runner::this_host(), engine) {
         (HostOs::Macos, "docker-desktop") => run("open", &["-a", "Docker"], None).await,
         (HostOs::Macos, "orbstack") => run("open", &["-a", "OrbStack"], None).await,
-        // Started on its own, with none of this process's handles: through `cmd /C start` the
-        // app inherited them and kept them open, and a caller waiting for this process's output
-        // (the guided setup's test entry under a redirect) waited for Docker Desktop to quit.
-        #[cfg(windows)]
-        (HostOs::Windows, "docker-desktop") => {
-            crate::platform::exec::launch_detached(r"C:\Program Files\Docker\Docker\Docker Desktop.exe").map(|()| String::new())
-        }
+        // Opened by Explorer, the user's shell, which hands the app to the running shell and
+        // returns: the app runs on its own, outside the tool's tree the runner ends, with none of
+        // this process's handles (through `cmd /C start` it inherited them and kept them open, and
+        // a caller waiting for this process's output waited for Docker Desktop to quit). Explorer
+        // exits 1 having opened it: only a missing Explorer is a failure.
+        (HostOs::Windows, "docker-desktop") => match run("explorer", &[DOCKER_DESKTOP], None).await {
+            Err(Error::CommandFailed { .. }) => Ok(String::new()),
+            done => done,
+        },
         // Unattended (see `platform::elevation`): as root already, or through sudo, never asking.
         (HostOs::Linux, "docker-engine") if crate::platform::elevation::unattended() => {
             if crate::platform::elevation::is_root() {

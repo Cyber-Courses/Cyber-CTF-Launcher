@@ -68,7 +68,8 @@ pub(crate) fn machine_cloud() -> isothrum_machine::Context {
     machine()
 }
 
-/// This machine: its tools, run by the runner's processes, and its devices.
+/// This machine: its tools, run by the app's processes ([`crate::platform::processes`]), and its
+/// devices.
 fn this_machine() -> isothrum_machine::Context {
     let os = isothrum_runner::this_host();
     let host = isothrum_machine::Host {
@@ -78,7 +79,7 @@ fn this_machine() -> isothrum_machine::Context {
         packages: None,
         devices: isothrum_machine::Devices::here(os),
     };
-    isothrum_machine::Context::new(std::sync::Arc::new(isothrum_runner::SystemProcesses::default()), host)
+    isothrum_machine::Context::new(crate::platform::processes::system(), host)
 }
 
 /// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its
