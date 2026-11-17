@@ -148,9 +148,14 @@ pub(super) fn options(place: &ServerPlace, env: &[(String, String)]) -> RunOptio
     opts.with_secrets(secrets).with_host_label(&place.label)
 }
 
-/// The module's server variables and bpg/proxmox's environment names for them.
-const PROVIDER_ENV: [(&str, &str); 3] =
-    [("proxmox_endpoint", "PROXMOX_VE_ENDPOINT"), ("proxmox_username", "PROXMOX_VE_USERNAME"), ("proxmox_insecure", "PROXMOX_VE_INSECURE")];
+/// The module's server variables and bpg/proxmox's environment names for them, with the pinned
+/// certificate's under the name Isothrum's runner reads it.
+const PROVIDER_ENV: [(&str, &str); 4] = [
+    ("proxmox_endpoint", "PROXMOX_VE_ENDPOINT"),
+    ("proxmox_username", "PROXMOX_VE_USERNAME"),
+    ("proxmox_insecure", "PROXMOX_VE_INSECURE"),
+    (crate::runtime::lab::TLS_PIN, "PROXMOX_VE_TLS_FINGERPRINT"),
+];
 
 /// The module's secret variables and bpg/proxmox's environment names for them.
 const PROVIDER_SECRETS: [(&str, &str); 2] = [("proxmox_api_token", "PROXMOX_VE_API_TOKEN"), ("proxmox_password", "PROXMOX_VE_PASSWORD")];
@@ -179,6 +184,14 @@ mod tests {
         assert_eq!(opts.secrets.get("proxmox_password").map(SecretValue::expose), Some("pw"));
         assert_eq!(opts.secrets.get("CTF_FLAG").map(SecretValue::expose), Some("flag{x}"));
         assert_eq!(opts.host_label.as_deref(), Some("host-1"));
+    }
+
+    #[test]
+    fn a_pinned_certificate_reaches_the_runner_under_the_name_it_reads() {
+        let mut p = place();
+        p.vars.push(("proxmox_tls_fingerprint".into(), "AB:CD".into()));
+        assert_eq!(options(&p, &[]).env.get("PROXMOX_VE_TLS_FINGERPRINT").map(String::as_str), Some("AB:CD"));
+        assert!(!options(&place(), &[]).env.contains_key("PROXMOX_VE_TLS_FINGERPRINT"));
     }
 
     #[test]
