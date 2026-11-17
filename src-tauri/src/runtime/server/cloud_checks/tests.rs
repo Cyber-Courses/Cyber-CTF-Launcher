@@ -251,13 +251,14 @@ fn gcp_sign_in_outcomes() {
 
 #[test]
 fn token_api_outcomes() {
-    let (way, c) = first(token_outcome("Linode", "Linodes", Ok(reqwest::StatusCode::OK)));
+    use isothrum_machine::cloud::TokenError;
+    let (way, c) = first(token_outcome("Linode", "Linodes", Ok(())));
     assert_eq!((way, c.detail.as_str()), ("pass", "Token is valid. Labs run as Linodes in this account."));
-    let (way, c) = first(token_outcome("Linode", "Linodes", Ok(reqwest::StatusCode::UNAUTHORIZED)));
+    let (way, c) = first(token_outcome("Linode", "Linodes", Err(TokenError::Rejected)));
     assert_eq!((way, c.detail.as_str()), ("refused", "Linode rejected this token. Create a new one with read/write scope."));
-    let (way, c) = first(token_outcome("DigitalOcean", "droplets", Ok(reqwest::StatusCode::INTERNAL_SERVER_ERROR)));
+    let (way, c) = first(token_outcome("DigitalOcean", "droplets", Err(TokenError::Status(500))));
     assert_eq!((way, c.detail.as_str()), ("refused", "DigitalOcean API returned 500 Internal Server Error."));
-    let (way, c) = first(token_outcome("DigitalOcean", "droplets", Err("dns error".into())));
+    let (way, c) = first(token_outcome("DigitalOcean", "droplets", Err(TokenError::Unreachable("dns error".into()))));
     assert_eq!((way, c.detail.as_str()), ("unreachable", "Can't reach DigitalOcean: dns error"));
 }
 
