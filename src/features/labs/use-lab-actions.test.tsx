@@ -17,7 +17,8 @@ import { readyReport as armReport } from "@/test/fixtures";
 import { commands, installTauri, rejects, type Call, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
-import { rejectWith } from "@/features/labs/labs-test-kit";
+import { labStatus, rejectWith } from "@/features/labs/labs-test-kit";
+import { CALLED_OFF } from "@/features/labs/lab-operations";
 import type { ServerHost } from "@/lib/tauri";
 
 const notified = vi.hoisted(() => vi.fn<(title: string, body?: string) => Promise<void>>(() => Promise.resolve()));
@@ -90,6 +91,19 @@ afterEach(() => {
   setPortMode(null);
   setVmProvider(null);
 });
+
+/** The SSH host keys of the node of the Proxmox server "pve", never confirmed. */
+const NODE_KEYS = {
+  pattern: "10.0.0.5",
+  keys: [{ algorithm: "ssh-ed25519", fingerprint: "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ" }],
+  state: "new",
+};
+/** The node offering other keys than the confirmed ones. */
+const REFUSED: CommandError = {
+  code: "sshHostKeyRefused",
+  args: { host: "10.0.0.5" },
+  message: "The SSH host key of 10.0.0.5 isn't the one confirmed for it (or none was confirmed yet), so the connection was refused.",
+};
 
 describe("useLabActions: launch", () => {
   it("starts a cloud lab on the cloud account picked, without an attack box, and says the backend's refusal without one", async () => {
@@ -224,17 +238,6 @@ describe("useLabActions: launch", () => {
   });
 
   describe("on a Proxmox server reached through its node", () => {
-    const NODE_KEYS = {
-      pattern: "10.0.0.5",
-      keys: [{ algorithm: "ssh-ed25519", fingerprint: "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ" }],
-      state: "new",
-    };
-    const REFUSED: CommandError = {
-      code: "sshHostKeyRefused",
-      args: { host: "10.0.0.5" },
-      message: "The SSH host key of 10.0.0.5 isn't the one confirmed for it (or none was confirmed yet), so the connection was refused.",
-    };
-
     /** A launch of the VM lab as `id` on the server "pve", whose node's keys `keys` answers. */
     async function onPve(id: string, keys: Handler) {
       const { calls, hook } = setup({ server_node_host_keys: keys }, [savedHost("pve", "proxmox")]);
@@ -471,6 +474,88 @@ describe("useLabActions: operations on a built lab", () => {
       await done;
     });
     expect(getDeploySnapshot().runs["act-settle"]?.busy).toBe(false);
+  });
+});
+
+describe("useLabActions: stop and resume on a Proxmox server reached through its node", () => {
+  /** What each operation runs, and its log's last line once it went through. */
+  const OPS = { stop: { cmd: "lab_stop", done: "✓ Lab stopped" }, resume: { cmd: "lab_resume", done: "✓ Lab is running" } } as const;
+  type Op = keyof typeof OPS;
+
+  /** `op` on the VM lab as `id`, running on the server "pve" as its status says, whose node's
+   *  keys `keys` answers: the hook's answer, to await once asked. */
+  async function onPve(op: Op, id: string, keys: Handler) {
+    const { calls, hook, refresh } = setup({
+      server_node_host_keys: keys,
+      lab_status: () => labStatus({ running: true, host: "pve", hostId: "pve", place: "server", provider: "proxmox" }),
+    });
+    const user = userEvent.setup();
+    render(<NodeKeysPrompt />);
+    const done = startInAct(() => hook.result.current[op]({ ...vmLab, id }));
+    await flush();
+    return { calls, user, done, refresh };
+  }
+
+  /** `op` goes through at once: the node's keys are the confirmed ones, nothing asked. */
+  async function goesAtOnce(op: Op, id: string) {
+    const { calls, done } = await onPve(op, id, () => null);
+    await act(() => done);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls.find((c) => c.cmd === "server_node_host_keys")?.args).toEqual({ id: "pve" });
+    expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+    expect(logsOf(id).at(-1)).toBe(OPS[op].done);
+  }
+
+  /** `op` asks the setup's question for keys never confirmed, then, confirmed, goes through. */
+  async function asksThenGoes(op: Op, id: string) {
+    const { calls, user, done } = await onPve(op, id, () => NODE_KEYS);
+    expect(screen.getByRole("dialog", { name: "Confirm this server's identity" }).textContent).toContain(NODE_KEYS.keys[0]?.fingerprint);
+    expect(commands(calls)).not.toContain(OPS[op].cmd);
+    await user.click(screen.getByRole("button", { name: "They match: trust this server" }));
+    await act(() => done);
+    expect(calls.find((c) => c.cmd === "server_trust_node_host_keys")?.args).toEqual({ id: "pve", fingerprints: [NODE_KEYS.keys[0]?.fingerprint] });
+    expect(commands(calls).indexOf("server_trust_node_host_keys")).toBeLessThan(commands(calls).indexOf(OPS[op].cmd));
+    expect(logsOf(id).at(-1)).toBe(OPS[op].done);
+  }
+
+  /** `op` asked, the player declines: called off (Reset reads it: no start after a stop called
+   *  off), nothing run, no run left failed, the lab's status read again as it is. */
+  async function declined(op: Op, id: string) {
+    const { calls, user, done, refresh } = await onPve(op, id, () => NODE_KEYS);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await act(() => done)).toBe(CALLED_OFF);
+    expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+    expect(commands(calls)).not.toContain(OPS[op].cmd);
+    expect(getDeploySnapshot().runs[id]).toBeUndefined();
+    expect(refresh).toHaveBeenCalledWith(expect.objectContaining({ id }), { fresh: true });
+  }
+
+  /** `op` through a node offering other keys than the confirmed ones: refused, in the host key
+   *  words, nothing asked and nothing run. */
+  async function refused(op: Op, id: string) {
+    const { calls, done } = await onPve(op, id, rejects(REFUSED));
+    await act(() => done);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(commands(calls)).not.toContain(OPS[op].cmd);
+    expect(logsOf(id).at(-1)).toMatch(/^✗ The SSH host key of 10\.0\.0\.5 isn't the one confirmed for it/);
+  }
+
+  it("stops at once when the node's keys are the confirmed ones", () => goesAtOnce("stop", "act-stop-known"));
+  it("asks to confirm keys never confirmed before a stop, as the setup does, then stops", () => asksThenGoes("stop", "act-stop-new"));
+  it("leaves the lab as it was when the player declines a stop's question: not stopped, not failed", () => declined("stop", "act-stop-declined"));
+  it("refuses a stop through a node offering other keys than the confirmed ones, in the host key words", () => refused("stop", "act-stop-changed"));
+  it("resumes at once when the node's keys are the confirmed ones", () => goesAtOnce("resume", "act-resume-known"));
+  it("asks to confirm keys never confirmed before a resume, as the setup does, then resumes", () => asksThenGoes("resume", "act-resume-new"));
+  it("resumes nothing and fails nothing when the player declines", () => declined("resume", "act-resume-declined"));
+  it("refuses a resume through a node offering other keys than the confirmed ones, in the host key words", () => refused("resume", "act-resume-changed"));
+
+  it("asks nothing of a lab running here or on a cloud account", async () => {
+    const inCloud = labStatus({ running: true, host: "aws1", hostId: "aws1", place: "cloud", provider: "aws" });
+    const { calls, hook } = setup({ lab_status: (a) => (a?.id === "act-stop-cloud" ? inCloud : labStatus({ running: true, place: "local_vm" })) });
+    await act(() => hook.result.current.stop({ ...vmLab, id: "act-stop-cloud" }));
+    await act(() => hook.result.current.resume({ ...vmLab, id: "act-resume-here" }));
+    expect(commands(calls)).not.toContain("server_node_host_keys");
+    expect(commands(calls)).toEqual(expect.arrayContaining(["lab_stop", "lab_resume"]));
   });
 });
 

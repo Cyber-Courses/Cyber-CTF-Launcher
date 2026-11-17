@@ -10,10 +10,12 @@ import { describeError, errorCode } from "@/lib/errors";
 import { translate } from "@/lib/i18n";
 import { confirmNodeKeys } from "@/features/servers/node-keys-prompt";
 
-/** A node offering other SSH host keys than the confirmed ones is told, in the setup's words;
- *  keys that couldn't be read are left to the start that needs them, which says so. */
-function keysRefused(e: unknown) {
-  if (errorCode(e) === "sshHostKeyRefused") tell(translate("servers.setup.trust.titleChanged"))(e);
+/** A node offering other SSH host keys than the confirmed ones is told, in the setup's words,
+ *  and is true; keys that couldn't be read are left to what needs them, which says so. */
+function keysRefused(e: unknown): boolean {
+  const refused = errorCode(e) === "sshHostKeyRefused";
+  if (refused) tell(translate("servers.setup.trust.titleChanged"))(e);
+  return refused;
 }
 
 /** The labs running per host, by its id (a host with none isn't listed). */
@@ -75,6 +77,11 @@ export function useServerHosts() {
   const testAsked = async (id: string) => {
     if ((await test(id)).ok) await confirmNodeKeys(id).catch(keysRefused);
   };
+  /** Whether the VM test the player asked for on `id` may run: its VM is reached through the node
+   *  as a lab's are, so the node's SSH host keys, never confirmed, are confirmed first, as before
+   *  a start. False when the player declines, or the node offers other keys than the confirmed
+   *  ones (told as at Test). */
+  const vmTestAllowed = (id: string): Promise<boolean> => confirmNodeKeys(id).catch((e: unknown) => !keysRefused(e));
   const testAll = () => {
     for (const h of hosts ?? []) void testAsked(h.id);
   };
@@ -83,7 +90,7 @@ export function useServerHosts() {
     change().then(reload, fail);
   };
 
-  return { hosts, defaultId, tests, test, testAsked, caps, running, loadRunning, error, open, testAll, act };
+  return { hosts, defaultId, tests, test, testAsked, vmTestAllowed, caps, running, loadRunning, error, open, testAll, act };
 }
 
 export type ServerHosts = ReturnType<typeof useServerHosts>;

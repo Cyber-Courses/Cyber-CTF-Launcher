@@ -91,7 +91,13 @@ function HostRows({ page, hosts }: { page: ServerHosts; hosts: ServerHost[] }) {
       void page.testAsked(h.id);
     },
     onVmTest: () => {
-      setVmTestId(vmTestId === h.id ? null : h.id);
+      if (vmTestId === h.id) {
+        setVmTestId(null);
+        return;
+      }
+      void page.vmTestAllowed(h.id).then((go) => {
+        if (go) setVmTestId(h.id);
+      });
     },
     onVmTestDone: (result) => {
       setVmResults(saveVmTest(h.id, result));

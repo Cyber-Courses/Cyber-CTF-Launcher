@@ -4,10 +4,12 @@ import {
   labPark,
   labProvision,
   labResume,
+  labStatus,
   labStop,
   type ActiveOperation,
   type DockerEngine,
   type LabStartPlace,
+  type LabStatus,
   type Park,
   type Provider,
   type Runtime,
@@ -15,6 +17,7 @@ import {
 import { getVmProvider, type PortMode } from "@/lib/settings";
 import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
+import { getLabState } from "@/features/labs/lab-store";
 import { setLastRun } from "@/features/labs/runs/last-run";
 import { appendDeployLog, beginDeploy, failDeploy, getDeploySnapshot, restoreDeploy } from "@/features/labs/runs/deploy-runs";
 import { noteSignedOut } from "@/features/account/signed-out";
@@ -31,6 +34,31 @@ import { confirmNodeKeys } from "@/features/servers/node-keys-prompt";
 /** What an operation does, its output streamed through `log`. */
 export type OperationBody = (log: (line: string) => void, runtime: LabRuntimeInfo) => Promise<void>;
 
+/** What `runOperation` resolves to when the player called the operation off when asked: nothing
+ *  ran, nothing failed, and nothing chained to it (Reset's start after its stop) runs either. */
+export const CALLED_OFF = Symbol("called off");
+
+/** An operation the player called off when asked (`nodeKeysConfirmed`): no failure, nothing to show. */
+class CalledOff extends Error {}
+
+/** Before an operation through saved server `host`'s node (a Proxmox server whose lab bridge is
+ *  internal to it), whose SSH host keys the run checks against the confirmed ones: never
+ *  confirmed yet (a server set up before), the player confirms them first, in the setup's own
+ *  question. Throws `CalledOff` when the player declines; rejects, in the host key words, when the
+ *  node offers other keys than the confirmed ones. */
+async function nodeKeysConfirmed(host: string | null | undefined) {
+  if (host != null && !(await confirmNodeKeys(host))) throw new CalledOff();
+}
+
+/** The saved server lab `lab` runs on, as its status says (read now when this window has none
+ *  yet); null when it runs here or on a cloud account, or its status can't be read (the
+ *  operation then says what is wrong). */
+async function serverOf(lab: Lab, rt: LabRuntimeInfo): Promise<string | null> {
+  const known: Partial<Record<string, LabStatus>> = getLabState().statuses;
+  const status = known[lab.id] ?? (await labStatus(lab.id, rt.runtime).catch(() => null));
+  return status?.place === "server" ? status.hostId : null;
+}
+
 /** Runs `launch`; when it fails because Cyber CTF can't be reached and the lab, installed here,
  *  can start without it (the `offlineReady` code, labs/offline.rs), asks the player (the lab
  *  `title`) and, on yes, runs it again offline. */
@@ -45,11 +73,17 @@ async function launchOrOfferOffline(title: string, launch: (offline: boolean) =>
 
 /**
  * One operation on a lab: a run in the deploy store, its output streamed into the run's log,
- * a failure as the log's last (✗) line. Resolves to the failure, or null once it went through,
- * so a caller chaining operations (Reset = stop, then start) can stop at a failed step.
- * `settle` ends the run once the lab's status after it is read.
+ * a failure as the log's last (✗) line. Resolves to the failure, null once it went through, or
+ * `CALLED_OFF` when the player declined a question it needed answered, so a caller chaining
+ * operations (Reset = stop, then start) stops at a failed or called-off step. `settle` ends the
+ * run once the lab's status after it is read.
  */
-export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: OperationBody, settle: (lab: Lab) => Promise<void>): Promise<string | null> {
+export async function runOperation(
+  lab: Lab,
+  op: ActiveOperation["op"],
+  body: OperationBody,
+  settle: (lab: Lab) => Promise<void>,
+): Promise<string | null | typeof CALLED_OFF> {
   if (!lab.runtime) return null;
   const previous = getDeploySnapshot().runs[lab.id];
   beginDeploy(lab.id, op);
@@ -59,10 +93,11 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
     }, lab.runtime);
     return null;
   } catch (e) {
-    // The player said no to a question the start needed answered: nothing ran, nothing failed.
-    if (e instanceof NotStarted) {
+    // The player said no to a question the operation needed answered: nothing ran, nothing
+    // failed. The lab stays as it was (a stop called off leaves it running, not failed).
+    if (e instanceof CalledOff) {
       restoreDeploy(lab.id, previous);
-      return null;
+      return CALLED_OFF;
     }
     // The backend's answer to an operation started while another one runs on the lab
     // (deploy_worker::start_worker): refused, not failed.
@@ -85,9 +120,6 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
     await settle(lab);
   }
 }
-
-/** A start the player called off when asked (`localLaunch`): no failure, nothing to show. */
-class NotStarted extends Error {}
 
 /** A cloud lab, created in the cloud account `host`. No attack box: the player works from
  *  their own machine. */
@@ -168,9 +200,7 @@ export const localLaunch =
     const remote = host != null;
     // Here: a VM lab on its hypervisor, a container lab's VM form on the one picked for it.
     const provider = remote ? null : isVmLab ? vmHypervisor(vmProvider, place) : (vmProvider ?? null);
-    // On a server reached through its node, the run checks the node's SSH host keys against the
-    // confirmed ones: never confirmed yet (a server set up before), the player confirms them first.
-    if (remote && !where.inCloud && !(await confirmNodeKeys(host))) throw new NotStarted();
+    if (!where.inCloud) await nodeKeysConfirmed(host);
     await launchOrOfferOffline(lab.title, (offline) =>
       labLaunch(
         {
@@ -198,9 +228,11 @@ function readyKey(remote: boolean, inCloud: boolean): MessageKey {
   return "labs.actions.readyHere";
 }
 
+/** Stop and remove a lab wherever it runs. */
 export const stopping =
   (lab: Lab): OperationBody =>
   async (log, rt) => {
+    await nodeKeysConfirmed(await serverOf(lab, rt));
     await labStop(lab.id, rt.runtime, log);
     log(translate("labs.actions.labStopped"));
   };
@@ -217,6 +249,7 @@ export const parking =
 export const resuming =
   (lab: Lab): OperationBody =>
   async (log, rt) => {
+    await nodeKeysConfirmed(await serverOf(lab, rt));
     await labResume(lab.id, rt.runtime, log);
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);

@@ -9,6 +9,7 @@ import type { Lab } from "@/features/labs/use-labs";
 import { useCloudPreview } from "@/features/labs/cloud-panel";
 import { removing, restartTarget } from "@/features/labs/lab-detail/lab-state";
 import { labRuntime } from "@/features/labs/lab-runtime";
+import { CALLED_OFF } from "@/features/labs/lab-operations";
 import { placeOf } from "@/features/labs/place";
 import { useObjectives } from "@/features/labs/objectives/use-objectives";
 import { useLabPageState } from "@/features/labs/lab-detail/use-lab-page-state";
@@ -42,7 +43,8 @@ export type LabDetailProps = {
   dockerEnginesRunning?: DockerEngine[];
   onBack: () => void;
   onStart: (target: RunTarget) => Promise<void>;
-  /** Resolves to the failure (a string) when the stop failed: Reset then doesn't start the lab again. */
+  /** Resolves to the failure (a string) when the stop failed, `CALLED_OFF` when the player called
+   *  it off when asked: Reset then doesn't start the lab again. */
   onStop: () => Promise<unknown>;
   /** Pause (state saved) or shut down (powered off), machines kept for `onResume`. */
   onPark?: (mode: Park) => Promise<unknown>;
@@ -96,7 +98,9 @@ function useLabReset(onStop: LabDetailProps["onStop"], onStart: LabDetailProps["
     setResetting(true);
     try {
       // A stop that failed left the lab half removed: starting over it would build on the wreck.
+      // One the player called off when asked left it running: nothing to start again.
       const failure = await onStop();
+      if (failure === CALLED_OFF) return;
       if (typeof failure === "string") {
         tell(t("labs.health.resetStopFailed"))(failure);
         return;
