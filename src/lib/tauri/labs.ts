@@ -24,21 +24,20 @@ import type {
   LabRunPath,
   LabRunRefusalCause,
   LabService,
-  LabStartPlace,
+  LabPlacement,
+  LabPlacementChoice,
   LabConsole,
   LabControl,
   LabStatus,
   LabTool,
   OperationId,
   Park,
-  Provider,
   Runtime,
   SharedFolder,
   ScreenConnection,
   SignIn,
   TermEvent,
 } from "@/lib/tauri/generated";
-import type { DockerEngine } from "@/lib/tauri/machine";
 
 /** Each provider's name as the player reads it, from the backend (`Provider::label`). */
 export { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
@@ -70,7 +69,8 @@ export type {
   LabRunPath,
   LabRunRefusalCause,
   LabService,
-  LabStartPlace,
+  LabPlacement,
+  LabPlacementChoice,
   LabStatus,
   LabTool,
   Park,
@@ -88,12 +88,13 @@ export const cloudServicesSupported = () => invoke<boolean>("cloud_services_supp
 export const labCloudPreview = (id: string, repository: string, commit: string) =>
   invoke<CloudPreview | null>("lab_cloud_preview", { id, source: { repository, commit } });
 
-/** Where a lab (declared `runtime`) starts when no place is picked, by the backend's one rule:
- *  where it last ran, else a hypervisor ready here for a VM lab (`preferred`, the Settings choice,
- *  first), else the default server the lab's spec (at the catalogue's pinned commit) runs on,
- *  else here. Also a VM lab's hypervisor should it start here (`hypervisor`). */
-export const labDefaultPlace = (id: string, runtime: Runtime, repository: string, commit: string, preferred: Provider | null) =>
-  invoke<LabStartPlace>("lab_default_place", { id, runtime, source: { repository, commit }, preferred });
+/** Where a lab (declared `runtime`) runs for the player's `choice`, by the one rule the command
+ *  line and the website's launches apply too (`placement::choose`): what Isoloom allows from its
+ *  spec at the catalogue's pinned commit and what is ready here, then the choice, else the saved
+ *  preference. The launch sends what it answers, as it is (`labLaunch`). Without the lab's
+ *  `source`, the catalogue's. */
+export const labPlacement = (id: string, runtime: Runtime, source: { repository: string; commit: string } | null, choice: LabPlacementChoice) =>
+  invoke<LabPlacement>("lab_placement", { id, runtime, source, choice });
 
 /** Every way a lab (declared `runtime`) can start, from its spec at the catalogue's pinned commit:
  *  per form, the hypervisors, servers and clouds it runs on, each with its launch path's badge,
@@ -159,25 +160,13 @@ export const attackBoxSignIn = (id: string) => invoke<SignIn | null>("attack_box
 
 /** Opens the attack box shell in the system terminal, on the command the runner builds. */
 export const labAttackShell = (id: string, runtime: Runtime) => invokeUnit("lab_attack_shell", { id, runtime });
-/** Where and how a lab starts. `defaultPorts`: a container lab here publishes its services on
- *  their own ports, not random ones. `offline`: start the installed lab without Cyber CTF when it
- *  can't be reached (no progress saved), after a launch failed with the `offlineReady` code.
- *  `perMachineVm`: a container lab whose spec has VM recipes too runs here as one VM per machine
- *  (the form of a VM lab) on `provider`, instead of as containers. */
-export type LabLaunch = {
-  labId: string;
-  provider: Provider | null;
-  host: string | null;
-  defaultPorts: boolean;
-  offline?: boolean;
-  perMachineVm?: boolean;
-  /** The container engine a lab here runs on, when the player chose one other than the current
-   *  context. Null/omitted: the current context, as before. */
-  dockerEngine?: DockerEngine | null;
-};
+/** Starts a lab where `placement` says (`labPlacement`'s answer), taken as it is. `offline`:
+ *  start the installed lab without Cyber CTF when it can't be reached (no progress saved), after
+ *  a launch failed with the `offlineReady` code. */
+export type LabLaunch = { labId: string; placement: LabPlacement; offline?: boolean };
 
-export const labLaunch = ({ offline = false, perMachineVm = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
-  invokeOperation("lab_launch", { ...launch, offline, perMachineVm }, onLog);
+export const labLaunch = ({ offline = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
+  invokeOperation("lab_launch", { ...launch, offline }, onLog);
 
 /** Imports and starts a lab from a local directory `path` (an unpublished lab, bypassing the
  *  catalogue and the backend); the deploy's log is streamed to `onLog`. The lab then appears in

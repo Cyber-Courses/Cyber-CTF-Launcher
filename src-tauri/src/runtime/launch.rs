@@ -9,6 +9,7 @@ use crate::platform::AppDirs;
 use super::cloud_services;
 pub(crate) use super::isothrum::Inputs;
 use super::paths::runner_home;
+use super::placement::Placement;
 use super::providers::Provider;
 use super::{LabRef, Runtime, isothrum, lab, server};
 use crate::error::{Code, Error, Result};
@@ -34,64 +35,54 @@ pub(crate) use on_host::{CloudStart, start_cloud_run};
 use on_host::{budget_verdict, cloud_form, ip_unsure};
 use on_host::{containers_run_on, per_machine_runs_on, start_on_server};
 
-/// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
-/// picking the one-VM-per-machine form for a container lab), or on the server `host`; and
-/// whether its services keep their own host ports there (`default_ports`).
-#[derive(Clone, Copy, Default)]
+/// Where a lab is started ([`Placement`], as picked) and the Docker context a container lab here
+/// is pinned to (resolved from the placement's engine on the main process, where Docker answers).
+#[derive(Clone, Copy)]
 pub(crate) struct Destination<'a> {
-    /// The hypervisor it runs on here (a container lab's VM's, in a VM form); None on Docker or on
-    /// a server.
-    pub(crate) provider: Option<Provider>,
-    /// The saved server or cloud account it starts on, by id; None for this machine.
-    pub(crate) host: Option<&'a str>,
-    /// A container lab started as one VM per machine (its VM recipes) rather than as containers.
-    pub(crate) per_machine_vm: bool,
+    /// Where and how it runs.
+    pub(crate) placement: &'a Placement,
     /// The Docker context a container lab here runs on (the learner's engine); none: the
     /// current one.
     pub(crate) docker_context: Option<&'a str>,
-    /// The player chose the lab's own host ports (`CTFd` on 8000) over free ones picked at random.
-    pub(crate) default_ports: bool,
 }
 
-/// A [`Destination`] that owns its values: what a launch carries from the app to the deploy worker
-/// that runs it (in its job file). Each value missing from a job file is its default.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
-pub(crate) struct Placement {
-    /// [`Destination::provider`].
-    pub(crate) provider: Option<Provider>,
-    /// [`Destination::host`].
-    pub(crate) host: Option<String>,
-    /// [`Destination::per_machine_vm`].
-    pub(crate) per_machine_vm: bool,
+impl<'a> Destination<'a> {
+    /// `placement`, on the current Docker context.
+    pub(crate) fn at(placement: &'a Placement) -> Destination<'a> {
+        Destination { placement, docker_context: None }
+    }
+
+    /// The saved server or cloud account it starts on; none for this machine.
+    fn host(&self) -> Option<&'a str> {
+        self.placement.host()
+    }
+}
+
+/// A [`Destination`] that owns its values: what a prepared launch carries to its run.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Placed {
+    /// [`Destination::placement`].
+    pub(crate) placement: Placement,
     /// [`Destination::docker_context`].
     pub(crate) docker_context: Option<String>,
-    /// [`Destination::default_ports`].
-    pub(crate) default_ports: bool,
 }
 
-impl Placement {
-    /// Where the lab starts, borrowed from this placement.
+impl Placed {
+    /// Where the lab starts, borrowed.
     pub(crate) fn destination(&self) -> Destination<'_> {
-        Destination {
-            provider: self.provider,
-            host: self.host.as_deref(),
-            per_machine_vm: self.per_machine_vm,
-            docker_context: self.docker_context.as_deref(),
-            default_ports: self.default_ports,
-        }
+        Destination { placement: &self.placement, docker_context: self.docker_context.as_deref() }
     }
 }
 
 /// Starts an installed lab; `env` holds the lab's input values (the evidence claim, the player's
 /// flags).
 ///
-/// - No `host`: Docker labs run on this machine's Docker, or, with `per_machine_vm`, as one VM
-///   per machine like a VM lab when their spec has VM recipes too; VM labs run one VM per
-///   machine (Isoloom's vagrant).
-/// - With a server `host`: the lab runs there. ESXi runs the same Vagrantfiles; Proxmox and
-///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
-/// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
+/// - `Docker`: a container lab's containers on this machine's Docker.
+/// - `Vms`: the lab's VMs here, one per machine (Isoloom's vagrant): a VM lab, or a container
+///   lab's VM recipes.
+/// - `Server`: a VM lab there. ESXi runs the same Vagrantfiles; Proxmox Isoloom's Terraform.
+/// - `Cloud`: the lab's cloud form there (Docker on one VM, or one VM per machine); a
+///   cloud-services lab (`Runtime::Cloud`) runs only there.
 ///
 /// One start of a lab at a time is the run service's to hold (`run_service::LocalRunService`),
 /// the runner service refusing a second operation on its run. A start with nowhere to run, or that the administrator's policy turns off, is refused before anything
@@ -99,8 +90,8 @@ impl Placement {
 pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     let place = destination(dirs, runtime, &to)?;
-    let Destination { host, per_machine_vm, docker_context, default_ports, .. } = to;
-    let inputs = Inputs { values: env, default_ports, docker_context: None };
+    let (host, docker_context) = (to.host(), to.docker_context);
+    let inputs = Inputs { values: env, default_ports: to.placement.default_ports(), docker_context: None };
     privileged_allowed(|| Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
@@ -121,7 +112,7 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
         Place::Here(run) => start_here(dirs, lab, run, docker_context, inputs, &mut log).await,
         // On a cloud account the per-machine form is cloud-vm (one instance per machine). The
         // dispatch on the provider is `start_on_server`'s to make (the connection).
-        Place::Host(host) => start_on_server(dirs, lab, (host, per_machine_vm), inputs, &mut log).await,
+        Place::Host(host, per_machine) => start_on_server(dirs, lab, (host, per_machine), inputs, &mut log).await,
     }
 }
 
@@ -168,7 +159,7 @@ pub(crate) async fn start(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, 
     start_locked(dirs, lab, to, env, log).await
 }
 
-/// Starts the lab on this machine as `run` says (see [`local_run`]).
+/// Starts the lab on this machine as `run` says (see [`destination`]).
 #[expect(
     clippy::too_many_arguments,
     reason = "the local-launch helper mirrors start_locked's launch specification: the lab, how it runs, its engine, its inputs and a log sink"
@@ -268,39 +259,55 @@ pub(crate) fn check_destination(dirs: &AppDirs, runtime: Runtime, to: &Destinati
 enum Place<'a> {
     /// On this machine, in this form.
     Here(LocalRun),
-    /// On this saved server host or cloud account.
-    Host(&'a str),
+    /// On this saved server host or cloud account; one VM per machine there.
+    Host(&'a str, bool),
 }
 
-/// Where a `runtime` lab starts at `to`, or why it can't, from what is known before the lab is
-/// downloaded: the policy's `DisableCloudLaunches` ([`cloud_allowed`]); on this machine, a form
-/// that runs here ([`local_run`]: a cloud-services lab needs a cloud account, a VM lab a
-/// hypervisor here, one VM per machine a hypervisor here, ESXi or Proxmox a host); on a host, one
-/// VM per machine only on a cloud account ([`per_machine_runs_on`]), and a container lab's
-/// containers too ([`containers_run_on`]). The codes are said in the
-/// player's language.
+/// Where a `runtime` lab starts at `to`, as its placement says, or why it can't, from what is
+/// known before the lab is downloaded: the policy's `DisableCloudLaunches` ([`cloud_allowed`]);
+/// a placement whose kind the lab has no form for (a cloud-services lab needs a cloud account, a
+/// VM lab VMs, a hypervisor here a local one); a host of the kind the placement says (a server
+/// runs a VM lab, a cloud account its cloud forms). The placement is taken as it is: nothing is
+/// filled in or reinterpreted. The codes are said in the player's language.
 fn destination<'a>(dirs: &AppDirs, runtime: Runtime, to: &Destination<'a>) -> Result<Place<'a>> {
-    cloud_allowed(dirs, runtime, to.host)?;
-    match to.host {
-        None => local_run(runtime, to.provider, to.per_machine_vm).map(Place::Here),
-        Some(host) => {
-            if to.per_machine_vm {
-                per_machine_runs_on(server::host_provider(dirs, host)?)?;
-            } else if runtime == Runtime::Docker {
-                containers_run_on(server::host_provider(dirs, host)?)?;
+    cloud_allowed(dirs, runtime, to.host())?;
+    if runtime == Runtime::Cloud && !matches!(to.placement, Placement::Cloud { .. }) {
+        return Err(Error::coded(Code::PickCloudAccount));
+    }
+    match to.placement {
+        Placement::Docker { .. } if runtime == Runtime::Vm => Err(Error::coded(Code::NoHypervisor)),
+        Placement::Docker { .. } => Ok(Place::Here(LocalRun::Docker)),
+        Placement::Vms { provider } if provider.is_remote() => Err(Error::Refused("pick a server host to run on ESXi or Proxmox".into())),
+        Placement::Vms { provider } => Ok(Place::Here(LocalRun::Vm(*provider))),
+        Placement::Server { host } => {
+            let kind = server::host_provider(dirs, host)?;
+            if kind.is_some_and(Provider::is_cloud) {
+                return Err(Error::Refused("this host is a cloud account, not a server".into()));
             }
-            Ok(Place::Host(host))
+            if runtime == Runtime::Docker {
+                containers_run_on(kind)?;
+            }
+            Ok(Place::Host(host, false))
+        }
+        Placement::Cloud { account, per_machine } => {
+            let kind = server::host_provider(dirs, account)?;
+            if *per_machine {
+                per_machine_runs_on(kind)?;
+            } else {
+                containers_run_on(kind)?;
+            }
+            Ok(Place::Host(account, *per_machine))
         }
     }
 }
 
 /// The per-machine form runs on this machine or a cloud account, not on a server.
-pub(super) const PER_MACHINE_NOT_ON_SERVERS: &str =
+pub(crate) const PER_MACHINE_NOT_ON_SERVERS: &str =
     "One VM per machine runs on this machine or a cloud account: on a server (ESXi, Proxmox), the lab runs as it is published.";
 
 /// A container lab's containers run on this machine's Docker or on a cloud account's VM, not on a
 /// server, which runs VMs only.
-pub(super) const CONTAINERS_NOT_ON_SERVERS: &str =
+pub(crate) const CONTAINERS_NOT_ON_SERVERS: &str =
     "A container lab runs on this machine (on Docker, or as one VM per machine) or in a cloud account, not on a server (ESXi, Proxmox).";
 
 /// How a lab runs on this machine.
@@ -308,30 +315,8 @@ pub(super) const CONTAINERS_NOT_ON_SERVERS: &str =
 enum LocalRun {
     /// A container lab on this machine's Docker.
     Docker,
-    /// A VM lab, one VM per machine on this hypervisor.
+    /// The lab's VMs, one per machine on this hypervisor (a VM lab, or a container lab's VM form).
     Vm(Provider),
-}
-
-/// The local run for `runtime` on `provider`: a container lab runs as containers on Docker, or,
-/// on a local hypervisor, as one VM per machine there (its spec's VM recipes, as a VM lab):
-/// never as containers inside a VM. `per_machine_vm` asks for that VM form, which then needs a
-/// local hypervisor. A VM lab needs a local hypervisor.
-fn local_run(runtime: Runtime, provider: Option<Provider>, per_machine_vm: bool) -> Result<LocalRun> {
-    match runtime {
-        Runtime::Docker => match provider.filter(|p| !p.is_remote()) {
-            Some(p) => Ok(LocalRun::Vm(p)),
-            None if per_machine_vm => Err(Error::Refused("One VM per machine needs a hypervisor on this machine".into())),
-            None => Ok(LocalRun::Docker),
-        },
-        Runtime::Vm => {
-            let provider = provider.ok_or_else(|| Error::coded(Code::NoHypervisor))?;
-            if provider.is_remote() {
-                return Err(Error::Refused("pick a server host to run on ESXi or Proxmox".into()));
-            }
-            Ok(LocalRun::Vm(provider))
-        }
-        Runtime::Cloud => Err(Error::coded(Code::PickCloudAccount)),
-    }
 }
 
 #[cfg(test)]

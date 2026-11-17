@@ -10,6 +10,7 @@ import { answer } from "@/lib/dev-mock/sample";
 import type { Args } from "@/lib/dev-mock/types";
 import { SAMPLE_IN_FLIGHT } from "@/lib/dev-mock/labs";
 import type { ActiveOperation } from "@/lib/tauri/run-events";
+import type { LabPlacement } from "@/lib/tauri";
 
 /** A Docker Compose start, as the launcher streams it. */
 const composeUp = (slug: string) => [
@@ -128,7 +129,18 @@ function stopLines(id: string): string[] {
   return [` Container ${slug}-web-1 Stopping`, ` Container ${slug}-web-1 Stopped`, ` Container ${slug}-web-1 Removed`];
 }
 
-const launch: BrowserHandler = (args, ctx) => {
+/** A launch's placement (`lab_launch`'s, as the backend takes it) as the preview's launch reads
+ *  it: the host, the hypervisor, one VM per machine, the lab's own ports. */
+function flatPlacement(args: Args): Args {
+  const p = (args?.placement ?? { kind: "docker" }) as LabPlacement;
+  const host = p.kind === "server" ? p.host : p.kind === "cloud" ? p.account : null;
+  const provider = p.kind === "vms" ? p.provider : null;
+  const perMachineVm = p.kind === "vms" || (p.kind === "cloud" && p.perMachine);
+  return { ...args, host, provider, perMachineVm, defaultPorts: p.kind === "docker" && p.defaultPorts };
+}
+
+const launch: BrowserHandler = (placed, ctx) => {
+  const args = flatPlacement(placed);
   const id = labArg(args, "labId");
   ctx.live.here.add(id);
   const runtime = labRuntime(id);

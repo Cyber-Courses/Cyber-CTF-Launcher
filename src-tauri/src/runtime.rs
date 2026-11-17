@@ -20,6 +20,7 @@ pub(crate) mod launch;
 pub(crate) mod lifecycle;
 mod model;
 pub(crate) mod paths;
+pub mod placement;
 pub mod providers;
 pub(crate) mod proxmox;
 mod reaper;
@@ -28,7 +29,6 @@ pub mod selftest_report;
 pub mod server;
 pub mod server_selftest;
 pub(crate) mod ssh;
-pub(crate) mod start_place;
 pub(crate) mod status;
 pub(crate) mod terminal_launch;
 
@@ -40,7 +40,7 @@ pub use inflight::Operation;
 pub use isothrum_runner::ShellCommand;
 #[cfg(test)]
 pub(crate) use launch::start;
-pub(crate) use launch::{Destination, Placement, check_destination, policy_allows, start_locked};
+pub(crate) use launch::{Destination, Placed, check_destination, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{Console, Control, Interface, LabStatus, Login, Machine, Network, Park, Place, Port, Preview, Service};
 pub(crate) use paths::is_lab_id;

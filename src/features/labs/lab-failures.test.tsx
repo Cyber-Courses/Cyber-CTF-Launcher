@@ -39,7 +39,7 @@ const alerts = () => screen.queryAllByRole("alert").map((a) => a.textContent);
 function renderActions() {
   let actions: ReturnType<typeof useLabActions> | null = null;
   function Probe() {
-    actions = useLabActions(() => {}, []);
+    actions = useLabActions(() => {});
     return null;
   }
   render(

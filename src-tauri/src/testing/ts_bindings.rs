@@ -34,8 +34,7 @@ fn export(dir: &Path) -> Vec<std::ffi::OsString> {
 /// Writes every command type and the index into `dir`, a new folder.
 fn generate(dir: &Path) {
     fs::create_dir_all(dir).unwrap();
-    // serde_json reads a u64 into a JS number, not a bigint.
-    let cfg = Config::new().with_out_dir(dir).with_large_int("number");
+    let cfg = Config::new().with_out_dir(dir).with_large_int("number"); // serde_json reads a u64 into a JS number, not a bigint.
     macro_rules! export {
         ($($t:ty),* $(,)?) => {
             $( <$t>::export_all(&cfg).unwrap_or_else(|e| panic!("exporting {}: {e}", stringify!($t))); )*
@@ -74,9 +73,9 @@ fn generate(dir: &Path) {
         runtime::lab::Observer,
         runtime::lab::Requirements,
         runtime::lab::RunOptions,
-        runtime::start_place::StartPlace,
+        runtime::placement::Placement,
+        runtime::placement::Choice,
         runtime::selftest_report::Event,
-        runtime::lab::Resources,
         runtime::providers::Provider,
         crate::commands::app::ManagedSettings,
         runtime::server::capacity::HostCapacity,
