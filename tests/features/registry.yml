@@ -1928,8 +1928,6 @@ areas:
           - tab:machine
         tests:
           unit:
-            - src-tauri/src/machine/system.rs > a_probe_that_fails_or_finds_no_tool_reads_as_not_installed
-            - src-tauri/src/machine/system.rs > a_version_on_windows_line_endings_or_without_a_newline_has_no_stray_characters
             - src/features/machine/machine-status.test.ts
             - src/features/machine/use-machine-report.test.tsx
             - src/features/machine/machine-screen.test.tsx > warns about low disk space and counts what needs setup
@@ -1959,8 +1957,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/machine/system/docker/tests.rs > names_the_engine_from_the_daemon_and_the_context
-            - src-tauri/src/machine/system/docker/tests.rs > every_engine_is_listed_with_its_own_state_and_the_current_one_marked
             - src-tauri/src/machine/system/docker/tests.rs > a_daemon_this_account_cannot_use_is_reported_without_waiting
             - src-tauri/src/platform/exec/docker.rs > a_denied_docker_socket_is_not_a_stopped_daemon
             - src-tauri/src/platform/exec/docker.rs > the_denied_message_names_the_command_to_run
@@ -2314,8 +2310,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/machine/system.rs > the_package_manager_reports_its_first_version_line
-            - src-tauri/src/machine/system.rs > a_package_manager_that_fails_its_version_is_not_installed
             - src-tauri/src/machine/setup/tests.rs > a_linux_without_apt_or_dnf_is_told_to_install_each_tool_itself_instead_of_a_failing_command
             - src-tauri/src/machine/setup/tests.rs > a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt
             - src-tauri/src/machine/tools/install/tests.rs > a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs
@@ -2459,7 +2453,6 @@ areas:
             - src-tauri/src/machine/system/wsl/tests.rs > a_restart_is_scheduled_once_whoever_asks
             - src-tauri/src/machine/system/wsl/tests.rs > a_failed_restart_takes_back_what_it_wrote_and_can_be_tried_again
             - src-tauri/src/machine/system/wsl/tests.rs > the_app_reopens_by_its_path_or_its_store_package
-            - src-tauri/src/machine/system/wsl/tests.rs > restarting_is_refused_off_windows_and_the_check_has_no_wsl
             - src-tauri/src/machine/setup/tests.rs > a_docker_daemon_refusing_this_account_asks_for_a_new_login_last
             - src/features/machine/setup-steps/setup-steps.test.tsx > restarts only after the player confirms in the system dialog
           integration:
@@ -2476,8 +2469,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/machine/system/wsl/tests.rs > turned_on_but_not_restarted_needs_a_reboot
-            - src-tauri/src/machine/system/wsl/tests.rs > virtualization_off_in_the_firmware_never_loops_on_restarts
             - src-tauri/src/machine/setup/tests.rs > windows_restarts_for_wsl_last_and_installs_everything_else_first
             - src-tauri/src/machine/setup/tests.rs > a_running_docker_engine_is_proof_enough_of_wsl
             - src/features/machine/setup-steps/setup-steps.test.tsx > turns on WSL, then asks for a restart
@@ -3350,7 +3341,6 @@ areas:
           unit:
             - src-tauri/src/machine/tools/scripts/tests.rs > the_aws_cli_bundle_must_be_signed_by_the_embedded_key
             - src-tauri/src/machine/tools/scripts/tests.rs > an_aws_cli_bundle_with_a_bad_signature_is_not_installed
-            - src-tauri/src/machine/system.rs > azure_version_comes_from_az_version_json
             - src/features/servers/host-setup/cloud-setup.test.tsx > installs a missing cloud CLI and re-checks the machine
             - src/features/servers/host-setup/cloud-setup.test.tsx > logs a failed install and frees the buttons
         gaps:
