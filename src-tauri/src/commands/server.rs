@@ -225,6 +225,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_servers_node_keys_are_asked_and_confirmed_only_when_its_labs_go_through_its_node() {
+        let t = crate::testing::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        let esxi = t.host("esxi1", "vmware_esxi", serde_json::json!({}));
+        let tools = crate::runtime::providers::testing::no_tools();
+        // An ESXi server's labs never go through a node: nothing to ask, nothing to confirm.
+        assert_eq!(server_node_host_keys(app(), esxi.clone()).await.unwrap(), None);
+        let refused = server_trust_node_host_keys(app(), esxi, vec![NODE_FINGERPRINT.into()]).await.unwrap_err();
+        assert!(refused.to_string().ends_with("it has no node keys to confirm"), "{refused}");
+        // A server that isn't saved is the caller's error, never a node reached.
+        assert!(server_node_host_keys(app(), "gone".into()).await.is_err());
+        assert!(server_trust_node_host_keys(app(), "gone".into(), vec![NODE_FINGERPRINT.into()]).await.is_err());
+        assert!(tools.lines().is_empty(), "no node reached: {:?}", tools.lines());
+    }
+
+    #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
