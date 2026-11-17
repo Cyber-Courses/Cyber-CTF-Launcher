@@ -21,7 +21,7 @@ import type {
   MachineMetrics,
   OciConfig,
   LabRunOptions,
-  LabStartPlace,
+  LabPlacement,
   ManagedSettings,
   ServerList,
   ServerTest,
@@ -64,7 +64,7 @@ type Answers = {
   lab_cloud_preview: CloudPreview | null;
   cloud_services_supported: boolean;
   lab_requirements: LabRequirements | null;
-  lab_default_place: LabStartPlace;
+  lab_placement: LabPlacement;
   lab_run_options: LabRunOptions;
   running_labs: string[];
   busy_labs: string[];

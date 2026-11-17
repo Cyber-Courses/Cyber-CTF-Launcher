@@ -67,23 +67,23 @@ describe("cloud labs", () => {
 
   it("start on their first account, never a default server; other labs where the backend says", () => {
     const hosts = [host("esxi", "vmware_esxi"), host("a", "aws"), host("b", "aws")];
-    const onEsxi = { host: "esxi", provider: null, perMachineVm: false, hypervisor: null };
+    const onEsxi = { kind: "server", host: "esxi" } as const;
     expect(initialTarget(cloud, hosts, onEsxi)).toEqual({ kind: "host", id: "a" });
     expect(initialTarget(cloud, [host("esxi", "vmware_esxi")], onEsxi)).toEqual({ kind: "local" });
     const vm = rt("VM", ["vmware_esxi"]);
     expect(initialTarget(vm, hosts, onEsxi)).toEqual({ kind: "host", id: "esxi" });
-    // A VM lab here: on the hypervisor the backend picked for it.
-    expect(initialTarget(vm, hosts, { host: null, provider: "virtualbox", perMachineVm: false, hypervisor: "virtualbox" })).toEqual({
+    // A VM lab here: on the hypervisor the backend's rule picked for it.
+    expect(initialTarget(vm, hosts, { kind: "vms", provider: "virtualbox" })).toEqual({
       kind: "local",
       provider: "virtualbox",
     });
     // Here until the backend answers.
     expect(initialTarget(vm, hosts, null)).toEqual({ kind: "local" });
     // A container lab with a hypervisor here: one VM per machine there (never its containers in a
-    // VM, even from a place an older backend named without the per-machine flag).
+    // VM); on Docker, here.
     const web = rt("DOCKER", ["docker"]);
-    expect(initialTarget(web, hosts, { host: null, provider: "utm", perMachineVm: false, hypervisor: null })).toEqual({ kind: "local-vms", provider: "utm" });
-    expect(initialTarget(web, hosts, { host: null, provider: "qemu", perMachineVm: true, hypervisor: null })).toEqual({ kind: "local-vms", provider: "qemu" });
+    expect(initialTarget(web, hosts, { kind: "vms", provider: "utm" })).toEqual({ kind: "local-vms", provider: "utm" });
+    expect(initialTarget(web, hosts, { kind: "docker", engine: null, defaultPorts: false })).toEqual({ kind: "local" });
     // A server since removed: here.
     expect(initialTarget(web, [], onEsxi)).toEqual({ kind: "local" });
   });

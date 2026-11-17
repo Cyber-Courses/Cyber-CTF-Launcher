@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { isCloudProvider, type ActiveOperation, type DockerEngine, type Park, type ServerHost } from "@/lib/tauri";
+import type { ActiveOperation, DockerEngine, Park } from "@/lib/tauri";
 import { getPortMode, type PortMode } from "@/lib/settings";
 import { askPortMode } from "@/features/labs/port-mode-prompt";
 import type { Lab } from "@/features/labs/use-labs";
@@ -24,10 +24,9 @@ import {
  * here keeps streaming and stays visible even after the labs screen unmounts (e.g. the user
  * opens Settings) and comes back. Keyed per lab, so two deploys at once keep separate logs; the
  * UI reads each lab's run from `runs[labId]`. The operations themselves are in lab-operations.
- * `hosts`: the saved servers and cloud accounts, which a launch's "ready" notice names (asked
- * for, not defaulted: without them a cloud launch said "ready on your server").
+ * A launch's "ready" notice names where it runs from its placement (a server, a cloud account).
  */
-export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void, hosts: readonly ServerHost[]) {
+export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void) {
   // By lab id: none for a lab not run since the app started.
   const { runs }: { runs: Partial<Record<string, DeployRun>> } = useDeploy();
 
@@ -45,12 +44,12 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
 
   /**
    * `host` = a saved server or cloud account to run the lab on, null for this machine. Omitted,
-   * the lab starts where the backend says (`labDefaultPlace`: where it last ran, else a VM lab on
-   * a hypervisor ready here, else the default server that runs it, else here). `vm` runs a VM lab
-   * here on that hypervisor (none: the backend's), or a container lab with VM recipes as one VM
-   * per machine there (`perMachine`; a cloud account's cloud-vm form with no hypervisor).
+   * nothing is picked and the player's saved preference decides, by the backend's one rule
+   * (`labPlacement`: a VM lab on the saved hypervisor or the first ready one, else the default
+   * server; a container lab here). `vm` runs a VM lab here on that hypervisor (none: the rule's),
+   * or a container lab with VM recipes as one VM per machine there (`perMachine`; a cloud
+   * account's cloud-vm form with no hypervisor). The launch sends the rule's answer as it is.
    * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
-   * `hosts` (the saved servers and cloud accounts) say which `host` is a cloud account.
    * `chosenPorts` = the host ports for a container lab here, already chosen ("Where should it run?").
    */
   const launch = useCallback(
@@ -65,14 +64,9 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
       const containersHere = lab.runtime.runtime !== "VM" && host == null && !vm;
       const ports = containersHere ? (here?.ports ?? getPortMode() ?? (await askPortMode(lab.title))) : null;
       if (containersHere && !ports) return;
-      const inCloud = host != null && isCloudProvider(hosts.find((h) => h.id === host)?.provider);
-      await operate(
-        lab,
-        "launch",
-        localLaunch(lab, { host, vmProvider: vm?.provider, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine, inCloud }),
-      );
+      await operate(lab, "launch", localLaunch(lab, { host, vmProvider: vm?.provider, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine }));
     },
-    [operate, hosts],
+    [operate],
   );
 
   const stop = useCallback((lab: Lab) => operate(lab, "stop", stopping(lab)), [operate]);

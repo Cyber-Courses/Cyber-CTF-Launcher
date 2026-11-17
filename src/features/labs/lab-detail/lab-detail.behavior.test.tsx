@@ -326,7 +326,7 @@ describe("LabDetail: starting", () => {
     installTauri({
       ...quiet,
       ...defaultEsx,
-      lab_default_place: () => ({ host: "esx", provider: null, perMachineVm: false }),
+      lab_placement: () => ({ kind: "server", host: "esx" }),
     });
     const { user, h } = await clickStart({ lab: vmLab, readyVms: [] });
     const dialog = screen.getByRole("dialog");
@@ -340,7 +340,7 @@ describe("LabDetail: starting", () => {
     installTauri({
       ...quiet,
       ...defaultEsx,
-      lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: false, hypervisor: "virtualbox" }),
+      lab_placement: () => ({ kind: "vms", provider: "virtualbox" }),
     });
     const { user, h } = await clickStart({ lab: vmLab, readyVms: ["virtualbox"] });
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));

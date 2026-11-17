@@ -11,8 +11,10 @@ use super::output::masked;
 use super::{Answer, Context, Exit, Failure, Output, to_json};
 use crate::commands::labs::{box_status_in, check_in, local_request, remove_in, sign_in_in, start_checked, status_in, tools_in};
 use crate::labs::LaunchRequest;
+use crate::machine::system::docker::Engine;
 use crate::run_service::{AttachPick, LocalRunService, Request, RunEvent, RunService};
 use crate::runtime::paths::{installed_lab_dir, lab_dir, labs_root};
+use crate::runtime::placement;
 use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Runtime};
 
@@ -35,7 +37,7 @@ pub(super) async fn labs(command: Labs, ctx: &Context, out: &mut Output<'_>) -> 
             Ok(request) => operate(ctx, out, request).await,
             Err(e) => out.fail(&e.into()),
         },
-        Labs::Start(start) => match launch_request(start) {
+        Labs::Start(start) => match launch_request(ctx, start).await {
             Ok(request) => operate(ctx, out, request).await,
             Err(e) => out.fail(&e),
         },
@@ -110,22 +112,36 @@ async fn on_lab(ctx: &Context, out: &mut Output<'_>, lab: &LabArg, make: impl Fn
     }
 }
 
-/// A catalogue launch's request, from the command line's options.
-fn launch_request(s: StartArgs) -> Result<Request, Failure> {
+/// A catalogue launch's request, from the command line's options: its placement the app's one
+/// rule ([`placement::choose`]) gives for the flags, else the saved preference, among what the
+/// lab's spec at the catalogue's commit allows and what is ready here. Sent explicit, as the
+/// window sends it.
+async fn launch_request(ctx: &Context, s: StartArgs) -> Result<Request, Failure> {
+    let choice = choice_of(&s)?;
+    let listed = crate::labs::catalogue_source(&ctx.dirs, &s.id, s.offline).await?;
+    let placement = placement::for_lab(&ctx.dirs, &s.id, listed.runtime, listed.source(), &choice).await?;
+    Ok(Request::Launch(LaunchRequest { lab_id: s.id, placement, offline: s.offline }))
+}
+
+/// What the command line's flags pick; what they leave unset, the saved preference decides.
+fn choice_of(s: &StartArgs) -> Result<placement::Choice, Failure> {
     let provider = match s.provider.as_deref() {
         Some(id) => Some(Provider::from_id(id).ok_or_else(|| Failure::usage(format!("unknown provider `{id}`")))?),
         None => None,
     };
-    Ok(Request::Launch(LaunchRequest {
-        lab_id: s.id,
+    let engine = match s.docker_engine.as_deref() {
+        Some(id) => Some(Engine::from_id(id).ok_or_else(|| Failure::usage(format!("unknown container engine `{id}`")))?),
+        None => None,
+    };
+    Ok(placement::Choice {
+        here: false,
+        host: s.host.clone(),
         provider,
-        host: s.host,
+        per_machine_vm: s.per_machine_vm,
+        engine,
         // Unset, the player's saved port mode decides, as in the window.
         default_ports: s.default_ports.then_some(true),
-        offline: s.offline,
-        per_machine_vm: s.per_machine_vm,
-        docker_engine: s.docker_engine,
-    }))
+    })
 }
 
 /// Runs `request` on a run service of the app's folders, as the app's commands start it, its
@@ -378,4 +394,36 @@ fn box_text(b: &Value) -> String {
         lines.push(format!("sign in: {} / {}", si["user"].as_str().unwrap_or_default(), si["password"].as_str().unwrap_or_default()));
     }
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn start(flags: &[&str]) -> StartArgs {
+        use clap::Parser;
+        let mut args = vec!["cyberctf", "labs", "start", "web"];
+        args.extend_from_slice(flags);
+        match super::super::args::Cli::try_parse_from(args).unwrap().command {
+            super::super::args::Command::Labs(Labs::Start(s)) => s,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_flags_pick_what_they_say_and_leave_the_rest_to_the_saved_preference() {
+        assert_eq!(choice_of(&start(&[])).unwrap(), placement::Choice::default());
+        let all = start(&["--provider", "utm", "--host", "aws1", "--per-machine-vm", "--docker-engine", "colima", "--default-ports"]);
+        let expected = placement::Choice {
+            here: false,
+            host: Some("aws1".into()),
+            provider: Some(Provider::Utm),
+            per_machine_vm: true,
+            engine: Some(Engine::Colima),
+            default_ports: Some(true),
+        };
+        assert_eq!(choice_of(&all).unwrap(), expected);
+        assert!(choice_of(&start(&["--provider", "nope"])).is_err());
+        assert!(choice_of(&start(&["--docker-engine", "nope"])).is_err());
+    }
 }

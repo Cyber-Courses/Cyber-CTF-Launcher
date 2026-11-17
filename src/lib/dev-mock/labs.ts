@@ -1,6 +1,6 @@
 import type { ActiveOperation } from "@/lib/tauri/run-events";
-import type { ImportedLab, LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
-import { argText } from "@/lib/dev-mock/command";
+import type { ImportedLab, LabPlacementChoice, LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
+import { argText, fail } from "@/lib/dev-mock/command";
 import { objectivesAnswer } from "@/lib/dev-mock/objectives";
 import type { Args, Handlers } from "@/lib/dev-mock/types";
 
@@ -257,13 +257,23 @@ export const labCommands = {
     args?.id === "lab-goad"
       ? { min: { cpus: 4, memoryMb: 2560, diskGb: 25 }, max: { cpus: 6, memoryMb: 12288, diskGb: 120 } }
       : { min: { cpus: 2, memoryMb: 1024, diskGb: 20 }, max: { cpus: 2, memoryMb: 1024, diskGb: 20 } },
-  // The sample's default server is Proxmox, which runs the VM labs; the others start here.
-  lab_default_place: (args) => ({
-    host: args?.runtime === "VM" ? "pve" : null,
-    provider: null,
-    perMachineVm: false,
-    hypervisor: args?.runtime === "VM" ? "virtualbox" : null,
-  }),
+  // The backend's rule (runtime/placement.rs) on the sample: a host picked runs the lab there
+  // (the `aws…` ones are cloud accounts), a hypervisor picked runs its VMs here; a VM lab with
+  // nothing picked runs on VirtualBox here, or on the default server (Proxmox) unless this machine
+  // was picked; a container lab here, as picked.
+  lab_placement: (args) => {
+    const choice = (args?.choice ?? {}) as Partial<LabPlacementChoice>;
+    const runtime = args?.runtime;
+    if (choice.host) {
+      const perMachine = runtime === "VM" || (runtime === "DOCKER" && !!choice.perMachineVm);
+      return choice.host.startsWith("aws") ? { kind: "cloud", account: choice.host, perMachine } : { kind: "server", host: choice.host };
+    }
+    if (runtime === "CLOUD") return fail("This lab runs in your cloud account: pick one of your cloud accounts to start it on.", "pickCloudAccount");
+    if (choice.provider) return { kind: "vms", provider: choice.provider };
+    if (runtime === "VM") return choice.here ? { kind: "vms", provider: "virtualbox" } : { kind: "server", host: "pve" };
+    if (choice.perMachineVm) return { kind: "vms", provider: "virtualbox" };
+    return { kind: "docker", engine: choice.engine ?? null, defaultPorts: choice.defaultPorts ?? false };
+  },
   lab_run_options: (args) => runOptions(args?.runtime),
   running_labs: () => ["lab-invoice"],
   busy_labs: () => ["lab-goad"],

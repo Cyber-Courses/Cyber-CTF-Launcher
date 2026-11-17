@@ -32,6 +32,22 @@ The catalogue names a lab by its own runtime (containers or VMs); every operatio
 lab finds its run through `runtime::host::locate`, which reads where it runs and the form it was
 actually started in from the runner's record of its run (`runtime::recorded`).
 
+## Where a lab starts
+
+Every launch carries one explicit placement (`runtime::placement::Placement`): containers here on
+an engine (`docker`), the lab's VMs here on a hypervisor (`vms`), a VM lab on a saved server
+(`server`), or a cloud account in one of its cloud forms (`cloud`). The backend takes it as it
+is: it fills nothing in and reinterprets nothing, and refuses only what can't run there, with the
+coded errors (`launch::destination`).
+
+One rule decides it, `placement::choose`: what Isoloom says the lab's spec allows
+(`lab::run_options`, with this computer's policy), what is ready here (the hypervisors and engines
+that answer), then the player's choice, else their saved preference (Settings' hypervisor, engine
+and ports, and the default server for a VM lab). Every caller applies that same rule before it
+asks for the start: the webview through `lab_placement` (its Start dialog's choice, or nothing
+picked), the command line from its flags (`cyberctf labs start`, the lab's runtime and source read
+from the catalogue first), and the website's launches from the target picked there.
+
 ## What says where a lab is
 
 A running lab is the runner's run `cyberctf-<lab id>`, kept in the runner's home

@@ -86,7 +86,7 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const { labs, imported, completed } = catalogue;
   const statuses: Statuses = catalogue.statuses;
   const servers = useSavedHosts().hosts;
-  const actions = useLabActions(catalogue.refreshStatus, servers);
+  const actions = useLabActions(catalogue.refreshStatus);
   // Operations running in the backend (started from another window or before a reload), for the rows.
   const operations = useActiveOperations();
   // A lab page opens on a catalogue lab or an imported one (each read on its own).

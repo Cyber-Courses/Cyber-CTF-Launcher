@@ -16,9 +16,9 @@ import {
   setVmProvider,
   type PortMode,
 } from "@/lib/settings";
-import { type DockerEngine, type LabRunOptions, type LabStartPlace, type Provider, type ServerHost } from "@/lib/tauri";
+import { type DockerEngine, type LabPlacement, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { useLabAnswer, useLabRunOptions } from "@/features/labs/use-lab-answer";
-import { askDefaultPlace } from "@/features/labs/lab-operations";
+import { askStartPlacement } from "@/features/labs/lab-operations";
 import { useSavedHosts } from "@/features/servers/use-server-list";
 
 /** A container lab on cloud account `id`, when the lab's run options have it there in both
@@ -61,7 +61,7 @@ export function useRunTarget(
   // Every way the lab starts, and where it starts with nothing picked: the backend's answers.
   const optionsRead = useLabRunOptions(lab.id, rt);
   const options = optionsRead.value;
-  const place = useLabAnswer(lab.id, rt, askDefaultPlace).value;
+  const place = useLabAnswer(lab.id, rt, askStartPlacement).value;
   // The VM form a container lab can run here as, and the hypervisors it can run on.
   const vm = useLocalVmChoice(rt, { readyVms, options }, isDocker, setRunOn);
   const { perMachineVm, perMachineVms, perMachine, pickProvider } = vm;
@@ -290,17 +290,18 @@ function usePickerSteps(d: StepsDeps) {
   return { step, isLastStep, hypervisors: curHyps, pickPlatform, pickForm, pickHypervisor, pickEngine, back, resetSteps };
 }
 
-/** Where Start points at first: a cloud lab's first account it runs on; else where the backend
- *  starts the lab with nothing picked (`place`: where it last ran, a ready hypervisor here, the
- *  default server), in the form and on the hypervisor it says; here until it answers. */
-export function initialTarget(rt: LabRuntimeInfo | null, hosts: ServerHost[], place: LabStartPlace | null, options: LabRunOptions | null = null): RunTarget {
+/** Where Start points at first: a cloud lab's first account it runs on; else where the lab
+ *  starts with nothing picked (`place`, the backend's one rule: the saved hypervisor or the first
+ *  ready one, else the default server; a container lab here), in the form and on the hypervisor
+ *  it says; here until it answers. */
+export function initialTarget(rt: LabRuntimeInfo | null, hosts: ServerHost[], place: LabPlacement | null, options: LabRunOptions | null = null): RunTarget {
   if (isCloudLab(rt)) {
     const account = cloudAccountsFor(rt, hosts, options).at(0);
     return account ? { kind: "host", id: account.id } : { kind: "local" };
   }
-  if (place?.host) return hosts.some((h) => h.id === place.host) ? { kind: "host", id: place.host } : { kind: "local" };
-  if (!place?.provider) return { kind: "local" };
-  // A container lab with a hypervisor starts as one VM per machine there (the backend's own rule).
+  if (place?.kind === "server") return hosts.some((h) => h.id === place.host) ? { kind: "host", id: place.host } : { kind: "local" };
+  if (place?.kind !== "vms") return { kind: "local" };
+  // A container lab on a hypervisor runs as one VM per machine there.
   return isContainerLab(rt) ? vmFormTarget("local-vms", place.provider) : { kind: "local", provider: place.provider };
 }
 

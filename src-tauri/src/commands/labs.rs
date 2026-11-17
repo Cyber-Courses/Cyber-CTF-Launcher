@@ -14,31 +14,15 @@ use crate::platform::AppDirs;
 use crate::run_service::{self, AttachPick, OperationId, Request};
 use crate::runtime::attack_box::AttackStatus;
 use crate::runtime::paths::{installed_lab_dir, lab_dir};
+use crate::runtime::placement::{self, Placement};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_box, docker, lab, start_place, status, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_box, docker, lab, status, terminal_launch};
 
-/// Starts a lab (see [`labs::prepare_launch`]): the operation's id, its log and end as run events.
+/// Starts a lab where `placement` says, taken as it is (see [`labs::prepare_launch`]): the
+/// operation's id, its log and end as run events.
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "the webview sends each of the request's fields as an argument")]
-pub async fn lab_launch(
-    app: AppHandle,
-    lab_id: String,
-    provider: Option<Provider>,
-    host: Option<String>,
-    default_ports: Option<bool>,
-    offline: Option<bool>,
-    per_machine_vm: Option<bool>,
-    docker_engine: Option<String>,
-) -> Result<OperationId> {
-    let request = LaunchRequest {
-        lab_id,
-        provider,
-        host,
-        default_ports,
-        offline: offline.unwrap_or(false),
-        per_machine_vm: per_machine_vm.unwrap_or(false),
-        docker_engine,
-    };
+pub async fn lab_launch(app: AppHandle, lab_id: String, placement: Placement, offline: Option<bool>) -> Result<OperationId> {
+    let request = LaunchRequest { lab_id, placement, offline: offline.unwrap_or(false) };
     crate::app::runs::of(&app).start(Request::Launch(request))
 }
 
@@ -251,19 +235,21 @@ impl LabSource {
     }
 }
 
-/// Where lab `id`, declared `runtime`, starts when no place is picked
-/// ([`start_place::default_place`]: where it last ran, else a ready hypervisor here for a VM lab,
-/// `preferred` (the player's Settings choice) first, else the default server), from its spec at
-/// its `source`.
+/// Where lab `id`, declared `runtime`, runs for the player's `choice` ([`placement::choose`]:
+/// what Isoloom allows from its spec at `source`, what is ready here, then the choice, else the
+/// saved preference; none: the catalogue's source): the placement the webview then launches
+/// with, as it is.
 #[tauri::command]
-pub async fn lab_default_place(
-    app: AppHandle,
-    id: String,
-    runtime: Runtime,
-    source: LabSource,
-    preferred: Option<Provider>,
-) -> Result<start_place::StartPlace> {
-    start_place::default_place(&AppDirs::from(&app), &id, runtime, source.checked(), preferred).await
+pub async fn lab_placement(app: AppHandle, id: String, runtime: Runtime, source: Option<LabSource>, choice: placement::Choice) -> Result<Placement> {
+    let dirs = AppDirs::from(&app);
+    match source {
+        Some(source) => placement::for_lab(&dirs, &id, runtime, source.checked(), &choice).await,
+        // A lab whose source the window doesn't know: the catalogue's.
+        None => {
+            let listed = labs::catalogue_source(&dirs, &id, false).await?;
+            placement::for_lab(&dirs, &id, runtime, listed.source(), &choice).await
+        }
+    }
 }
 
 /// Every way lab `id`, declared `runtime`, can start ([`lab::run_options`]): per form, the
@@ -382,8 +368,8 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, LabSource, check_image, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_default_place,
-        lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools,
+        attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_installed, lab_launch,
+        lab_launch_local, lab_park, lab_placement, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools,
     };
     use crate::commands::lines;
     use crate::run_service::tests::finished;
@@ -485,7 +471,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_container_lab_has_no_default_server() {
+    async fn a_lab_is_placed_by_its_spec_the_choice_and_the_saved_preference_never_on_the_default_server_for_containers() {
         let t = TestApp::new();
         let pve = t.host("pve", "proxmox", serde_json::json!({}));
         crate::runtime::server::store::update(&t.dirs(), |s| {
@@ -493,10 +479,20 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        let sha = "0123456789abcdef0123456789abcdef01234567".to_string();
-        // Never run: on Docker here, its spec not even read.
-        let place = lab_default_place(t.handle().clone(), "web".into(), Runtime::Docker, source("CyberCTF/web", &sha), None).await.unwrap();
-        assert_eq!(place, crate::runtime::start_place::StartPlace::default());
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let web = "version: 1\nname: web\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { networks: { lab: 10 }, app: { image: nginx:1.27 } }\n";
+        let dir = t.lab("web", &[("isoloom.yml", web)]);
+        std::fs::write(dir.join(crate::runtime::lab::COMMIT_MARKER), sha).unwrap();
+        crate::settings::settings_change(&t.dirs(), &[crate::settings::Change::PortMode(Some(crate::settings::PortMode::Default))]).unwrap();
+        let place = |choice| lab_placement(t.handle().clone(), "web".into(), Runtime::Docker, Some(source("CyberCTF/web", sha)), choice);
+        // Nothing picked: containers here, on the saved ports; never the default server.
+        assert_eq!(place(placement::Choice::default()).await.unwrap(), Placement::Docker { engine: None, default_ports: true });
+        // Picked: as picked.
+        let random = placement::Choice { default_ports: Some(false), ..placement::Choice::default() };
+        assert_eq!(place(random).await.unwrap(), Placement::Docker { engine: None, default_ports: false });
+        // A server picked for containers: refused, never moved elsewhere.
+        let on_pve = placement::Choice { host: Some("pve".into()), ..placement::Choice::default() };
+        assert_eq!(place(on_pve).await.unwrap_err().to_string(), crate::runtime::launch::CONTAINERS_NOT_ON_SERVERS);
     }
 
     #[tokio::test]
@@ -723,7 +719,8 @@ mod tests {
         // An offline start runs the installed lab: with none installed it fails before the backend
         // or a deploy worker is involved.
         let t = TestApp::new();
-        let id = lab_launch(t.handle().clone(), "invoice".into(), None, None, None, Some(true), None, None).await.unwrap();
+        let here = Placement::Docker { engine: None, default_ports: false };
+        let id = lab_launch(t.handle().clone(), "invoice".into(), here, Some(true)).await.unwrap();
         let (outcome, _) = finished(t.handle(), &id).await;
         assert!(outcome.is_err(), "{outcome:?}");
         assert!(!t.data().join("deploys").join("invoice.pid").exists(), "no worker");

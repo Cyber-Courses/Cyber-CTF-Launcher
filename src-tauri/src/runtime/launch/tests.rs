@@ -1,7 +1,5 @@
 use super::local::{UTM_NOT_ALLOWED, check_utm};
-use super::{
-    Destination, LabRef, LocalRun, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, local_run, low_memory_warning, per_machine_runs_on,
-};
+use super::{Destination, LabRef, Placement, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, low_memory_warning, per_machine_runs_on};
 use super::{server, warn_if_low_memory};
 use crate::runtime::lab::emulated_arches;
 use crate::runtime::providers::testing::{Faked, fake, no_tools};
@@ -11,14 +9,25 @@ use crate::testing::test_app::TestApp;
 use isothrum_machine::Arch;
 
 async fn start_here(t: &TestApp, id: &str, runtime: Runtime, provider: Option<Provider>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
-    start_at(t, id, runtime, Destination { provider, ..Destination::default() }, env).await
+    start_at(t, id, runtime, &here(provider), env).await
+}
+
+/// This machine: on `provider`'s VMs, else containers on Docker.
+fn here(provider: Option<Provider>) -> Placement {
+    provider.map_or(Placement::Docker { engine: None, default_ports: false }, |provider| Placement::Vms { provider })
+}
+
+/// Saved host `host`, of the kind it is saved as: a server, or a cloud account (one VM there).
+fn on_host(t: &TestApp, host: &str) -> Placement {
+    let cloud = server::host_provider(&t.dirs(), host).unwrap().is_some_and(Provider::is_cloud);
+    if cloud { Placement::Cloud { account: host.into(), per_machine: false } } else { Placement::Server { host: host.into() } }
 }
 
 /// A start of installed lab `id` at `to`, with the lines it logged.
-async fn start_at(t: &TestApp, id: &str, runtime: Runtime, to: Destination<'_>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
+async fn start_at(t: &TestApp, id: &str, runtime: Runtime, to: &Placement, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(&t.dirs(), LabRef { dir: &dir, id, runtime }, to, env, |l| log.push(l)).await;
+    let r = start(&t.dirs(), LabRef { dir: &dir, id, runtime }, Destination::at(to), env, |l| log.push(l)).await;
     (r, log)
 }
 
@@ -29,8 +38,8 @@ fn no_emulator() -> Faked {
 }
 
 /// A start in one VM per machine here, on `provider`.
-fn per_machine_on(provider: Provider) -> Destination<'static> {
-    Destination { provider: Some(provider), per_machine_vm: true, ..Destination::default() }
+fn per_machine_on(provider: Provider) -> Placement {
+    Placement::Vms { provider }
 }
 
 #[tokio::test]
@@ -46,7 +55,7 @@ async fn a_lab_on_qemu_is_checked_for_its_emulator() {
 }
 
 async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate::error::Result<()>, Vec<String>) {
-    start_at(t, id, runtime, Destination { host: Some(host), ..Destination::default() }, &[]).await
+    start_at(t, id, runtime, &on_host(t, host), &[]).await
 }
 
 // Cloud VM labs (cloud-vm, cloud-docker) now launch through the Isothrum runner (`Deployment`),
@@ -79,33 +88,6 @@ const VM_LAB: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/2
 
 const VMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    os: debian@12\n  b:\n    hardware: { arch: arm64 }\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    os: debian@12\n";
 
-#[test]
-fn a_local_run_follows_the_runtime_and_the_hypervisor() {
-    assert_eq!(local_run(Runtime::Docker, None, false).unwrap(), LocalRun::Docker);
-    // A container lab on a hypervisor here runs as one VM per machine there, never inside one VM.
-    assert_eq!(local_run(Runtime::Docker, Some(Provider::Virtualbox), false).unwrap(), LocalRun::Vm(Provider::Virtualbox));
-    assert_eq!(local_run(Runtime::Docker, Some(Provider::Virtualbox), true).unwrap(), LocalRun::Vm(Provider::Virtualbox));
-    // A server provider is never a local VM: the containers run on this machine's Docker.
-    assert_eq!(local_run(Runtime::Docker, Some(Provider::Proxmox), false).unwrap(), LocalRun::Docker);
-    assert_eq!(local_run(Runtime::Vm, Some(Provider::Qemu), false).unwrap(), LocalRun::Vm(Provider::Qemu));
-    assert_eq!(local_run(Runtime::Vm, None, false).unwrap_err().code(), crate::error::Code::NoHypervisor);
-    assert_eq!(local_run(Runtime::Vm, Some(Provider::VmwareEsxi), false).unwrap_err().to_string(), "pick a server host to run on ESXi or Proxmox");
-    assert_eq!(local_run(Runtime::Cloud, None, false).unwrap_err().code(), crate::error::Code::PickCloudAccount);
-}
-
-#[test]
-fn a_container_lab_picked_as_one_vm_per_machine_runs_as_a_vm_lab() {
-    // The override: the VM form on the hypervisor, as a VM lab would run.
-    assert_eq!(local_run(Runtime::Docker, Some(Provider::Qemu), true).unwrap(), LocalRun::Vm(Provider::Qemu));
-    // It needs a hypervisor on this machine: none, or a server's, is refused (never silently
-    // containers, which is not what was picked).
-    assert_eq!(local_run(Runtime::Docker, None, true).unwrap_err().to_string(), "One VM per machine needs a hypervisor on this machine");
-    assert!(local_run(Runtime::Docker, Some(Provider::Proxmox), true).is_err());
-    // A VM lab is already that form; a cloud lab has no machines to be VMs.
-    assert_eq!(local_run(Runtime::Vm, Some(Provider::Virtualbox), true).unwrap(), LocalRun::Vm(Provider::Virtualbox));
-    assert_eq!(local_run(Runtime::Cloud, None, true).unwrap_err().code(), crate::error::Code::PickCloudAccount);
-}
-
 /// A lab with both forms: each machine has a container recipe (`app.image`) and the VM one
 /// (`os`, `app.steps`), like `supplier-portal-api`. One machine is built for the other CPU
 /// whatever this host is, so QEMU's emulator check always has something to check (as `VM_LAB`).
@@ -120,7 +102,7 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     // QEMU with no emulator for the other CPU: the start stops at the emulator check, after the
     // VM form's files are generated, before any VM is created.
     let _tools = no_emulator();
-    let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Qemu), &[]).await;
+    let (r, _) = start_at(&t, "both", Runtime::Docker, &per_machine_on(Provider::Qemu), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("qemu-system"), "{err}");
     // The vagrant target's files (one VM per machine); nothing ran, so nothing is recorded: the
@@ -144,8 +126,9 @@ async fn one_vm_per_machine_is_refused_on_a_server() {
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
     t.host("pve1", "proxmox", serde_json::json!({}));
     let tools = no_tools();
-    let to = Destination { host: Some("pve1"), per_machine_vm: true, ..Destination::default() };
-    let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
+    // A server's id sent as a cloud account's, one VM per machine there: refused, never run.
+    let to = Placement::Cloud { account: "pve1".into(), per_machine: true };
+    let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, Destination::at(&to), &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_NOT_ON_SERVERS);
     assert!(tools.calls().is_empty() && Recorded::of(&t.dirs(), "both").await.unwrap().record().is_none(), "{:?}", tools.calls());
 }
@@ -159,7 +142,7 @@ async fn one_vm_per_machine_on_utm_opens_utm_first() {
     let tools = std::sync::Arc::new(isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::missing()));
     let mac = crate::runtime::providers::testing::host_on(isothrum_machine::HostOs::Macos, Arch::Arm64, None);
     let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::<isothrum_runner::fake::FakeProcesses>::clone(&tools), mac);
-    let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
+    let (r, _) = start_at(&t, "both", Runtime::Docker, &per_machine_on(Provider::Utm), &[]).await;
     let err = r.unwrap_err();
     assert!(matches!(err, crate::error::Error::ToolMissing { tool: "UTM" }), "{err}");
     let opened = tools.calls().iter().any(|c| c.program == "open" && c.args.starts_with(&["-g".to_owned(), "-j".to_owned(), "-a".to_owned()]));
@@ -353,29 +336,33 @@ fn a_start_with_nowhere_to_run_is_refused_by_its_code_before_anything_is_downloa
     let dirs = t.dirs();
     t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
     t.host("pve", "proxmox", serde_json::json!({}));
-    let check = |runtime, to: Destination<'_>| super::check_destination(&dirs, runtime, &to);
-    let here = |provider| Destination { provider, ..Destination::default() };
-    let on = |host| Destination { host: Some(host), ..Destination::default() };
-    let per_machine = |provider, host| Destination { provider, host, per_machine_vm: true, ..Destination::default() };
-    assert_eq!(check(Runtime::Cloud, here(None)).unwrap_err().code(), Code::PickCloudAccount);
-    assert_eq!(check(Runtime::Vm, here(None)).unwrap_err().code(), Code::NoHypervisor);
-    assert!(check(Runtime::Cloud, on("aws1")).is_ok());
-    assert!(check(Runtime::Vm, here(Some(Provider::Qemu))).is_ok());
-    assert!(check(Runtime::Vm, on("pve")).is_ok());
-    assert!(check(Runtime::Docker, here(None)).is_ok());
-    // Regression: these were refused only once the lab was downloaded, at its start.
-    // One VM per machine with no hypervisor here.
-    assert!(check(Runtime::Docker, per_machine(None, None)).unwrap_err().to_string().contains("needs a hypervisor on this machine"));
-    // ESXi or Proxmox picked with no host.
-    assert!(check(Runtime::Vm, here(Some(Provider::Proxmox))).unwrap_err().to_string().contains("pick a server host"));
-    // One VM per machine on a server rather than a cloud account.
-    assert_eq!(check(Runtime::Docker, per_machine(None, Some("pve"))).unwrap_err().to_string(), super::PER_MACHINE_NOT_ON_SERVERS);
-    assert!(check(Runtime::Docker, per_machine(None, Some("aws1"))).is_ok());
-    // A container lab on a server (ESXi, Proxmox), which runs no containers.
-    assert_eq!(check(Runtime::Docker, on("pve")).unwrap_err().to_string(), super::CONTAINERS_NOT_ON_SERVERS);
-    assert!(check(Runtime::Docker, on("aws1")).is_ok());
+    let check = |runtime, to: Placement| super::check_destination(&dirs, runtime, &Destination::at(&to));
+    let docker = || Placement::Docker { engine: None, default_ports: false };
+    let vms = |provider| Placement::Vms { provider };
+    let server = |host: &str| Placement::Server { host: host.into() };
+    let cloud = |account: &str, per_machine| Placement::Cloud { account: account.into(), per_machine };
+    // Taken as it is: each kind runs the lab it fits.
+    assert!(check(Runtime::Docker, docker()).is_ok());
+    assert!(check(Runtime::Docker, vms(Provider::Virtualbox)).is_ok());
+    assert!(check(Runtime::Vm, vms(Provider::Qemu)).is_ok());
+    assert!(check(Runtime::Vm, server("pve")).is_ok());
+    assert!(check(Runtime::Cloud, cloud("aws1", false)).is_ok());
+    assert!(check(Runtime::Docker, cloud("aws1", true)).is_ok());
+    assert!(check(Runtime::Docker, cloud("aws1", false)).is_ok());
+    // A cloud-services lab anywhere but a cloud account; a VM lab as containers.
+    assert_eq!(check(Runtime::Cloud, docker()).unwrap_err().code(), Code::PickCloudAccount);
+    assert_eq!(check(Runtime::Cloud, server("pve")).unwrap_err().code(), Code::PickCloudAccount);
+    assert_eq!(check(Runtime::Vm, docker()).unwrap_err().code(), Code::NoHypervisor);
+    // ESXi or Proxmox sent as a hypervisor here.
+    assert!(check(Runtime::Vm, vms(Provider::Proxmox)).unwrap_err().to_string().contains("pick a server host"));
+    // One VM per machine on a server rather than a cloud account; containers on a server.
+    assert_eq!(check(Runtime::Docker, cloud("pve", true)).unwrap_err().to_string(), super::PER_MACHINE_NOT_ON_SERVERS);
+    assert_eq!(check(Runtime::Docker, server("pve")).unwrap_err().to_string(), super::CONTAINERS_NOT_ON_SERVERS);
+    assert_eq!(check(Runtime::Docker, cloud("pve", false)).unwrap_err().to_string(), super::CONTAINERS_NOT_ON_SERVERS);
+    // A cloud account sent as a server.
+    assert_eq!(check(Runtime::Vm, server("aws1")).unwrap_err().to_string(), "this host is a cloud account, not a server");
     // A start on a cloud account under DisableCloudLaunches, which needs no spec.
     let _policy = Override::with(&[Key::DisableCloudLaunches]);
-    assert_eq!(check(Runtime::Docker, on("aws1")).unwrap_err().code(), Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() });
-    assert!(check(Runtime::Vm, on("pve")).is_ok());
+    assert_eq!(check(Runtime::Docker, cloud("aws1", false)).unwrap_err().code(), Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() });
+    assert!(check(Runtime::Vm, server("pve")).is_ok());
 }
