@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::runtime::paths::runner_home_in;
+use crate::runtime::providers::testing::no_tools;
 use crate::runtime::test_support::record_run;
 use crate::testing::runner::is_recorded;
 use crate::testing::test_app::TestApp;
-use crate::testing::tools::Tools;
 
 const SPEC: &str =
     "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";
@@ -75,7 +75,7 @@ fn extras(base: &Path, id: &str) -> Vec<PathBuf> {
 #[tokio::test]
 async fn a_removal_deletes_the_apps_copy_and_records_and_never_the_folder_it_was_imported_from() {
     let t = TestApp::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     crate::testing::service::serve_silent(&crate::runtime::paths::runner_home(&t.dirs()).unwrap());
     let src = source();
     let dir = super::super::for_tests::reimport(&t.dirs(), "local-copy", &src).await.unwrap();

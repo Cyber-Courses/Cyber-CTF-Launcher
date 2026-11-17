@@ -188,13 +188,15 @@ mod tests {
     /// only what they hold (an unscripted call fails the test).
     #[tokio::test]
     async fn nothing_downloaded_is_listed_nor_removed_through_the_commands() {
-        use crate::testing::tools::{Tools, ok};
+        use isothrum_runner::fake::{FakeProcesses, Reply};
         let t = TestApp::new();
-        let tools = Tools::strict_rules(&[("docker image ls -q --no-trunc", ok("")), ("vagrant box list", ok(""))]);
+        let tools = crate::runtime::providers::testing::fake(
+            FakeProcesses::script().allow("docker image ls -q --no-trunc", Reply::ok("")).allow("vagrant box list", Reply::ok("")).build(),
+        );
         let stored = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
         assert!(stored.images.is_empty() && stored.boxes.is_empty());
         assert_eq!(machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap(), 0);
-        assert!(tools.calls().iter().all(|c| c.starts_with("docker image ls") || c.starts_with("vagrant box list")), "nothing removed: {:?}", tools.calls());
+        assert!(tools.lines().iter().all(|c| c.starts_with("docker image ls") || c.starts_with("vagrant box list")), "nothing removed: {:?}", tools.lines());
     }
 
     /// Opening a new window sizes it to the screen, which Tauri's mock runtime can't tell: the

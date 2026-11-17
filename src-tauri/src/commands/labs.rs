@@ -387,9 +387,9 @@ mod tests {
     };
     use crate::commands::lines;
     use crate::run_service::tests::finished;
+    use crate::runtime::providers::testing::no_tools;
     use crate::runtime::{Park, Runtime, providers::Provider};
     use crate::testing::test_app::TestApp;
-    use crate::testing::tools::Tools;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
@@ -517,7 +517,7 @@ mod tests {
         let t = TestApp::new();
         t.lab("web", &[]);
         crate::runtime::test_support::record_run(t.data(), "web", Some(&t.host("az1", "azure", serde_json::json!({}))), "cloud-docker/azure", "ready");
-        let _tools = Tools::rules(&[]);
+        let _tools = no_tools();
         let check = lab_check(t.handle().clone(), "web".into(), Runtime::Docker).await.unwrap();
         assert!(!check.available);
         let vm = lab_check(t.handle().clone(), "web".into(), Runtime::Vm).await.unwrap();
@@ -528,7 +528,7 @@ mod tests {
     async fn a_cloud_lab_has_its_attack_box_in_both_forms_with_its_accounts_place() {
         use crate::runtime::test_support::record_run;
         let t = TestApp::new();
-        let _tools = Tools::rules(&[]);
+        let _tools = no_tools();
         let dir = t.lab("srv", &[("isoloom.yml", SPEC)]);
         let aws1 = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
         record_run(t.data(), "srv", Some(&aws1), "cloud-docker/aws", "ready");
@@ -553,20 +553,20 @@ mod tests {
         // installed, and the attack box started with each lab, reading its status when the launch
         // ended, told "The attack box couldn't be added with the lab: lab … is not installed".
         let t = TestApp::new();
-        let tools = Tools::rules(&[]);
+        let tools = no_tools();
         let status = lab_status(t.handle().clone(), "gone".into(), Runtime::Docker).await.unwrap();
         assert!(!status.running && status.machines.is_empty() && status.parked.is_none());
         // Not a way around the id's check.
         let bad = lab_status(t.handle().clone(), "../x".into(), Runtime::Docker).await.err().unwrap().to_string();
         assert_eq!(bad, "invalid lab id `../x`");
-        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(tools.lines().is_empty(), "{:?}", tools.lines());
     }
 
     #[tokio::test]
     async fn lab_commands_refuse_labs_that_are_not_installed_and_bad_input() {
         let t = TestApp::new();
         let app = || t.handle().clone();
-        let tools = Tools::rules(&[]);
+        let tools = no_tools();
         let s = sink();
         let missing = "lab `gone` is not installed";
         assert_eq!(start_docker(&t, "gone", channel(s.clone())).await.unwrap_err().to_string(), missing);
@@ -591,14 +591,14 @@ mod tests {
                 .to_string(),
             "invalid attack-box image `-x/y z`"
         );
-        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(tools.lines().is_empty(), "{:?}", tools.lines());
         assert!(s.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn the_attack_box_is_read_and_changed_only_through_the_runner() {
         let t = TestApp::new();
-        let tools = Tools::rules(&[]);
+        let tools = no_tools();
         // Installed but never started: the run has no manifest, so the box reads as down, with no
         // runtime touched (everything goes through the runner, which has nothing to report yet).
         t.lab("web", &[("isoloom.yml", SPEC)]);
@@ -616,7 +616,7 @@ mod tests {
         assert!(!crate::runtime::attack_box::added(&dir).unwrap(), "the lab is as published");
         let detach = attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker).await.unwrap();
         assert_eq!(finished(t.handle(), &detach).await.0, Ok(()));
-        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(tools.lines().is_empty(), "{:?}", tools.lines());
         assert!(s.lock().unwrap().is_empty());
     }
 
@@ -693,13 +693,13 @@ mod tests {
     async fn machine_names_outside_plain_ascii_are_refused_before_a_worker_starts() {
         let t = TestApp::new();
         t.lab("ad", &[]);
-        let tools = Tools::rules(&[]);
+        let tools = no_tools();
         let s = sink();
         for bad in ["", "dc01é", "dc01 ", "dc01\n", "ws01/x"] {
             let err = lab_provision(t.handle().clone(), "ad".into(), Runtime::Vm, Some(bad.into())).await.unwrap_err().to_string();
             assert_eq!(err, format!("invalid machine name `{bad}`"));
         }
-        assert!(tools.calls().is_empty() && s.lock().unwrap().is_empty());
+        assert!(tools.lines().is_empty() && s.lock().unwrap().is_empty());
     }
 
     #[test]

@@ -147,9 +147,9 @@ mod tests {
         assert_eq!(screen_connect(w.clone()).await.unwrap_err().to_string(), "this screen window has no session");
         assert!(screen_password(w.clone()).is_err());
         // No Remote Desktop to open: nothing runs (a client this machine lacks says what to install).
-        let tools = crate::testing::tools::Tools::strict_rules(&[]);
+        let tools = crate::runtime::providers::testing::no_tools();
         assert!(screen_open_rdp(w, false).is_err());
-        assert_eq!(tools.calls(), Vec::<String>::new());
+        assert_eq!(tools.lines(), Vec::<String>::new());
     }
 
     #[tokio::test]
@@ -180,10 +180,10 @@ mod tests {
     #[tokio::test]
     async fn a_lab_that_is_not_installed_opens_in_no_app() {
         let t = TestApp::new();
-        let tools = crate::testing::tools::Tools::strict_rules(&[]);
+        let tools = crate::runtime::providers::testing::no_tools();
         let err = screen_open_native(t.handle().clone(), "gone".into(), Runtime::Vm, "web".into()).await.unwrap_err();
         assert_eq!(err.to_string(), "lab `gone` is not installed");
-        assert!(tools.calls().is_empty(), "nothing ran: {:?}", tools.calls());
+        assert!(tools.lines().is_empty(), "nothing ran: {:?}", tools.lines());
     }
 
     #[tokio::test]
@@ -191,9 +191,9 @@ mod tests {
         let t = TestApp::new();
         screen_window(t.handle().clone(), "gone".into(), Runtime::Vm, "web".into(), "Gone".into()).await.unwrap();
         let w = t.handle().get_webview_window("screen-gone:web").unwrap();
-        let tools = crate::testing::tools::Tools::strict_rules(&[]);
+        let tools = crate::runtime::providers::testing::no_tools();
         assert!(screen_connect(w).await.is_err());
-        assert!(tools.calls().is_empty(), "nothing ran");
+        assert!(tools.lines().is_empty(), "nothing ran");
         crate::screen::close("screen-gone:web");
     }
 }

@@ -59,12 +59,12 @@ async fn a_lab_that_was_never_installed_has_nothing_to_tear_down() {
     // A lab whose download failed: the failure isn't said to have left anything up.
     let t = crate::testing::test_app::TestApp::new();
     let deps = test_deps(&t, Arc::default());
-    let tools = crate::testing::tools::Tools::strict_rules(&[]);
+    let tools = crate::runtime::providers::testing::no_tools();
     tear_down(&deps, "gone", Runtime::Docker).await.unwrap();
     tear_down(&deps, "gone", Runtime::Vm).await.unwrap();
     let err = undo_start(&deps, "gone", Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
     assert_eq!(err.to_string(), "download failed: HTTP 404");
-    assert_eq!(tools.calls(), [] as [&str; 0]);
+    assert_eq!(tools.lines(), [] as [&str; 0]);
 }
 
 pub(super) const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -91,12 +91,12 @@ async fn a_refused_website_launch_leaves_the_lab_running_on_the_players_account(
     t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
     let aws = t.host("aws1", "aws", json!({ "useCliCreds": true }));
     crate::runtime::test_support::record_run(t.data(), id, Some(&aws), "cloud-docker", "ready");
-    let tools = crate::testing::tools::Tools::strict_rules(&[]);
+    let tools = crate::runtime::providers::testing::no_tools();
     crate::testing::service::serve_silent(&crate::runtime::paths::runner_home(&dirs).unwrap());
     assert!(crate::runtime::lab_present(&dirs, id).await);
     let err = run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
     assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
-    assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
+    assert!(tools.made("terraform").is_empty(), "nothing torn down: {:?}", tools.lines());
     assert_eq!(crate::runtime::recorded::Recorded::of(&dirs, id).await.unwrap().host(), Some("aws1"));
 }
 
@@ -108,11 +108,11 @@ async fn a_failed_start_of_a_lab_that_was_already_there_is_not_torn_down() {
     let id = "agent-present";
     t.lab(id, &[]);
     crate::runtime::test_support::record_run(t.data(), id, Some("pve1"), "proxmox", "ready");
-    let tools = crate::testing::tools::Tools::strict_rules(&[]);
+    let tools = crate::runtime::providers::testing::no_tools();
     let failure = Error::Invalid("the lab host didn't answer".into());
     let err = undo_start(&test_deps(&t, Arc::default()), id, Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id).await, failure).await;
     assert_eq!(err.to_string(), "the lab host didn't answer");
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
     assert_eq!(crate::runtime::recorded::Recorded::of(&t.dirs(), id).await.unwrap().host(), Some("pve1"));
 }
 

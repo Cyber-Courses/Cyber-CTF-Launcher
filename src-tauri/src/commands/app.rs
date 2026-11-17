@@ -83,7 +83,7 @@ mod tests {
 
     #[tokio::test]
     async fn diagnostics_are_saved_where_the_player_picked() {
-        let _tools = crate::testing::tools::Tools::new(|_, _| None);
+        let _tools = crate::runtime::providers::testing::fake(isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::missing()));
         let t = TestApp::new();
         let out = t.data().join("picked.tar.gz");
         let settings = std::collections::BTreeMap::from([("vmProvider".to_owned(), "qemu".to_owned())]);
