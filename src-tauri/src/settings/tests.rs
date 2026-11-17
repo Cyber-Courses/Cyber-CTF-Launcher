@@ -97,6 +97,7 @@ fn the_tests_and_last_runs_are_kept_by_key_and_a_last_run_is_forgotten_with_its_
         &[Change::LastRun { lab: "web".into(), at: None, place: None }, Change::LastRun { lab: "kube".into(), at: Some(30), place: Some(here.clone()) }],
     )
     .unwrap();
+    assert_eq!(s.last_places.get("kube"), Some(&here), "kube's later start's place");
     // A resume: a later time, the place kept.
     let s = settings_change(&dirs, &[Change::LastRun { lab: "kube".into(), at: Some(40), place: None }]).unwrap();
     assert_eq!(s.self_tests.get("vm"), Some(&failed));
