@@ -75,16 +75,16 @@ async fn forget(home: &Path) {
 }
 
 /// Stops `home`'s service and forgets its connection, for a test that changes the home under it
-/// (a store damaged): the next call starts a service again.
+/// (a store damaged): the next call starts a service again. Returns once the service has ended,
+/// not once it stopped answering: it still writes its store, and the mirror the store is
+/// repaired from, as it lets the home go, which would undo what the test changes.
 #[cfg(test)]
 pub(crate) async fn stop_service(home: &Path) {
     forget(home).await;
     if let Ok(running) = Client::connect_running(home).await {
         drop(running.shutdown().await);
     }
-    while Client::connect_running(home).await.is_ok() {
-        tokio::task::yield_now().await;
-    }
+    crate::testing::service::until_ended(home).await;
 }
 
 /// Whether `e` says the connection is gone (the service was killed or restarted, the connection

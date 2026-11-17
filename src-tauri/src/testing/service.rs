@@ -6,7 +6,7 @@
 //! on this host's tools as the app's service is ([`client`]), and stops once idle or once its
 //! home's folder is gone (the test's temporary folder dropped).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
@@ -192,6 +192,54 @@ pub fn kept(home: &Path) -> bool {
     home.exists()
 }
 
+/// The services of this process still running, by home: each one's [`Running`] guard holds the
+/// sender, so its receiver hears it once the service has ended.
+static RUNNING: Mutex<BTreeMap<PathBuf, tokio::sync::watch::Receiver<()>>> = Mutex::new(BTreeMap::new());
+
+/// A service of `home` in this process, running until dropped.
+struct Running {
+    home: PathBuf,
+    ended: tokio::sync::watch::Sender<()>,
+}
+
+impl Running {
+    /// Notes `home`'s service as running.
+    fn of(home: &Path) -> Running {
+        let (ended, running) = tokio::sync::watch::channel(());
+        RUNNING.lock().unwrap_or_else(PoisonError::into_inner).insert(home.to_path_buf(), running);
+        Running { home: home.to_path_buf(), ended }
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        let mut running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
+        if running.get(&self.home).is_some_and(|r| r.same_channel(&self.ended.subscribe())) {
+            running.remove(&self.home);
+        }
+    }
+}
+
+/// How long a service asked to stop may take to end: longer than Isothrum's longest stop (its
+/// running operations' 40 seconds to drain, then 5 for its tools and 5 for its connections).
+const ENDS_WITHIN: Duration = Duration::from_secs(60);
+
+/// Waits until `home`'s service in this process, if one runs, has ended: it stopped answering
+/// first, then still wrote its store (and its mirror) as it let the home go.
+///
+/// # Panics
+///
+/// It hasn't ended within [`ENDS_WITHIN`].
+pub async fn until_ended(home: &Path) {
+    let running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner).get(home).cloned();
+    if let Some(mut running) = running {
+        // Never sent to: it returns once the sender drops. Timed on the services' runtime, whose
+        // clock is never paused: a test's paused one would skip ahead to the bound.
+        let waited = services_runtime().spawn(async move { tokio::time::timeout(ENDS_WITHIN, running.changed()).await.is_ok() });
+        assert!(waited.await.unwrap(), "the runner service of {} hasn't ended", home.display());
+    }
+}
+
 /// Serves `config.home` (see [`start`]).
 async fn run(config: RunnerConfig, idle: Option<Duration>, waits: bool, until: Until) {
     // A service of this home that is still stopping holds it a moment longer.
@@ -206,6 +254,8 @@ async fn run(config: RunnerConfig, idle: Option<Duration>, waits: bool, until: U
             Err(_) => return,
         }
     };
+    // Dropped once `serve` has returned: the store closed, the home let go.
+    let _running = Running::of(&config.home);
     let Ok(runner) = Runner::new(config) else { return };
     let mut until = Some(until);
     let stop: StopSignal = Box::new(move || until.take().unwrap_or_else(|| Box::pin(std::future::pending())));
