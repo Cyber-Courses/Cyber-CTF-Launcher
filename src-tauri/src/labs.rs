@@ -388,8 +388,9 @@ async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(
 pub struct LaunchRequest {
     /// The lab.
     pub lab_id: String,
-    /// The Vagrant provider a VM lab runs on (when None: the player's saved hypervisor, else this
-    /// machine's default).
+    /// The Vagrant provider a VM lab, or a container lab run as one VM per machine, runs on (when
+    /// None: the player's saved hypervisor, else this machine's default). A container lab given
+    /// one runs as one VM per machine on it.
     pub provider: Option<Provider>,
     /// The saved server or cloud account it runs on (this machine when None).
     pub host: Option<String>,
@@ -409,16 +410,19 @@ pub struct LaunchRequest {
 }
 
 impl LaunchRequest {
-    /// The request with what it leaves open taken from the player's settings `saved`, as the
-    /// window would have filled it: on this machine, the hypervisor, the container engine and the
-    /// port mode they saved. A launch on a server or a cloud account takes none of them. So a
-    /// start from the command line runs where and how one from the window does.
-    fn with_saved(self, saved: &crate::settings::Settings) -> LaunchRequest {
+    /// The request for a `runtime` lab with what it leaves open taken from the player's settings
+    /// `saved`, as the window would have filled it: on this machine, the container engine and the
+    /// port mode they saved, and the hypervisor when the lab runs as VMs (a VM lab, or
+    /// `per_machine_vm`): a container lab given a provider runs as VMs, so the saved one must not
+    /// turn a Start on Docker into one. A launch on a server or a cloud account takes none of
+    /// them. So a start from the command line runs where and how one from the window does.
+    fn with_saved(self, saved: &crate::settings::Settings, runtime: Runtime) -> LaunchRequest {
         if self.host.is_some() {
             return self;
         }
+        let runs_as_vms = runtime == Runtime::Vm || self.per_machine_vm;
         LaunchRequest {
-            provider: self.provider.or(saved.vm_provider),
+            provider: self.provider.or(saved.vm_provider.filter(|_| runs_as_vms)),
             docker_engine: self.docker_engine.or_else(|| saved.docker_engine.map(|e| e.id().to_owned())),
             default_ports: self.default_ports.or_else(|| saved.port_mode.map(|m| m == crate::settings::PortMode::Default)),
             ..self
@@ -441,11 +445,12 @@ pub(crate) struct PreparedLaunch {
 /// runner service (so quitting the app never cuts them short); `log` carries the one "starting
 /// offline" line the preparation may emit.
 pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
-    let request = request.with_saved(&crate::settings::settings_get(dirs)?);
-    let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
+    let saved = crate::settings::settings_get(dirs)?;
+    // The saved settings fill in once the lab's runtime is known: the hypervisor only for VMs.
+    let launch = launch_spec(dirs, &request.lab_id, request.offline, log).await?;
+    let LaunchRequest { provider, host, default_ports, per_machine_vm, docker_engine, .. } = request.with_saved(&saved, launch.runtime);
     let default_ports = default_ports.unwrap_or(false);
     let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
-    let launch = launch_spec(dirs, &lab_id, offline, log).await?;
     Ok(PreparedLaunch { launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
 }
 
@@ -790,18 +795,50 @@ mod tests {
             docker_engine: None,
         };
         // As the command line asks: the saved hypervisor, engine and port mode.
-        let filled = open.clone().with_saved(&saved);
+        let filled = open.clone().with_saved(&saved, Runtime::Vm);
         assert_eq!((filled.provider, filled.docker_engine.as_deref(), filled.default_ports), (Some(Provider::Libvirt), Some("orbstack"), Some(true)));
         // What the request says wins.
         let said = LaunchRequest { provider: Some(Provider::Virtualbox), docker_engine: Some("colima".into()), default_ports: Some(false), ..open.clone() };
-        let kept = said.with_saved(&saved);
+        let kept = said.with_saved(&saved, Runtime::Vm);
         assert_eq!((kept.provider, kept.docker_engine.as_deref(), kept.default_ports), (Some(Provider::Virtualbox), Some("colima"), Some(false)));
         // On a server, nothing of this machine's.
-        let there = LaunchRequest { host: Some("pve".into()), ..open.clone() }.with_saved(&saved);
+        let there = LaunchRequest { host: Some("pve".into()), ..open.clone() }.with_saved(&saved, Runtime::Vm);
         assert_eq!((there.provider, there.docker_engine, there.default_ports), (None, None, None));
         // Nothing saved: nothing filled.
-        let none = open.with_saved(&Settings::default());
+        let none = open.with_saved(&Settings::default(), Runtime::Vm);
         assert_eq!((none.provider, none.docker_engine, none.default_ports), (None, None, None));
+    }
+
+    #[test]
+    fn the_saved_hypervisor_fills_in_only_when_the_lab_runs_as_vms() {
+        // Regression: the saved hypervisor filled every launch here, and a container lab given a
+        // provider runs as one VM per machine: Start on a container lab (no provider, no
+        // per-machine VM, as the window sends it) left Docker for VMs.
+        let saved = crate::settings::Settings {
+            vm_provider: Some(Provider::Virtualbox),
+            docker_engine: Some(crate::machine::system::docker::Engine::Orbstack),
+            ..crate::settings::Settings::default()
+        };
+        let open = LaunchRequest {
+            lab_id: "invoice".into(),
+            provider: None,
+            host: None,
+            default_ports: None,
+            offline: false,
+            per_machine_vm: false,
+            docker_engine: None,
+        };
+        // A container lab stays on Docker, on the saved engine.
+        let containers = open.clone().with_saved(&saved, Runtime::Docker);
+        assert_eq!((containers.provider, containers.docker_engine.as_deref()), (None, Some("orbstack")));
+        // A VM lab runs on the saved hypervisor.
+        assert_eq!(open.clone().with_saved(&saved, Runtime::Vm).provider, Some(Provider::Virtualbox));
+        // A container lab asked as one VM per machine runs on it too.
+        let per_machine = LaunchRequest { per_machine_vm: true, ..open.clone() }.with_saved(&saved, Runtime::Docker);
+        assert_eq!(per_machine.provider, Some(Provider::Virtualbox));
+        // A provider the request names is kept whatever the runtime: the player chose VMs.
+        let chosen = LaunchRequest { provider: Some(Provider::Qemu), ..open }.with_saved(&saved, Runtime::Docker);
+        assert_eq!(chosen.provider, Some(Provider::Qemu));
     }
 
     #[test]
