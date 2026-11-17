@@ -2,7 +2,20 @@
 // attack-box panel (WdioAttack), let it attach the attack box, see it running with an address,
 // open the attacker shell, then Stop it and watch it detach. Drives the same useAttackBox /
 // AttackBoxPanel / useLabShell the catalogue lab page uses.
-import { finish, forceVisible, goTo, invokeCmd, LAB_START_MS, localLab, mainText, openApp, results, waitAwake, waitForLab } from "../support/app.mjs";
+import {
+  finish,
+  forceVisible,
+  goTo,
+  invokeCmd,
+  LAB_START_MS,
+  localLab,
+  mainText,
+  openApp,
+  results,
+  waitAwake,
+  waitForLab,
+  waitSettled,
+} from "../support/app.mjs";
 
 export const needs = ["running-lab:fixture"];
 const r = results();
@@ -113,6 +126,11 @@ try {
     },
     { timeout: 60000, interval: 2000, timeoutMsg: "attack box never detached" },
   );
+  // The panel reads "not started" once the runner reports the box gone, which can be before the
+  // box's removal (an update of the lab's Compose project) has ended. Ending the spec then let the
+  // clean-up take the lab down mid-update, and the run found its Compose project left: the lab
+  // settles first.
+  await waitSettled(b, id);
   r.pass("attack-box", "attached, ran with an address, opened a shell, then detached");
 } catch (e) {
   r.fail("attack-box", e.message);
