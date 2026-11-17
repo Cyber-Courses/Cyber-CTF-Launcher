@@ -153,6 +153,28 @@ async fn a_taken_fixed_port_names_what_holds_it() {
     }
 }
 
+/// A VM lab's fixed forward is checked as a container's fixed port: here on a hypervisor, a taken
+/// one is said with the rest (no hypervisor ready on this test machine); on a server, it isn't
+/// this machine's port.
+#[tokio::test]
+async fn a_vm_labs_fixed_forward_already_taken_is_said_too() {
+    let t = TestApp::new();
+    let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = held.local_addr().unwrap().port();
+    let forwarded = vms().replace(
+        "networks: { lan: 10 } }",
+        &format!("networks: {{ lan: 10 }}, ports: {{ ssh: {{ port: 22, protocol: ssh, publish: {{ host: {port}, fixed: true }} }} }} }}"),
+    );
+    installed(&t, "ad", &forwarded);
+    let _tools = machine(true);
+    let said = checked(&t, "ad", Runtime::Vm, &Placement::Vms { provider: Provider::Qemu }).await.unwrap_err().to_string();
+    assert!(said.contains(&format!("Host port {port} is already in use")), "{said}");
+    // Something of the lab here already (a parked run keeps its forwards): its own.
+    crate::runtime::test_support::record_run(t.data(), "ad", None, "vagrant", "parked");
+    let parked = checked(&t, "ad", Runtime::Vm, &Placement::Vms { provider: Provider::Qemu }).await.unwrap_err().to_string();
+    assert!(!parked.contains(&port.to_string()), "{parked}");
+}
+
 #[tokio::test]
 async fn every_problem_is_said_at_once() {
     let t = TestApp::new();
