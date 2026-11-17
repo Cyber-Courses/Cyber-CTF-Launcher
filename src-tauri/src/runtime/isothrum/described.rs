@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use isothrum_runner::Status;
 use serde_json::Value;
 
 use super::super::{Interface, Network, lab};
@@ -157,19 +158,67 @@ pub(super) fn check_line(line: &str) -> Option<(String, bool, String)> {
     Some((name.trim_end().to_owned(), false, reason.trim_end().to_owned()))
 }
 
-/// The lab's message (how to start, in Markdown) as it reads on `target`, its placeholders
-/// filled from its spec; none when it has none, or when it can't be read (logged).
-pub(super) fn message(dir: &Path, target: lab::Target) -> Option<String> {
-    lab::message_on(dir, target).unwrap_or_else(|e| {
+/// The lab's message (how to start, in Markdown) as it reads on `target`, its placeholders filled
+/// from its spec and its ports where the run published them ([`with_run`]); none when it has none,
+/// or when it can't be read (logged).
+pub(super) fn message(dir: &Path, target: lab::Target, run: Option<&Status>) -> Option<String> {
+    let filled = || -> Result<Option<String>> {
+        let Some(text) = lab::load(dir)?.message else { return Ok(None) };
+        let snapshot = with_run(on_target(lab::resolved(dir)?, target), run);
+        let filled = isoloom_targets::resolved::fill(&text, &snapshot).map_err(|e| crate::error::Error::Invalid(e.to_string()))?;
+        Ok(Some(filled))
+    };
+    filled().unwrap_or_else(|e| {
         log::warn!("{}: the lab's message couldn't be read: {e}", dir.display());
         None
     })
 }
 
-/// Logs the lab's message ([`message`]) on `target` line by line, where a lab's run says where to
-/// start once it is up; nothing when the run has no target or the lab no message.
-pub(super) fn log_message(dir: &Path, target: Option<lab::Target>, log: &mut impl FnMut(String)) {
-    let message = target.and_then(|t| message(dir, t));
+/// The snapshot as the message reads it on `target`: on the targets that run the lab's Compose
+/// file, each machine's `addresses` are its Docker ones (as Isoloom fills a message there).
+fn on_target(mut snapshot: Value, target: lab::Target) -> Value {
+    if matches!(target, lab::Target::Docker | lab::Target::Hosted | lab::Target::CloudDocker) {
+        for m in snapshot["machines"].as_object_mut().into_iter().flat_map(|m| m.values_mut()) {
+            if let Some(docker) = m.get("docker_addresses").cloned() {
+                m["addresses"] = docker;
+            }
+        }
+    }
+    snapshot
+}
+
+/// The snapshot with each port the run published (`run`'s status) at the host port it got, where
+/// the spec only says the one it asked for: a machine's `ports.<p>.published` and `url`, and the
+/// `published` list's `host_port`. A port the run doesn't say it published keeps the spec's.
+fn with_run(mut snapshot: Value, run: Option<&Status>) -> Value {
+    let Some(run) = run else { return snapshot };
+    let mut got = Vec::new();
+    for (machine, m) in snapshot["machines"].as_object_mut().into_iter().flatten() {
+        let Some(seen) = run.machines.iter().find(|s| s.name == *machine) else { continue };
+        for (name, p) in m["ports"].as_object_mut().into_iter().flatten() {
+            let Some(declared) = port(name, p) else { continue };
+            let Some(host) = super::view::published(seen, &declared).map(isothrum_runner::HostPort::get) else { continue };
+            p["published"] = host.into();
+            if p.get("url").is_some() {
+                p["url"] = format!("{}://127.0.0.1:{host}/", if declared.protocol == "https" { "https" } else { "http" }).into();
+            }
+            got.push((machine.clone(), name.clone(), host));
+        }
+    }
+    for entry in snapshot["published"].as_array_mut().into_iter().flatten() {
+        let at = got.iter().find(|(m, n, _)| entry["machine"] == m.as_str() && entry["name"] == n.as_str());
+        if let Some((_, _, host)) = at {
+            entry["host_port"] = (*host).into();
+        }
+    }
+    snapshot
+}
+
+/// Logs the lab's message ([`message`]) on `target` line by line, its ports where the run (`run`)
+/// published them: where a lab's run says where to start once it is up; nothing when the run has
+/// no target or the lab no message.
+pub(super) fn log_message(dir: &Path, target: Option<lab::Target>, run: Option<&Status>, log: &mut impl FnMut(String)) {
+    let message = target.and_then(|t| message(dir, t, run));
     message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
 }
 
@@ -230,9 +279,32 @@ mod tests {
     #[test]
     fn the_message_is_filled_for_its_target_and_a_lab_without_one_says_none() {
         let dir = lab();
-        let said = message(&dir, lab::Target::Docker).expect("a message");
+        let said = message(&dir, lab::Target::Docker, None).expect("a message");
         assert_eq!(said.trim_end(), "Open http://localhost:8080/");
         let bare = crate::runtime::test_support::write_lab("version: 1\nname: t\nmachines:\n  web: { app: { image: nginx:1.27 } }\n");
-        assert_eq!(message(&bare, lab::Target::Docker), None);
+        assert_eq!(message(&bare, lab::Target::Docker, None), None);
+    }
+
+    /// A run's host port isn't always the one the spec asks for (a port picked at random, one
+    /// Vagrant moved): the message names the one the run got.
+    #[test]
+    fn the_message_names_the_host_port_the_run_published() {
+        let dir = lab();
+        let run: Status = serde_json::from_value(serde_json::json!({
+            "state": "ready", "outputs": [],
+            "machines": [{ "name": "web", "state": "running", "published": [
+                { "port": 80, "host_port": 41003, "protocol": "tcp" },
+                { "port": 53, "host_port": 41004, "protocol": "udp" },
+            ] }],
+        }))
+        .unwrap();
+        let said = message(&dir, lab::Target::Docker, Some(&run)).expect("a message");
+        assert_eq!(said.trim_end(), "Open http://localhost:41003/");
+        let snapshot = with_run(lab::resolved(&dir).unwrap(), Some(&run));
+        let site = &snapshot["machines"]["web"]["ports"]["site"];
+        assert_eq!((&site["published"], &site["url"]), (&serde_json::json!(41003), &serde_json::json!("http://127.0.0.1:41003/")));
+        assert_eq!(snapshot["machines"]["web"]["ports"]["dns"]["published"], 41004, "the run's UDP 53 is dns's");
+        let quiet: Status = serde_json::from_value(serde_json::json!({ "state": "ready", "outputs": [], "machines": [] })).unwrap();
+        assert_eq!(message(&dir, lab::Target::Docker, Some(&quiet)).unwrap().trim_end(), "Open http://localhost:8080/", "none said: the spec's");
     }
 }

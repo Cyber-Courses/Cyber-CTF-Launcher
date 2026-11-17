@@ -5,8 +5,8 @@
 //! Isoloom and the runner know nothing of each other; the launcher alone knows both, so only here
 //! does a change on either side show: the page's entry is where the run published the lab's web
 //! port, each port is where the runner says it is, a VM run's kept host ports reach the
-//! Vagrantfile under the names it reads (`HOST_PORT_*`), the lab's message is filled, and the page
-//! offers the parks the run can do.
+//! Vagrantfile under the names it reads (`HOST_PORT_*`), the lab's message names the ports the run
+//! got (not the spec's, on ports picked at random), and the page offers the parks the run can do.
 //!
 //! The examples come from `CYBERCTF_TEST_ISOLOOM_DIR`, else the Isoloom checkout beside this one
 //! (`../isoloom`, the workspace's and `./ws`'s layout); without either the tests fail, saying so,
@@ -92,9 +92,13 @@ impl Installed {
         Deployment::here_with(config, &self.dir, self.id, kind).unwrap()
     }
 
-    /// The lab's message as the start's deploy log ends with it.
-    fn message(&self, target: lab::Target) -> String {
-        described::message(&self.dir, target).unwrap_or_default()
+    /// The lab's message as the start's deploy log `log` ends with it: its last lines, as many as
+    /// the lab's message has, naming as many ports as the spec's.
+    fn message(&self, target: lab::Target, log: &[String]) -> String {
+        let spec = described::message(&self.dir, target, None).unwrap_or_default();
+        let said = log[log.len().saturating_sub(spec.lines().count())..].join("\n");
+        assert_eq!(ports_named(&said).len(), ports_named(&spec).len(), "{}: the start ends with the lab's message: {log:?}", self.id);
+        said
     }
 }
 
@@ -120,9 +124,9 @@ fn ports_named(message: &str) -> Vec<u16> {
 }
 
 /// What the page must show of a run of `lab` that is up: the entry at its first web port's host
-/// port, every port it publishes where the run says, the parks `parks`, and, given, the message
-/// filled in and naming only ports the run published.
-fn joined(lab: &Installed, status: &LabStatus, seen: &[Seen], message: Option<&str>, parks: &[Park]) {
+/// port, every port it publishes where the run says, the parks `parks`, and the message filled in
+/// and naming only ports the run published, where the run published them.
+fn joined(lab: &Installed, status: &LabStatus, seen: &[Seen], message: &str, parks: &[Park]) {
     let id = lab.id;
     assert!(status.running, "{id}: running");
     let shown = published(status);
@@ -140,7 +144,6 @@ fn joined(lab: &Installed, status: &LabStatus, seen: &[Seen], message: Option<&s
         None => assert_eq!(status.url, None, "{id}: no web port, no entry"),
     }
     assert_eq!(status.parks, parks, "{id}: the parks the page offers");
-    let Some(message) = message else { return };
     assert!(!message.contains("{{"), "{id}: the message is filled in: {message}");
     let published: Vec<u16> = seen.iter().map(|s| s.host).collect();
     for port in ports_named(message) {
@@ -156,24 +159,23 @@ async fn isoloom_examples_as_containers_join_their_run_on_the_lab_page() {
         let run = lab.run(Kind::Docker);
         let mut log = Vec::new();
         run.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, None, &mut |l| log.push(l)).await.unwrap();
-        let message = lab.message(lab::Target::Docker);
-        assert!(log.join("\n").ends_with(message.trim_end()), "{id}: the start ends with the lab's message: {log:?}");
+        let message = lab.message(lab::Target::Docker, &log);
         let status = run.status().await.unwrap();
         let seen = docker_published(&lab.tools);
-        joined(&lab, &status, &seen, Some(&message), &[Park::Pause, Park::Shutdown]);
+        joined(&lab, &status, &seen, &message, &[Park::Pause, Park::Shutdown]);
         run.park(Park::Pause, &mut |_| {}).await.unwrap();
         assert_eq!(run.status().await.unwrap().parked, Some(Park::Pause), "{id}");
         run.resume(&mut |_| {}).await.unwrap();
         assert_eq!(published(&run.status().await.unwrap()), published(&status), "{id}: a resumed run is where it was");
         run.down(&mut |_| {}).await.unwrap();
         // On ports picked at random, the runner pins each publish to a free port in an override of
-        // its own (a port the spec keeps fixed stays), and the page follows it. The message isn't
-        // checked there, a known gap: it is filled from the spec, so it names the lab's own ports,
-        // not the run's.
-        run.up(Inputs::default(), None, &mut |_| {}).await.unwrap();
+        // its own (a port the spec keeps fixed stays), and the page and the message follow it.
+        let mut log = Vec::new();
+        run.up(Inputs::default(), None, &mut |l| log.push(l)).await.unwrap();
         let pinned = docker_published(&lab.tools);
         assert!(pinned.iter().all(|p| FREE.contains(&p.host) || seen.contains(p)), "{id}: each publish pinned to a free port, or fixed: {pinned:?}");
-        joined(&lab, &run.status().await.unwrap(), &pinned, None, &[Park::Pause, Park::Shutdown]);
+        let message = lab.message(lab::Target::Docker, &log);
+        joined(&lab, &run.status().await.unwrap(), &pinned, &message, &[Park::Pause, Park::Shutdown]);
         run.down(&mut |_| {}).await.unwrap();
     }
 }
@@ -186,11 +188,10 @@ async fn isoloom_examples_as_vms_join_their_run_on_the_lab_page_and_keep_their_p
         let run = lab.run(Kind::Vm);
         let mut log = Vec::new();
         run.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
-        let message = lab.message(lab::Target::Vagrant);
-        assert!(log.join("\n").ends_with(message.trim_end()), "{id}: the start ends with the lab's message: {log:?}");
+        let message = lab.message(lab::Target::Vagrant, &log);
         let status = run.status().await.unwrap();
         let seen = locked(&lab.vms).seen();
-        joined(&lab, &status, &seen, Some(&message), &[Park::Pause, Park::Shutdown]);
+        joined(&lab, &status, &seen, &message, &[Park::Pause, Park::Shutdown]);
         // Parked and started again, the run gives each kept port back under the name the
         // Vagrantfile reads it from; one it didn't would move, as Vagrant re-picks it.
         run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
