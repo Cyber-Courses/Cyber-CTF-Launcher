@@ -149,10 +149,8 @@ case "$APP_BIN" in
       say "frontend: reusing the dev server on port $DEV_URL_PORT"
     else
       say "frontend: next dev on port $DEV_URL_PORT (a cargo build app loads devUrl, not out/)"
-      set -m
-      pnpm exec next dev --hostname 127.0.0.1 --port "$DEV_URL_PORT" >"$LOGS/next-dev.log" 2>&1 &
-      NEXT_PGID=$!
-      set +m
+      start_next_dev "$HERE" "$DEV_URL_PORT" "$LOGS/next-dev.log"
+      NEXT_PGID=$NEXT_DEV_PGID
       for _ in $(seq 1 90); do
         serves "$DEV_URL_PORT" && break
         sleep 2

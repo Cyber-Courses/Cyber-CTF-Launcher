@@ -53,8 +53,24 @@ wanted() {
   return 0
 }
 
-# serves <port>: whether a web server answers on this machine's port (a dev server to reuse).
-serves() { curl -fsS -o /dev/null "http://127.0.0.1:$1/"; }
+# serves <port>: whether a web server answers on this machine's port (a dev server to reuse)
+# within SERVES_TIMEOUT seconds (10): one that takes the request and never answers is no answer.
+serves() { curl -fsS --max-time "${SERVES_TIMEOUT:-10}" -o /dev/null "http://127.0.0.1:$1/"; }
+
+# start_next_dev <dir> <port> <log>: `next dev` for the frontend in <dir>, on 127.0.0.1:<port>,
+# its output in <log>, in a process group of its own (its id in NEXT_DEV_PGID), on a dev cache of
+# its own: <dir>/.next/dev, Turbopack's persistent cache, removed first. A cache another run, a
+# build or an older state of the folder left there sent the server reading the whole folder (a
+# stale src-tauri/target of gigabytes with it) again and again: the page's requests were never
+# answered, and every app of the run showed a blank window.
+start_next_dev() {
+  rm -rf "$1/.next/dev"
+  set -m
+  (cd "$1" && exec pnpm exec next dev --hostname 127.0.0.1 --port "$2") >"$3" 2>&1 &
+  # shellcheck disable=SC2034 # read by the runner that calls it
+  NEXT_DEV_PGID=$!
+  set +m
+}
 
 # record <step> <ok|FAIL|skip> <seconds> <detail> [form] [provider] [log]: one line of the summary,
 # and the step's JSON record when the run writes them (suite_results_to), the detail its reason.
