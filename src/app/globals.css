@@ -1,4 +1,9 @@
-@import "tailwindcss";
+/* Tailwind's classes come from src/ alone, the UI's own files (globals-css.test.ts holds it). Left
+ * to find its sources, Tailwind takes the whole project; in a copy inside another repository that
+ * ignores it (the workspace's build/src/) it had Turbopack read every file there, src-tauri/target's
+ * gigabytes among them, again on each file a run wrote: `next dev` stopped answering, and the
+ * desktop e2e's apps never got their page. */
+@import "tailwindcss" source("../");
 @import "./topology.css";
 
 /*
