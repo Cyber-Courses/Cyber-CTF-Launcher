@@ -1,0 +1,16 @@
+# gitleaks (the pre-push hook's and CI's secret scan): its default rules, every one kept, plus the
+# test fixtures it mistakes for secrets, each allowed by its one rule, file and exact value.
+
+[extend]
+useDefault = true
+
+# A test fixture, not a secret: the launch values a test masks in the deploy log
+# (src-tauri/src/runtime/launch/tests.rs) read like an API key to `generic-api-key`. Only that
+# value, in that file, for that rule: any other token there, or this one anywhere else, is
+# still found.
+[[allowlists]]
+description = "launch/tests.rs: the masked launch token test fixture"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^src-tauri/src/runtime/launch/tests\.rs$''']
+regexes = ['''^t0ken-masked-7f3a$''']
