@@ -131,16 +131,16 @@
       "boxes": "Boxen holen",
       "create": "Netzwerk und Container erstellen",
       "start": "Container starten",
-      "health": "Warten, bis alles bereit ist"
+      "health": "Warten, bis alles bereit ist",
+      "up": "Maschine starten",
+      "provision": "Maschine einrichten",
+      "init": "Terraform einrichten",
+      "apply": "Infrastruktur erstellen",
+      "ready": "Lab installieren und starten"
     },
     "steps": {
       "download": "Lab herunterladen",
       "prepareMachine": "Diesen Rechner vorbereiten",
-      "start": "Starten",
-      "tfInit": "Terraform einrichten",
-      "tfApply": "Infrastruktur erstellen",
-      "tfReady": "Lab installieren und starten",
-      "prepareLab": "Lab vorbereiten",
       "preparing": "Wird vorbereitet",
       "attackBox": "Angriffsbox hinzufügen",
       "afterReady": "Laufendes Lab ändern"

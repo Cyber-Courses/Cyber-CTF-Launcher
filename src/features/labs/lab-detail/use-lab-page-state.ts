@@ -7,6 +7,9 @@ import type { ErrorCode } from "@/lib/errors";
 import { operationSeenAt, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
 import { useWorkerLog } from "@/features/labs/runs/worker-log";
 import { failureOf } from "@/lib/log-marks";
+import type { SaidStep } from "@/lib/tauri/run-events";
+
+const NO_MARKS: SaidStep[] = [];
 
 /** The failed operation's id (none while one runs): this session's run's when it has the log, else
  *  the replayed one's. */
@@ -30,6 +33,7 @@ export function useLabPageState(
   {
     logs,
     times,
+    marks,
     runOp,
     runStartedAt,
     runFailureCode,
@@ -39,6 +43,8 @@ export function useLabPageState(
   }: Omit<LabStateInput, "backendDeploying" | "backendOp" | "startFailed" | "runOp"> & {
     logs: string[];
     times: number[];
+    /** The steps the runner said among `logs`. */
+    marks?: SaidStep[];
     /** What this session's last run on the lab was (launch, stop…), and when it began. */
     runOp?: LabOperation;
     runStartedAt?: number;
@@ -70,7 +76,8 @@ export function useLabPageState(
     ...state,
     lastOperation,
     shownLogs,
-    shownTimes: local ? times : worker.times,
+    /** The deploy log the panel shows: its lines, when each came, and the runner's steps among them. */
+    deployLog: local ? { lines: logs, times, marks: marks ?? NO_MARKS } : { lines: worker.lines, times: worker.times, marks: worker.marks },
     // A run that ended in ✗ failed.
     deployFailed: failure !== null,
     /** The failure the last run ended on, and which operation it was (null while one runs). */

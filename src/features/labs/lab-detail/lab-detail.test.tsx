@@ -163,7 +163,12 @@ describe("LabDetail", () => {
     renderDetail({
       lab: vmLab,
       status: status({ running: false, machines: [], place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
-      deploy: { busy: true, logs: ["==> DC01: Importing base box", "==> DC01: Booting VM...", "TASK [Configure SRV02] ***"], times: [1, 2, 3] },
+      deploy: {
+        busy: true,
+        logs: ["==> DC01: Importing base box", "==> DC01: Booting VM...", "TASK [Configure SRV02] ***"],
+        times: [1, 2, 3],
+        marks: [{ step: { step: "up", state: "started", label: "DC01", count: null }, at: 1, line: 0 }],
+      },
     });
     await flush();
     expect(screen.getAllByText(/Starting/).length).toBeGreaterThan(0);

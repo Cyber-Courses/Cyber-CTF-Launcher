@@ -132,6 +132,7 @@ export function useLabDetail(p: LabDetailProps) {
     provisionable: !!p.onProvision,
     logs: deploy.logs,
     times: deploy.times,
+    marks: deploy.marks,
     runOp: deploy.op,
     runStartedAt: deploy.startedAt,
     runFailureCode: deploy.failureCode,

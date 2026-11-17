@@ -1010,7 +1010,7 @@ areas:
           unit:
             - src-tauri/src/runtime/isothrum/errors/tests.rs > a_download_that_stalled_or_failed_says_what_it_fetched
             - src-tauri/src/runtime/isothrum/tests.rs > an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull
-            - src/features/labs/deploy-log.test.ts > the runner's pull before the containers start is the images phase, its progress in it
+            - src/features/labs/deploy-log.test.ts > reads Docker Compose's steps as the runner says them, each with how far it got
             - src/features/labs/deploy-steps.test.tsx > starts over on a new run, and ticks the running step's time on its own
             - src/features/labs/failure-hints.test.ts > reads a download of the lab's images that stalled as the network, and one that failed by Docker's words
             - src/lib/errors.test.ts > "downloadStalled"
@@ -1040,7 +1040,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/isothrum/errors/tests.rs > a_download_that_stalled_or_failed_says_what_it_fetched
-            - src/features/labs/deploy-log.test.ts > gives the boxes downloaded before a Vagrant start their own step, the lab's download its own
+            - src/features/labs/deploy-log.test.ts > gives the boxes downloaded before the machines their own step, the lab's download its own
             - src/features/labs/failure-hints.test.ts > reads a VM box download that stalled as the network, and one that failed by Vagrant's words
             - src/lib/errors.test.ts > "boxDownloadStalled"
         gaps:

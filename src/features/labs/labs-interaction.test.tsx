@@ -8,6 +8,7 @@ import { setPortMode } from "@/lib/settings";
 import { dockerOnlyReport, readyReport } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, stream, type Handler } from "@/test/tauri";
 import type { SystemReport } from "@/lib/tauri";
+import type { DeployStep } from "@/lib/tauri/generated";
 import { flush, preloadLabScreens } from "@/test/ui";
 import { must } from "@/components/test-support";
 import { VMS_HERE, containerMachine, labStatus, rejectWith, rowTitles } from "@/features/labs/labs-test-kit";
@@ -182,8 +183,15 @@ const officeEsxi: Record<string, Handler> = {
 };
 const kubeUp = () => status({ running: true, machines: [machine("dashboard")], url: "http://127.0.0.1:8443", place: "container", provider: "docker" });
 
-/** A lab_launch that streams `lines`, then waits for `release()`; `more()` streams further lines. */
-function heldLaunch(...lines: string[]) {
+/** A step the runner says: `id state`, as the core passes it on. */
+const step = (text: string): DeployStep => {
+  const [id, state] = text.split(" ");
+  return { step: id, state: state as DeployStep["state"], label: null, count: null };
+};
+
+/** A lab_launch that streams `lines` (log lines, and steps the runner says), then waits for
+ *  `release()`; `more()` streams further ones. */
+function heldLaunch(...lines: (string | DeployStep)[]) {
   let args: Record<string, unknown> | undefined;
   let release!: (v?: unknown) => void;
   let reject!: (e: unknown) => void;
@@ -197,7 +205,7 @@ function heldLaunch(...lines: string[]) {
   };
   return {
     handler,
-    more: (...l: string[]) => {
+    more: (...l: (string | DeployStep)[]) => {
       stream(args, ...l);
     },
     release: () => {
@@ -223,7 +231,7 @@ async function doubleClickStart() {
 describe("Lab page, driven through the Labs screen", () => {
   it("follows a container start step by step from the streamed lines, then reads Ready", async () => {
     setPortMode("random");
-    const launch = heldLaunch("Downloading CyberCTF/kube-dashboard-exposed@abc123", " Network cyberctf-kube_default Creating");
+    const launch = heldLaunch("Downloading CyberCTF/kube-dashboard-exposed@abc123", step("create started"), " Network cyberctf-kube_default Creating");
     let up = false;
     renderLabs(
       KUBE,
@@ -241,7 +249,7 @@ describe("Lab page, driven through the Labs screen", () => {
     expect(within(deployment()).getByText("Starting")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Download the lab/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Create the network and containers/ })).toBeTruthy();
-    launch.more(" Container kube-dashboard-1 Starting", " Container kube-dashboard-1 Started");
+    launch.more(step("create done"), step("start started"), " Container kube-dashboard-1 Starting", " Container kube-dashboard-1 Started");
     await flush(LOG_BATCH);
     expect(screen.getByRole("button", { name: /Start the containers/ })).toBeTruthy();
     // The running step shows its newest line inline.
@@ -278,7 +286,10 @@ describe("Lab page, driven through the Labs screen", () => {
     setPortMode("random");
     const launch = heldLaunch(
       "Downloading CyberCTF/kube-dashboard-exposed@abc123",
+      step("create started"),
       " Container kube-dashboard-1 Creating",
+      step("create done"),
+      step("start started"),
       " Container kube-dashboard-1 Starting",
     );
     renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() }, { ...dockerOnlyReport(), arch: "x86_64" });

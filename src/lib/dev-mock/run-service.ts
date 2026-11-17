@@ -3,7 +3,9 @@
 // `logs` argument, and how it ends, become the run events the webview follows (`run-events`), as
 // the core sends them. A handler that throws before it awaits anything is the core refusing the
 // command (the invoke rejects, nothing runs); one that fails later is the operation failing.
-import type { CommandError, Cursored, LabStatus, Operation, OperationId, Runtime } from "@/lib/tauri/generated";
+import type { CommandError, Cursored, DeployStep, LabStatus, Operation, OperationId, Runtime } from "@/lib/tauri/generated";
+
+type RunEvent = Cursored["event"];
 import type { ActiveOperation } from "@/lib/tauri/run-events";
 import { forgetRunEvents, takeIn } from "@/lib/tauri/run-events";
 import { registerReset } from "@/lib/module-state";
@@ -68,13 +70,17 @@ export function startOperation(cmd: string, args: Args, handler: (args: Args) =>
     emit({ kind: "ended", operation, labId, op, error });
     scan?.().then(tellRunning, () => undefined);
   };
-  // Lines streamed before the operation is told as started (the handler's first, synchronous
-  // ones) wait for it.
-  let held: string[] | null = [];
+  // What the handler streams: a log line, or a step the runner says (a `DeployStep`). What it
+  // streams before the operation is told as started (its first, synchronous ones) waits for it.
+  const told = (said: unknown): RunEvent =>
+    typeof said === "object" && said !== null && "step" in said
+      ? { kind: "step", operation, labId, step: said as DeployStep }
+      : { kind: "log", operation, labId, line: String(said) };
+  let held: RunEvent[] | null = [];
   const logs = {
-    onmessage: (line: unknown) => {
-      if (held) held.push(String(line));
-      else emit({ kind: "log", operation, labId, line: String(line) });
+    onmessage: (said: unknown) => {
+      if (held) held.push(told(said));
+      else emit(told(said));
     },
   };
   // Run first: a refusal throws here, before the operation exists.
@@ -82,7 +88,7 @@ export function startOperation(cmd: string, args: Args, handler: (args: Args) =>
   const runtime = (typeof args?.runtime === "string" ? args.runtime : null) as Runtime | null;
   const deploying = op !== "stop" && op !== "pause" && op !== "shutdown";
   emit({ kind: "started", operation, labId, op, machine: (args?.machine as string | null) ?? null, runtime, deploying, at: Date.now() });
-  for (const line of held) emit({ kind: "log", operation, labId, line });
+  for (const event of held) emit(event);
   held = null;
   Promise.resolve(running).then(
     () => {

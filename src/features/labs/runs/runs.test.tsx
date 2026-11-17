@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import {
   appendDeployLog,
+  appendDeployStep,
   beginDeploy,
   endDeploy,
   failDeploy,
@@ -73,6 +74,18 @@ describe("deploy runs", () => {
     appendDeployLog("a", "two");
     expect(runOf("a").times).toHaveLength(2);
     expect(runOf("a").times.every((t) => typeof t === "number")).toBe(true);
+  });
+
+  it("places each step the runner said after the lines in before it, flushed or not", () => {
+    beginDeploy("a");
+    appendDeployLog("a", "one");
+    getDeploySnapshot();
+    appendDeployLog("a", "two");
+    appendDeployStep("a", { step: "images", state: "started", label: null, count: null });
+    appendDeployLog("a", "three");
+    expect(runOf("a").marks?.map((m) => [m.step.step, m.line])).toEqual([["images", 2]]);
+    beginDeploy("a");
+    expect(runOf("a").marks).toEqual([]);
   });
 
   it("ends no run for a lab that never started", () => {

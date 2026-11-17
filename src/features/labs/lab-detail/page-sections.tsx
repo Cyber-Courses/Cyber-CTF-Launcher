@@ -161,8 +161,7 @@ export function LabDeployment({ page }: { page: LabPage }) {
   const { s, run, acting, act } = page;
   return (
     <DeploymentPanel
-      lines={s.shownLogs}
-      times={s.shownTimes}
+      {...s.deployLog}
       busy={s.deploying}
       ready={s.running && !s.tearingDown}
       where={deployDestination(t, page.place, run.runOn, run.hosts)}

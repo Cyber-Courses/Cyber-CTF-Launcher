@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { DeploySteps } from "@/features/labs/deploy-steps";
 import type { LabOperation } from "@/features/labs/lab-detail/lab-state";
 import { useT } from "@/lib/i18n";
+import type { SaidStep } from "@/lib/tauri/run-events";
 
 /** The re-run setup button's icon and word: a spinner while it runs. */
 export function RerunSetupLabel({ running }: { running: boolean }) {
@@ -22,6 +23,7 @@ export function RerunSetupLabel({ running }: { running: boolean }) {
 export function DeploymentPanel({
   lines,
   times,
+  marks,
   busy,
   ready,
   where,
@@ -34,6 +36,8 @@ export function DeploymentPanel({
 }: {
   lines: string[];
   times: number[];
+  /** The steps the runner said among `lines`. */
+  marks?: readonly SaidStep[];
   busy: boolean;
   ready: boolean;
   where: string;
@@ -49,7 +53,17 @@ export function DeploymentPanel({
   const t = useT();
   return (
     <Panel>
-      <DeploySteps lines={lines} times={times} busy={busy} ready={ready} where={where} operation={operation} startedAt={startedAt} liveStep={liveStep} />
+      <DeploySteps
+        lines={lines}
+        times={times}
+        marks={marks}
+        busy={busy}
+        ready={ready}
+        where={where}
+        operation={operation}
+        startedAt={startedAt}
+        liveStep={liveStep}
+      />
       {/* A VM lab whose setup broke on one step (a Windows domain join timing out on a busy host)
           still has every machine built: running the setup again continues it in minutes, where
           a clean start would rebuild everything. */}

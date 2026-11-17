@@ -62,7 +62,8 @@ function TimedLog({ rows, origin }: { rows: Timed[]; origin: number }) {
   );
 }
 
-/** One step: its mark, label and duration (`from` to `to`), opening onto its own lines. */
+/** One step: its mark, label, how far it is and duration (`from` to `to`), opening onto its own
+ *  lines. */
 export function StepItem({
   step: p,
   state,
@@ -93,7 +94,11 @@ export function StepItem({
         className="group grid w-full grid-cols-[1.25rem_minmax(0,1fr)_auto_0.875rem] items-center gap-3 px-4 py-2 text-left text-[0.8125rem] transition-colors hover:bg-glass"
       >
         <StepMark state={state} />
-        <span className={cn("truncate", state === "fail" ? "text-destructive" : "text-foreground")}>{p.label}</span>
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className={cn("truncate", state === "fail" ? "text-destructive" : "text-foreground")}>{p.label}</span>
+          {/* How far it is (2/5), or what a machine does now. */}
+          {p.said?.detail && <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-faint">{p.said.detail}</span>}
+        </span>
         <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{to === null ? <LiveDuration from={from} /> : formatDuration(to - from)}</span>
         <ChevronRight className={cn("size-3.5 text-faint transition-transform group-hover:text-muted-foreground", expanded && "rotate-90")} />
       </button>

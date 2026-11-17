@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { emit } from "@tauri-apps/api/event";
 import { describe, expect, it } from "vitest";
-import { awaitOperation, connectRunEvents, inFlight, lastRunOf, runEventsNow, takeIn } from "@/lib/tauri/run-events";
+import { awaitOperation, connectRunEvents, inFlight, lastRunOf, onFollowedStep, runEventsNow, takeIn } from "@/lib/tauri/run-events";
 import { EVENTS } from "@/lib/tauri/generated/Events";
 import type { CommandError, Cursored } from "@/lib/tauri/generated";
 import { installTauri, rejects } from "@/test/tauri";
@@ -15,6 +15,10 @@ const started = (cursor: number, operation: string, labId: string, at = 0): Curs
   event: { kind: "started", operation, labId, op: "launch", machine: null, runtime: "DOCKER", deploying: true, at },
 });
 const log = (cursor: number, operation: string, labId: string, line: string): Cursored => ({ cursor, event: { kind: "log", operation, labId, line } });
+const step = (cursor: number, operation: string, labId: string, id: string): Cursored => ({
+  cursor,
+  event: { kind: "step", operation, labId, step: { step: id, state: "started", label: null, count: null } },
+});
 const ended = (cursor: number, operation: string, labId: string, error: CommandError | null = null): Cursored => ({
   cursor,
   event: { kind: "ended", operation, labId, op: "launch", error },
@@ -64,6 +68,24 @@ describe("the run events store", () => {
     const failed = awaitOperation("op-2", () => {});
     takeIn([ended(6, "op-2", "web", { code: "dockerNotRunning", message: "Docker isn't running." })]);
     await expect(failed).rejects.toMatchObject({ code: "dockerNotRunning" });
+  });
+
+  it("keeps an operation's steps among its lines, and hands each on in its place to whoever follows it", async () => {
+    installTauri({ run_events: () => [] });
+    takeIn([started(1, "op-1", "web"), log(2, "op-1", "web", "before"), step(3, "op-1", "web", "images")]);
+    expect(
+      runEventsNow()
+        .operations.get("op-1")
+        ?.steps.map((s) => [s.step.step, s.line]),
+    ).toEqual([["images", 1]]);
+    const seen: string[] = [];
+    const off = onFollowedStep((labId, s) => seen.push(`${labId}: ${s.step}`));
+    const done = awaitOperation("op-1", (l) => seen.push(l));
+    await flush();
+    takeIn([log(4, "op-1", "web", "after"), step(5, "op-1", "web", "create"), ended(6, "op-1", "web")]);
+    await expect(done).resolves.toBeUndefined();
+    off();
+    expect(seen).toEqual(["before", "web: images", "after", "web: create"]);
   });
 
   it("starts an operation through its command and follows it, a refusal rejecting at once", async () => {

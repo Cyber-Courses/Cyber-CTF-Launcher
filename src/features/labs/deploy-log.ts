@@ -1,133 +1,110 @@
 import type { T } from "@/lib/i18n";
 import { machineLabel } from "@/lib/format";
-import { FETCH_LINES, PREPARE_LINES } from "@/lib/tauri";
+import type { DeployStep, StepCount } from "@/lib/tauri/generated";
+import type { SaidStep } from "@/lib/tauri/run-events";
+import { FETCH_LINES, PREPARE_LINES, STEP_IDS } from "@/lib/tauri";
 
 /**
- * A lab's start-up log read as named steps. Which steps appear depends on the target the
- * launcher is driving, detected from the output itself:
- *  - Docker Compose: pull images, create, start, wait until healthy.
- *  - Vagrant (a VM on this machine, or an ESXi host): one step per machine (dc01, ws01, …), each
- *    showing its live action (importing the box, booting, provisioning); before them, the boxes
- *    the runner downloads, and in a Docker VM the images it pulls, each a step of its own.
- *  - Terraform (a cloud account or Proxmox): set up Terraform, create the infrastructure, then
- *    install and start the lab on the host.
+ * A lab's start-up log as named steps, built from the steps the runner says (its `step` run
+ * events), never from a tool's words:
+ *  - Docker Compose: get the images, create, start, wait until healthy.
+ *  - Vagrant: get the boxes, then one step per machine (dc01, ws01, …), started then set up.
+ *  - Terraform: set up Terraform, create the infrastructure, then install and start the lab.
+ * Before the runner's first step, the launcher's own: the lab's download, and the preparation of
+ * this machine. Each log line goes to the step running when it came.
  */
 
 /** A log line and when it arrived (ms). */
 export type Timed = { line: string; at: number };
-export type Step = { id: string; label: string; rows: Timed[] };
 
-// Docker Compose phases, matched line by line.
-type Phase = { id: "images" | "create" | "start" | "health"; match: (line: string) => boolean };
-const DOCKER_PHASES: Phase[] = [
-  { id: "images", match: (l) => /\bImage\b.*\b(Pulling|Pulled|Building|Built)\b|^\s*(Pulling|Building)\b/.test(l) },
-  { id: "create", match: (l) => /\b(Network|Volume|Container)\b.*\b(Creating|Created)\b/.test(l) },
-  { id: "start", match: (l) => /\bContainer\b.*\b(Starting|Started)\b/.test(l) },
-  { id: "health", match: (l) => /\bContainer\b.*\b(Waiting|Healthy|Exited)\b/.test(l) },
-];
+/** Where a step the runner said stands: running, done, failed, or cut short. */
+type SaidState = "running" | "ok" | "fail" | "skipped";
 
-/** Which target's output this is, inferred from the lines seen so far. */
-export function detectTarget(text: string): "vagrant" | "terraform" | "docker" | "unknown" {
-  if (/^\s*==>\s*\S+:/m.test(text) || /Bringing machine '.*' up/.test(text)) return "vagrant";
-  if (/Initializing the backend|Terraform (has been|will perform)|^\s*[\w.[\]"-]+: (Creating|Creation complete|Still creating)/m.test(text)) return "terraform";
-  if (/\bContainer\b.*\b(Creating|Started|Running)\b|^\s*Pulling\s|\bNetwork\b.*\bCreat/m.test(text)) return "docker";
-  return "unknown";
-}
+/** A step as the deploy panel shows it: its lines, and, for one the runner said, where it stands
+ *  (`said`), when it began and ended, and how far it is (`detail`: "2/5", or what a machine does
+ *  now). */
+export type Step = {
+  id: string;
+  label: string;
+  rows: Timed[];
+  said?: { state: SaidState; from: number; to: number | null; detail: string | null };
+};
 
 const startsAny = (starts: readonly string[]) => (l: string) => starts.some((start) => l.startsWith(start));
-// A line the launcher prints while fetching/placing the lab, before the target's own output.
+// A line the launcher prints while fetching/placing the lab, before the runner's steps.
 const isDownloadLine = startsAny(FETCH_LINES);
 // The launcher's own narration while it readies this machine for a lab's VMs (its memory, QEMU's
 // emulation, a previous run's leftovers).
 const isPrepLine = startsAny(PREPARE_LINES);
 
-/** The step of the machine a Vagrant failure names ("…while executing the action on the
- *  'isoloom-controller' machine"), if it names one: that step failed, not necessarily the last
- *  one shown (another machine's lines can come last, as in a parallel `vagrant up`). */
-export function failedMachineStep(failure: string): string | null {
-  const m = failure.match(/executing the action on the '([A-Za-z0-9_.-]+)'/);
-  return m ? `m:${m[1]}` : null;
+type StepId = (typeof STEP_IDS)[number];
+const isStepId = (id: string): id is StepId => (STEP_IDS as readonly string[]).includes(id);
+
+/** A machine's steps (`up`, then `provision`) share the machine's row. */
+const MACHINE_STEPS: readonly string[] = ["up", "provision"];
+
+/** The row a step of the runner's goes to: its id and label. */
+function rowOf(t: T, { step, label }: DeployStep): { id: string; label: string } {
+  if (label && MACHINE_STEPS.includes(step)) return { id: `machine:${label}`, label: machineLabel(label) };
+  const name = isStepId(step) ? t(`labs.deploy.phases.${step}`) : step;
+  return label ? { id: `${step}:${label}`, label: `${name}: ${label}` } : { id: step, label: name };
 }
 
-/** Which step a line goes to: its id and label. */
-type StepKey = { id: string; label: string };
-/** Places each line in a step, for one target; it keeps what earlier lines set (the machine, the
- *  Docker phase). `last` is the step the previous line went to. */
-type Stepper = (line: string, last: Step | undefined) => StepKey;
+const SAID: Record<DeployStep["state"], SaidState> = { started: "running", done: "ok", failed: "fail", skipped: "skipped" };
 
-// The runner's downloads before a start, each in a step of its own: the boxes a `vagrant up` boots
-// (its line, then `vagrant box add`'s, which speaks as `box`), and the images a Compose start in a
-// Docker VM pulls (its line, then Compose's, until the start's own line).
-const BOXES_LINE = "Downloading the VMs' boxes";
-const IMAGES_IN_VM_LINE = "Pulling the environment's images in the VM";
-const STARTING_IN_VM_LINE = "Starting the environment's containers in the VM";
-const isBoxLine = (l: string) => l.startsWith(BOXES_LINE) || /^\s*(==>\s*)?box:/.test(l);
+/** How far a step is, as its row says it: "2/5" (or "2" before the total is known). */
+const counted = (count: StepCount | null) => (count ? [count.done, count.total].filter((n) => n !== null).join("/") : null);
 
-/** Vagrant: one step per machine, from the first `==> name:` line on; before it, the start. The
- *  boxes downloaded first, and a Docker VM's images, are steps of their own. */
-function vagrantStepper(t: T): Stepper {
-  let machine: string | null = null;
-  let images = false;
-  return (l) => {
-    if (isBoxLine(l)) return { id: "boxes", label: t("labs.deploy.phases.boxes") };
-    if (l.startsWith(IMAGES_IN_VM_LINE)) images = true;
-    else if (l.startsWith(STARTING_IN_VM_LINE)) images = false;
-    const m = /^\s*==>\s*([A-Za-z0-9_.-]+):/.exec(l);
-    if (m) [machine, images] = [m[1], false];
-    if (images) return { id: "images", label: t("labs.deploy.phases.images") };
-    if (machine) return { id: `m:${machine}`, label: machineLabel(machine) };
-    return { id: "prepare", label: isPrepLine(l) ? t("labs.deploy.steps.prepareMachine") : t("labs.deploy.steps.start") };
-  };
+/** Row `s` as step mark `mark` leaves it. */
+function marked(t: T, s: Step, { step, at }: SaidStep): Step {
+  const state = SAID[step.state];
+  const machine = s.id.startsWith("machine:");
+  // A machine's row says what it does while it runs; any other row how far it is.
+  const doing = state === "running" && isStepId(step.step) ? t(`labs.deploy.phases.${step.step}`) : null;
+  const detail = machine ? doing : (counted(step.count) ?? s.said?.detail ?? null);
+  const from = s.said?.from ?? at;
+  return { ...s, said: { state, from, to: state === "running" ? null : at, detail } };
 }
 
-/** Terraform: set up, create the infrastructure, then the lab on its host; any other line stays
- *  in the step before it. */
-function terraformStepper(t: T): Stepper {
-  return (l, last) => {
-    if (/Initializing|terraform init|Installing|Finding .* versions|Reusing previous/.test(l)) return { id: "tf-init", label: t("labs.deploy.steps.tfInit") };
-    if (/Creating\.\.\.|Creation complete|Still creating|Destroying|Apply complete|Plan:|will perform|Modif/.test(l))
-      return { id: "tf-apply", label: t("labs.deploy.steps.tfApply") };
-    if (/running:|install Docker|cloud-init|bootstrap|ready/i.test(l)) return { id: "tf-ready", label: t("labs.deploy.steps.tfReady") };
-    return { id: last?.id ?? "tf-init", label: last?.label ?? t("labs.deploy.steps.tfInit") };
-  };
+/** The launcher's own step for `line`, before the runner said one. */
+function ownStep(t: T, line: string, last: Step | undefined): { id: string; label: string } {
+  if (isDownloadLine(line)) return { id: "download", label: t("labs.deploy.steps.download") };
+  if (last && last.id !== "download") return last;
+  return { id: "prepare", label: isPrepLine(line) ? t("labs.deploy.steps.prepareMachine") : t("labs.deploy.steps.preparing") };
 }
 
-/** Docker Compose: its phases, each from the first line that starts it; before them, preparing. */
-function dockerStepper(t: T): Stepper {
-  let phase: Phase | null = null;
-  return (l) => {
-    phase = DOCKER_PHASES.find((ph) => ph.match(l)) ?? phase;
-    if (phase) return { id: phase.id, label: t(`labs.deploy.phases.${phase.id}`) };
-    return { id: "prepare", label: t("labs.deploy.steps.prepareLab") };
-  };
-}
-
-/** An unknown target: every line in the step before it (preparing, at first). */
-const otherStepper =
-  (t: T): Stepper =>
-  (_l, last) => ({ id: last?.id ?? "prepare", label: last?.label ?? t("labs.deploy.steps.preparing") });
-
-const STEPPERS: Record<ReturnType<typeof detectTarget>, (t: T) => Stepper> = {
-  vagrant: vagrantStepper,
-  terraform: terraformStepper,
-  docker: dockerStepper,
-  unknown: otherStepper,
-};
-
-/** Builds the ordered step list from the timed log, per the detected target. */
-export function deriveSteps(t: T, timed: Timed[]): Step[] {
+/** Builds the ordered step list from the timed log and the steps the runner said in it. */
+export function deriveSteps(t: T, timed: Timed[], marks: readonly SaidStep[] = []): Step[] {
   const steps: Step[] = [];
-  const stepOf = STEPPERS[detectTarget(timed.map((row) => row.line).join("\n"))](t);
-  for (const row of timed) {
-    // The runner's own box download speaks as the launcher's lab download does: it is Vagrant's.
-    const fetched = isDownloadLine(row.line) && !isBoxLine(row.line);
-    const { id, label } = fetched ? { id: "download", label: t("labs.deploy.steps.download") } : stepOf(row.line, steps.at(-1));
-    let s = steps.find((x) => x.id === id);
+  // The runner's steps running now, the one started last at the end: a line goes to it.
+  let running: string[] = [];
+  // The runner's step a line went to last: lines go on there once none runs.
+  let current: string | null = null;
+  const take = (mark: SaidStep) => {
+    const { id, label } = rowOf(t, mark.step);
+    const at = steps.findIndex((s) => s.id === id);
+    const row = marked(t, at >= 0 ? steps[at] : { id, label, rows: [] }, mark);
+    if (at >= 0) steps[at] = row;
+    else steps.push(row);
+    running = running.filter((r) => r !== id);
+    if (row.said?.state === "running") running.push(id);
+    current = id;
+  };
+  let next = 0;
+  for (const [i, row] of timed.entries()) {
+    while (next < marks.length && marks[next].line <= i) take(marks[next++]);
+    const id = running.at(-1) ?? current;
+    let s = id ? steps.find((x) => x.id === id) : undefined;
     if (!s) {
-      s = { id, label, rows: [] };
-      steps.push(s);
+      const own = ownStep(t, row.line, steps.at(-1));
+      s = steps.find((x) => x.id === own.id);
+      if (!s) {
+        s = { ...own, rows: [] };
+        steps.push(s);
+      }
     }
     s.rows.push(row);
   }
+  while (next < marks.length) take(marks[next++]);
   return steps;
 }

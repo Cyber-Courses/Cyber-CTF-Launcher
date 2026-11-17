@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { EVENTS } from "@/lib/tauri/generated/Events";
-import type { CommandError, Cursored, Operation, OperationId, Runtime } from "@/lib/tauri/generated";
+import type { CommandError, Cursored, DeployStep, Operation, OperationId, Runtime } from "@/lib/tauri/generated";
 import { registerReset } from "@/lib/module-state";
 
 // The one store of the lab operations, fed by the core's run events (`run_service`): each
-// operation's start, its log lines and its end. Nothing here polls: a window subscribes to the
+// operation's start, its log lines, its steps and its end. Nothing here polls: a window subscribes to the
 // events once, replays the ones it missed (a reload, a relaunch: the core keeps them), then
 // follows the live ones. Every view of an operation (the deploy panel, the sidebar's step, the
 // labs busy, an action awaiting its end) reads it.
@@ -21,6 +21,9 @@ export type ActiveOperation = {
   runtime?: Runtime | null;
 };
 
+/** A step the runner said, placed among its operation's lines. */
+export type SaidStep = { step: DeployStep; at: number; line: number };
+
 /** One operation, as its events told it so far. */
 export type OperationRun = {
   operation: OperationId;
@@ -34,6 +37,9 @@ export type OperationRun = {
   /** Its log lines, and when this window received each (ms), parallel. */
   lines: string[];
   times: number[];
+  /** The steps the runner said, in order, each with when this window received it (ms) and how
+   *  many of the lines came before it. */
+  steps: SaidStep[];
   /** Whether it ended; `error` is why it failed (null: it went through, or it runs). */
   ended: boolean;
   error: CommandError | null;
@@ -60,6 +66,17 @@ export function forgetRunEvents() {
 }
 registerReset(forgetRunEvents);
 
+/** `run` as `runs` holds it for this batch, its lists its own to add to: copied once per batch
+ *  (readers hold the previous arrays), then added to in place, so a VM start's thousands of lines
+ *  aren't copied once per line. */
+function owned(runs: Map<OperationId, OperationRun>, run: OperationRun, copied: Set<OperationId>): OperationRun {
+  if (copied.has(run.operation)) return run;
+  copied.add(run.operation);
+  const own = { ...run, lines: [...run.lines], times: [...run.times], steps: [...run.steps] };
+  runs.set(run.operation, own);
+  return own;
+}
+
 /** `run` with the frame's event applied (the operation it is of, as it now stands). */
 function applied(runs: Map<OperationId, OperationRun>, { event }: Cursored, at: number, copied: Set<OperationId>) {
   // A lab's state, not an operation's: for the readers of `onLabEvent`.
@@ -77,21 +94,20 @@ function applied(runs: Map<OperationId, OperationRun>, { event }: Cursored, at: 
         startedAt: event.at,
         lines: [],
         times: [],
+        steps: [],
         ended: false,
         error: null,
       });
       return;
-    case "log":
+    case "log": {
       if (!run) return;
-      // Copied once per batch (readers hold the previous arrays), then added to in place: a VM
-      // start's thousands of lines aren't copied once per line.
-      if (copied.has(event.operation)) {
-        run.lines.push(event.line);
-        run.times.push(at);
-      } else {
-        copied.add(event.operation);
-        runs.set(event.operation, { ...run, lines: [...run.lines, event.line], times: [...run.times, at] });
-      }
+      const own = owned(runs, run, copied);
+      own.lines.push(event.line);
+      own.times.push(at);
+      return;
+    }
+    case "step":
+      if (run) owned(runs, run, copied).steps.push({ step: event.step, at, line: run.lines.length });
       return;
     case "ended":
       if (!run) return;
@@ -172,19 +188,38 @@ export function lastRunOf(labId: string, s: RunEventsState = state): OperationRu
   return runs.find((r) => !r.ended) ?? runs.at(-1);
 }
 
+const stepListeners = new Set<(labId: string, step: DeployStep) => void>();
+
+/** Hears each step of an operation `awaitOperation` follows, in its place among the lines it hands
+ *  on (the deploy store's feed: it keeps both); returns an unsubscribe. */
+export function onFollowedStep(cb: (labId: string, step: DeployStep) => void) {
+  stepListeners.add(cb);
+  return () => {
+    stepListeners.delete(cb);
+  };
+}
+
 /**
  * Follows operation `operation` to its end: each of its log lines to `onLog`, in order (those
- * already in too), then resolves when it went through or rejects with its error, as the core
- * sent it (a command error: the code and message the rest of the webview reads).
+ * already in too), its steps to the `onFollowedStep` listeners in their place among them, then
+ * resolves when it went through or rejects with its error, as the core sent it (a command error:
+ * the code and message the rest of the webview reads).
  */
 export async function awaitOperation(operation: OperationId, onLog: (line: string) => void): Promise<void> {
   await connectRunEvents();
   return new Promise<void>((resolve, reject) => {
     let sent = 0;
+    let told = 0;
     const check = () => {
       const run = state.operations.get(operation);
       if (!run) return;
-      while (sent < run.lines.length) onLog(run.lines[sent++]);
+      while (sent < run.lines.length || told < run.steps.length) {
+        const step = run.steps.at(told);
+        if (step && step.line <= sent) {
+          told++;
+          for (const l of stepListeners) l(run.labId, step.step);
+        } else onLog(run.lines[sent++]);
+      }
       if (!run.ended) return;
       off();
       // Rejected with an Error that reads as the core's error (its code, message and args), as a
