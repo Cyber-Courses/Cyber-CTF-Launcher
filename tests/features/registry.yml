@@ -611,7 +611,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/launch/tests.rs > the_cloud_form_sets_the_runtime
-            - src-tauri/src/runtime/launch/tests.rs > the_public_ip_is_the_one_two_resolvers_agree_on
+            - src-tauri/src/runtime/launch/tests.rs > an_unsure_public_ip_is_said_as_the_launch_stops
             - src-tauri/src/runtime/launch/tests.rs > an_aws_budget_blocks_only_when_it_is_known_to_be_over
             - src-tauri/src/runtime/isothrum/errors/tests.rs > a_refusal_or_the_runners_own_words_keep_the_sentence_the_player_reads
             - src/features/labs/lab-detail/lab-detail.cloud.test.tsx > starts on one of the player
@@ -623,6 +623,7 @@ areas:
           web: no web spec starts a container lab on a cloud account (cloud-labs.spec is cloud services)
           desktop: no desktop spec starts a lab in a cloud
           integration: AWS only (the AWS tier, billed, opt-in); Azure, GCP, DigitalOcean, Linode, OCI never run; rig's cloud column excluded
+        note: This machine's public IP, the one two resolvers agree on, is isothrum-machine's net::public_ipv4, tested there; the launcher says why it couldn't be confirmed.
 
       - id: lab-run.cloud-vm
         what: Start a VM lab (or a container lab as one VM per machine) as cloud instances in the player's account, then destroy it.
@@ -1492,7 +1493,7 @@ areas:
           unit:
             - src/features/labs/lab-parts.test.tsx > names the machines down, the failed checks, and offers reset and start
             - src/features/labs/lab-parts.test.tsx > settles the check when another machine goes down while it runs
-            - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > offers Start them where the backend can bring machines back
+            - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > offers Start them only where the backend can bring machines back
             - src/features/labs/lab-detail/lab-state.edge.test.ts > a parked lab lists none of its machines as down
             - src/features/labs/lab-detail/lab-state.edge.test.ts > a machine another process is setting up is busy, not down
           desktop:
@@ -1819,14 +1820,15 @@ areas:
           - lab_attack_shell
         tests:
           unit:
-            - src-tauri/src/runtime/terminal_launch.rs > the_posix_line_runs_the_command_in_its_folder_and_execs_it
-            - src-tauri/src/runtime/terminal_launch.rs > the_windows_line_quotes_paths_with_spaces
-            - src-tauri/src/runtime/terminal_launch.rs > applescript_strings_escape_quotes_and_backslashes
+            - src-tauri/src/runtime/terminal_launch.rs > a_terminal_that_macos_wont_let_the_app_open_says_why
+            - src-tauri/src/runtime/terminal_launch.rs > no_terminal_says_the_command_to_run_by_hand
+            - src-tauri/src/runtime/terminal_launch.rs > the_window_is_titled_as_the_attack_box
             - src/features/app/terminal-window.test.tsx > says when the system terminal can
         gaps:
           web: only checks the button is there (lab-flow)
           desktop: no spec opens a system terminal
           integration: which terminal app opens on each OS is never exercised
+        note: The command line and the terminal each OS opens are isothrum-machine's terminal::open, tested there with fake processes; the launcher keeps the title and what the player reads.
 
   - id: screen
     title: The VM screen
@@ -2247,11 +2249,11 @@ areas:
         tests:
           unit:
             - src-tauri/src/commands/machine.rs > joining_hyperv_administrators_is_windows_only
-            - src-tauri/src/platform/exec/elevate.rs > joining_hyperv_administrators_adds_this_account_by_the_groups_sid
             - src/features/settings/settings-rows.test.tsx > lets a Windows account that may not manage Hyper-V join Hyper-V Administrators (#185)
             - src/features/settings/settings-rows.test.tsx > shows a declined Hyper-V rights prompt in the log
         gaps:
           integration: never run on a real Windows (UAC prompt, localized group name by SID)
+        note: The join itself (one UAC prompt, the group by its SID) is isothrum-machine's setup::join_hyperv_admins, tested there.
 
   - id: setup
     title: Guided machine setup
@@ -2410,19 +2412,16 @@ areas:
           - ovftool_place
         tests:
           unit:
-            - src-tauri/src/machine/tools/ovftool/tests.rs > a_signed_download_is_copied_into_the_apps_folder_and_the_download_left_as_it_was
-            - src-tauri/src/machine/tools/ovftool/tests.rs > a_tool_signed_by_another_team_is_refused_with_that_team_and_nothing_is_placed
             - src-tauri/src/machine/tools/ovftool/tests.rs > a_placed_copy_is_reported_by_the_next_check
+            - src-tauri/src/machine/tools/ovftool/tests.rs > placing_is_refused_when_the_policy_turns_tool_installs_off
             - src-tauri/src/commands/machine.rs > placing_a_folder_without_the_ovf_tool_is_refused
             - src/features/servers/host-setup/ovftool-requirement.test.tsx
           web:
             - "setup-wizards.spec.ts > ESXi: the tools step waits for VMware"
-          integration:
-            - src-tauri/src/machine/tools/ovftool/tests.rs > real_download_is_placed_and_runs
         gaps:
           desktop: server-lab/tools fails when the OVF Tool is missing; it never places one
-          integration: the real placement is an opt-in test outside the runner (macOS signature check), not run by the rig
-        note: Offered in the server setup's tools step; the signature check is macOS-only.
+          integration: no test places a real download of the OVF Tool
+        note: Offered in the server setup's tools step; the signature check is macOS-only. The copy, the signature check and the quarantine lift are isothrum-machine's tools::ovftool::place, tested there.
 
       - id: setup.reboot-relogin
         what: When a step needs it, restart the computer (Windows, WSL 2 / Hyper-V, after the system dialog, app reopening after) or sign out and back in (Linux docker/libvirt groups).
@@ -2852,7 +2851,6 @@ areas:
           unit:
             - src-tauri/src/runtime/server/setup/tests.rs > a_form_saves_a_new_host_then_edits_it_and_an_unknown_one_is_refused
             - src-tauri/src/runtime/server/setup/tests.rs > placement_choices_need_a_proxmox_server_and_its_secret
-            - src-tauri/src/runtime/proxmox/placement.rs > nodes_online_first_and_storages_that_can_be_used
             - src-tauri/src/runtime/server/input/tests.rs > a_proxmox_login_gets_pam_when_it_names_no_realm
             - "src/features/servers/host-setup/server-setup.test.tsx > switches node: its own storages and bridge are picked"
             - src/features/servers/host-setup/host-wizard-interaction.test.tsx > saves once when Save and test is pressed twice while the save is in flight
@@ -2865,6 +2863,7 @@ areas:
         gaps:
           desktop: needs CYBERCTF_TEST_SERVER_ENV with a Proxmox token; skips without it; only the API-token sign-in is driven
           integration: the Proxmox scenarios (server-lab-proxmox-connection, server-lab-proxmox) never go through server_save or the placement read
+        note: The nodes, storages and bridges offered are isothrum-machine's place::proxmox placement, tested there.
 
       - id: servers.proxmox-ssh-key
         what: Sign in to Proxmox with an SSH key (the usual key found first) so the launcher authorizes its own key on the node and makes its API token; show and copy the launcher's public key.
@@ -2900,9 +2899,10 @@ areas:
           - server_trust_ssh_keys
         tests:
           unit:
-            - src-tauri/src/runtime/server/tls_pin/tests.rs > only_the_confirmed_certificate_is_accepted
-            - src-tauri/src/runtime/server/tls_pin/tests.rs > a_server_replaying_the_confirmed_certificate_without_its_key_is_refused
-            - src-tauri/src/runtime/server/tls_pin/tests.rs > a_server_trusted_by_the_system_is_not_pinned
+            - src-tauri/src/runtime/server/tls_pin/tests.rs > the_certificate_is_read_for_confirmation_without_sending_a_request
+            - src-tauri/src/runtime/server/tls_pin/tests.rs > a_refused_console_says_the_certificate_and_the_server
+            - src-tauri/src/runtime/server/tls_pin/tests.rs > a_saved_pin_reads_as_it_was_written
+            - src-tauri/src/runtime/proxmox/tests.rs > a_self_signed_host_gets_no_credential_until_its_certificate_is_confirmed
             - src-tauri/src/runtime/ssh/known_hosts/tests.rs > a_new_node_is_shown_with_its_fingerprints_and_confirmed_into_every_file
             - src-tauri/src/runtime/ssh/known_hosts/tests.rs > a_refused_host_key_is_the_learners_error
             - src/features/servers/host-setup/server-setup.test.tsx > shows the certificate and node key fingerprints before signing in, and goes on only once they are confirmed
@@ -2910,6 +2910,7 @@ areas:
         gaps:
           desktop: server-lab signs in to a server whose certificate the test set confirms beforehand
           integration: no scenario changes a real server's certificate or host key
+        note: Accepting only the pinned certificate is isothrum-runner's tls, tested there.
 
       - id: servers.esxi-connect
         what: Add or edit an ESXi host (address, user, password, datastore, port group).
@@ -2967,7 +2968,8 @@ areas:
             - src-tauri/src/runtime/server/connection_test.rs > a_host_is_tested_by_its_provider_and_an_unsaved_one_is_an_error
             - src-tauri/src/runtime/server/reachability.rs > esxi_needs_an_ssh_banner
             - src-tauri/src/runtime/proxmox/tests.rs > sign_in_failures_say_what_to_fix
-            - src-tauri/src/runtime/proxmox/tests.rs > the_sdn_check_finds_only_a_real_source_directive
+            - src-tauri/src/runtime/proxmox/tests.rs > a_missing_sdn_directive_is_reported_with_its_fix
+            - src-tauri/src/runtime/proxmox/tests.rs > the_sdn_check_runs_over_ssh_in_both_sign_in_modes
             - src/features/servers/servers-screen.test.tsx > tests every host again with Test all, and one with its own Test
             - src/features/servers/servers-screen.test.tsx > points macOS players at the Local Network permission for a LAN host that fails
           web:
@@ -2983,6 +2985,7 @@ areas:
         gaps:
           web: the mock answers online; only the count is checked
           integration: Proxmox only (server-lab-proxmox-connection, the server tier); the ESXi connection test never runs for real outside the desktop spec
+        note: Reading whether a node sources its SDN config is isothrum-machine's place::proxmox::node, tested there.
 
       - id: servers.vm-test
         what: Run a real VM test on a Proxmox or ESXi host (a small VM on its own network, upload progress, then torn down), from the setup window or the host's menu.
@@ -3058,12 +3061,12 @@ areas:
           - server_capacity
         tests:
           unit:
-            - src-tauri/src/runtime/server/capacity.rs > capacity_needs_every_figure
             - src-tauri/src/runtime/server/capacity.rs > only_a_saved_proxmox_server_reports_its_capacity_and_a_failed_read_says_why
             - src/features/servers/servers-screen.test.tsx > hides the capacity panel when no host reports its capacity
             - src/features/servers/servers-screen.test.tsx > keeps the page up when the capacity read or running count fails
         gaps:
           integration: never read from a real Proxmox
+        note: The node's figures are read by isothrum-machine's place::proxmox, tested there (a capacity needs every figure).
 
       - id: servers.secrets
         what: Host and account secrets (passwords, tokens, keys) live in the OS keychain; a blank password on edit keeps the stored one, and a missing or unreadable secret is said, never read as none.
@@ -4109,7 +4112,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/run_service/tests.rs > an_operation_runs_end_to_end_through_a_fake_service_and_a_reloaded_window_replays_it
-            - src-tauri/src/platform/exec/ledger_tests.rs
           integration:
             - resilience-docker-killed-start
             - resilience-vm-killed-start
@@ -4172,12 +4174,9 @@ areas:
       - id: resilience.clock-jump
         what: "The clock jumps (NTP, set by hand, a VM restored) while a lab starts: a tool the app started is still recognised as alive, by its boot and its start within it as the kernel stored them, so it is never taken for another process or for gone (docs/contributing/testing/resilience.md C4)."
         host: false
-        tests:
-          unit:
-            - src-tauri/src/platform/identity.rs > a_proc_stat_line_gives_its_start_in_ticks_since_boot
-            - src-tauri/src/platform/identity.rs > a_process_keeps_its_identity_and_another_has_its_own
         gaps:
           integration: "no scenario sets the clock: rig proposal resilience-clock-jump (+1 h mid-start, Linux)"
+        note: Every tool runs through Isothrum's runner, whose process ledger keeps a tool's identity by its boot and its start within it; isothrum-runner's process::ledger tests hold it, none of the launcher's.
 
       - id: resilience.server-vm-deleted
         what: "A lab VM deleted in Proxmox's web UI or the ESXi host client while the lab runs: the lab page shows it gone, as a container removed outside the app is (the health banner, Reset), read from the server itself, not from the run's own records (docs/contributing/testing/resilience.md M10)."
