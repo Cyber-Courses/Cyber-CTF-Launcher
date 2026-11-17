@@ -145,7 +145,7 @@ pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Depe
     let before = uninstall::present(dependency).await;
     run_plan(&steps, &mut on_line).await?;
     // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
-    crate::platform::env_path::refresh();
+    crate::platform::env_path::refresh(&crate::runtime::providers::machine()).await;
     // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: a tool
     // that was already there is never recorded, and one whose installer was only opened (macOS
     // casks) or isn't found yet counts once a later check finds it.

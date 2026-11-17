@@ -1,12 +1,11 @@
 //! The registry: reading values, and the current user's own values.
 
-use std::ffi::{OsStr, OsString};
-use std::os::windows::ffi::OsStringExt;
+use std::ffi::OsStr;
 
-use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_DWORD, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegDeleteKeyValueW, RegEnumValueW,
-    RegGetValueW, RegOpenKeyExW, RegSetKeyValueW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_DWORD, REG_SZ, RRF_RT_REG_DWORD, RegCloseKey, RegDeleteKeyValueW, RegEnumValueW, RegGetValueW,
+    RegOpenKeyExW, RegSetKeyValueW,
 };
 
 use super::wide;
@@ -31,8 +30,13 @@ impl Hive {
 }
 
 /// The string value `name` under `key`, its %VARIABLES% expanded (`RegGetValueW` expands a
-/// `REG_EXPAND_SZ` when asked for `RRF_RT_REG_SZ`). None if absent or unreadable.
-pub fn registry_string(hive: Hive, key: &str, name: &str) -> Option<OsString> {
+/// `REG_EXPAND_SZ` when asked for `RRF_RT_REG_SZ`). None if absent or unreadable. A test's read
+/// of what it wrote.
+#[cfg(test)]
+pub fn registry_string(hive: Hive, key: &str, name: &str) -> Option<std::ffi::OsString> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+    use windows_sys::Win32::System::Registry::RRF_RT_REG_SZ;
     let (key, name) = (wide(OsStr::new(key)), wide(OsStr::new(name)));
     let mut buf: Vec<u16> = vec![0; 4096];
     // An expanded value can outgrow the size first reported: grow and retry a few times.
@@ -46,7 +50,7 @@ pub fn registry_string(hive: Hive, key: &str, name: &str) -> Option<OsString> {
             ERROR_SUCCESS => {
                 let units = units.min(buf.len());
                 let len = buf[..units].iter().position(|&c| c == 0).unwrap_or(units);
-                return Some(OsString::from_wide(&buf[..len]));
+                return Some(std::ffi::OsString::from_wide(&buf[..len]));
             }
             ERROR_MORE_DATA => buf.resize(units.max(buf.len() * 2) + 1, 0),
             _ => return None,
@@ -58,6 +62,7 @@ pub fn registry_string(hive: Hive, key: &str, name: &str) -> Option<OsString> {
 /// Whether a registry value exists (its data isn't read): a test's check of what it wrote.
 #[cfg(test)]
 pub fn registry_value_exists(hive: Hive, path: &str, name: &str) -> Option<bool> {
+    use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
     use windows_sys::Win32::System::Registry::RRF_RT_ANY;
     let (path, name) = (wide(OsStr::new(path)), wide(OsStr::new(name)));
     // SAFETY: NUL-terminated names; no type or data asked for (all three pointers null).
@@ -165,7 +170,7 @@ mod tests {
         let values = registry_values(Hive::CurrentUser, &key).unwrap().unwrap();
         assert!(values.contains(&("DisableUpdater".to_string(), RegistryValue::Dword(1))), "{values:?}");
         assert!(values.contains(&("Note".to_string(), RegistryValue::Other(REG_SZ))), "{values:?}");
-        assert_eq!(registry_string(Hive::CurrentUser, &key, "Note"), Some(OsString::from("%USERPROFILE%")), "a REG_SZ is read as written");
+        assert_eq!(registry_string(Hive::CurrentUser, &key, "Note"), Some(std::ffi::OsString::from("%USERPROFILE%")), "a REG_SZ is read as written");
         delete_user_registry_value(&key, "Note");
         assert_eq!(registry_value_exists(Hive::CurrentUser, &key, "Note"), Some(false));
         // SAFETY: a NUL-terminated key name under the current user, made by this test.

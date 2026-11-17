@@ -7,8 +7,10 @@ use std::ffi::OsStr;
 
 pub use elevation::is_elevated;
 #[cfg(test)]
+pub use registry::registry_string;
+#[cfg(test)]
 pub use registry::registry_value_exists;
-pub use registry::{Hive, delete_user_registry_value, registry_string, registry_values, set_user_registry_string};
+pub use registry::{Hive, delete_user_registry_value, registry_values, set_user_registry_string};
 
 /// Keeps this process's own standard input, output and error to itself. std starts a child with
 /// every inheritable handle of its parent, so each tool held whatever the app was started with:
