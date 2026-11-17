@@ -9,7 +9,6 @@ use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
 use isothrum_machine::place::proxmox::{self, Capacity};
-use isothrum_runner::tls::{Fingerprint, Refusal, Trust};
 
 use super::tls_pin;
 
@@ -40,8 +39,8 @@ pub(crate) async fn capacity(dirs: &AppDirs, id: &str) -> Result<Option<HostCapa
 /// isothrum-machine's Proxmox client ([`proxmox::sign_in`], [`Capacity::of`]).
 async fn proxmox_capacity(h: &HostProfile, password: &str) -> Result<HostCapacity> {
     let server = proxmox::Server::new(h.host.as_str(), h.port);
-    let session = proxmox::sign_in(&server, &proxmox::Credentials::from_login(&h.username, password), trust_of(h)).await.map_err(|e| match e {
-        proxmox::SignInError::Certificate(refused) => certificate_error(refused, &h.name),
+    let session = proxmox::sign_in(&server, &proxmox::Credentials::from_login(&h.username, password), h.tls_trust()).await.map_err(|e| match e {
+        proxmox::SignInError::Certificate(refused) => tls_pin::refused(refused, &h.name),
         other => Error::Invalid(format!("couldn't sign in to the Proxmox server: {other}")),
     })?;
     let node = session.node(h.node.as_deref()).await.map_err(|e| Error::Invalid(format!("couldn't list the Proxmox server's nodes: {e}")))?;
@@ -50,37 +49,9 @@ async fn proxmox_capacity(h: &HostProfile, password: &str) -> Result<HostCapacit
     Ok(HostCapacity { cores: c.cores, mem_total: c.mem_total, mem_free: c.mem_free })
 }
 
-/// How `h`'s certificate is trusted, as the runner's TLS takes it: the system's trust store, or the
-/// fingerprint the learner confirmed.
-fn trust_of(h: &HostProfile) -> Trust {
-    match h.tls_trust() {
-        tls_pin::Trust::System => Trust::System,
-        tls_pin::Trust::Pinned(pin) => Trust::Pinned(pin.and_then(|p| Fingerprint::parse(&p.to_string()))),
-    }
-}
-
-/// A certificate refused, as the launcher's one error for it ([`tls_pin::Refusal::error`]).
-fn certificate_error(refused: Refusal, server: &str) -> Error {
-    let ours = |f: &Fingerprint| tls_pin::Fingerprint::parse(&f.to_string());
-    let refusal = match refused {
-        Refusal::Unconfirmed { presented } => ours(&presented).map(|presented| tls_pin::Refusal::Unconfirmed { presented }),
-        Refusal::Changed { pinned, presented } => {
-            ours(&pinned).zip(ours(&presented)).map(|(pinned, presented)| tls_pin::Refusal::Changed { pinned, presented })
-        }
-    };
-    refusal.map_or_else(|| Error::Invalid(format!("couldn't sign in to the Proxmox server: {refused}")), |r| r.error(server))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_refused_certificate_is_the_launchers_one_error() {
-        let a = Fingerprint::parse(crate::runtime::server::tls_pin::tests::FINGERPRINT_A).unwrap();
-        let err = certificate_error(Refusal::Unconfirmed { presented: a }, "Home lab");
-        assert!(matches!(err.code(), crate::error::Code::TlsUnconfirmed { .. }), "{err}");
-    }
 
     #[tokio::test]
     async fn only_a_saved_proxmox_server_reports_its_capacity_and_a_failed_read_says_why() {

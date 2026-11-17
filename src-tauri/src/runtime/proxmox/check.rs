@@ -85,7 +85,7 @@ pub(super) fn sign_in_report(e: SignInError, h: &HostProfile) -> Report {
             fail(Some(false), "Proxmox rejected the API token. Check the token id (user@realm!name) and its secret.")
         }
         SignInError::Rejected => fail(Some(false), "Proxmox rejected the credentials. Use user@realm, e.g. root@pam."),
-        SignInError::Certificate(refusal, server) => fail(None, refusal.error(&server).to_string()),
+        SignInError::Certificate(refusal, server) => fail(None, super::tls_pin::refused(refusal, &server).to_string()),
         SignInError::Failed(e) => fail(None, format!("Reachable, but the API call failed: {e}")),
     }
 }

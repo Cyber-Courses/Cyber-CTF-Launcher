@@ -115,7 +115,7 @@ impl std::fmt::Display for SignInError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SignInError::Rejected => f.write_str("Proxmox rejected the credentials"),
-            SignInError::Certificate(refusal, server) => write!(f, "{}", refusal.error(server)),
+            SignInError::Certificate(refusal, server) => write!(f, "{}", tls_pin::refused(*refusal, server)),
             SignInError::Failed(e) => f.write_str(e),
         }
     }
@@ -126,7 +126,7 @@ impl SignInError {
     /// in Servers), anything else is said after `context`.
     pub fn into_error(self, context: &str) -> crate::error::Error {
         match self {
-            SignInError::Certificate(refusal, server) => refusal.error(&server),
+            SignInError::Certificate(refusal, server) => tls_pin::refused(refusal, &server),
             other => crate::error::Error::Invalid(format!("{context}: {other}")),
         }
     }
@@ -140,7 +140,7 @@ impl SignInError {
 pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInError> {
     machine::sign_in(&server(h), &Credentials::from_login(&h.username, secret), h.tls_trust()).await.map(Session).map_err(|e| match e {
         machine::SignInError::Rejected => SignInError::Rejected,
-        machine::SignInError::Certificate(refusal) => SignInError::Certificate(refusal.into(), h.name.clone()),
+        machine::SignInError::Certificate(refusal) => SignInError::Certificate(refusal, h.name.clone()),
         machine::SignInError::Failed(why) if why.to_lowercase().contains("certificate") => SignInError::Failed(
             "the host's TLS certificate isn't trusted. Proxmox uses a self-signed certificate by default: turn on \"Self-signed certificate\" for this host and confirm its fingerprint, or install a trusted one".into(),
         ),
