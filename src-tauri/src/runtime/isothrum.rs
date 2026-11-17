@@ -478,25 +478,25 @@ impl LabRun {
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
     /// when given.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
-        match self.served.console_command(machine, user).await {
-            Ok(command) => Ok(command),
-            Err(e) => Err(self.refused(e).await.into_error()),
-        }
+        self.answered(self.served.console_command(machine, user).await).await
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with the run's
     /// options (an ESXi host's settings and password), held with its tunnel until dropped.
     pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_client::HeldConsole> {
-        match self.served.graphical_console(machine, &self.placed(RunOptions::new())).await {
-            Ok(console) => Ok(console),
-            Err(e) => Err(self.refused(e).await.into_error()),
-        }
+        self.answered(self.served.graphical_console(machine, &self.placed(RunOptions::new())).await).await
     }
 
     /// What opens running VM `machine` in its hypervisor's own app, as the runner says.
     pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        match self.served.native_console(machine, &self.placed(RunOptions::new())).await {
-            Ok(console) => Ok(console),
+        self.answered(self.served.native_console(machine, &self.placed(RunOptions::new())).await).await
+    }
+
+    /// The service's answer `answer` about the run, its failure the launcher's error
+    /// ([`LabRun::refused`]).
+    async fn answered<T>(&self, answer: std::result::Result<T, remote::Failure>) -> Result<T> {
+        match answer {
+            Ok(value) => Ok(value),
             Err(e) => Err(self.refused(e).await.into_error()),
         }
     }

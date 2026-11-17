@@ -177,8 +177,7 @@ pub(crate) fn use_test_file(file: std::path::PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::providers::Provider;
-    use crate::runtime::server::profile::tests::profile;
+    use crate::runtime::{providers::Provider, server::profile::tests::profile};
 
     #[test]
     fn a_missing_secret_says_to_enter_one() {
