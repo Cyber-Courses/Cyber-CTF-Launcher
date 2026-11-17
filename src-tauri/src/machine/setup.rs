@@ -27,14 +27,14 @@ use crate::machine::system::SystemReport;
 #[cfg(test)]
 use crate::machine::system::docker::Engine;
 use crate::machine::tools::install::{Dependency, name};
-#[cfg(test)]
-use crate::platform::host::Os;
 use crate::runtime::providers::{self, Provider};
+#[cfg(test)]
+use isothrum_machine::HostOs;
 
 /// What the setup reads of the machine `r` reports.
 fn machine(r: &SystemReport) -> Machine {
     let mut host = providers::machine().host;
-    host.os = r.os.isothrum();
+    host.os = r.os;
     Machine {
         host,
         packages_installed: r.pkg_manager.installed,
@@ -53,13 +53,13 @@ fn machine(r: &SystemReport) -> Machine {
 
 /// The engines the setup offers on `os`, in the order it shows them.
 #[cfg(test)]
-pub fn engines_on(os: Os) -> &'static [Engine] {
+pub fn engines_on(os: HostOs) -> &'static [Engine] {
     isothrum_machine::setup::engines_on(os.isothrum())
 }
 
 /// The engine the setup installs in one click on `os`.
 #[cfg(test)]
-pub fn recommended_engine(os: Os) -> Engine {
+pub fn recommended_engine(os: HostOs) -> Engine {
     isothrum_machine::setup::recommended_engine(os.isothrum())
 }
 
@@ -71,7 +71,7 @@ pub fn docker_ready(r: &SystemReport) -> bool {
 
 /// The hypervisor the setup installs as `provider` on `os`, when it installs it.
 #[cfg(test)]
-pub(crate) fn installable(provider: Provider, os: Os) -> Option<Dependency> {
+pub(crate) fn installable(provider: Provider, os: HostOs) -> Option<Dependency> {
     isothrum_machine::setup::installable(provider.vagrant()?, os.isothrum())
 }
 

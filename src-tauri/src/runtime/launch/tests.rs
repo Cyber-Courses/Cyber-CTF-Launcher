@@ -5,11 +5,11 @@ use super::{
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
-use crate::platform::host::Arch;
 use crate::runtime::lab::emulated_arches;
 use crate::runtime::recorded::Recorded;
 use crate::runtime::start;
 use crate::testing::test_app::TestApp;
+use isothrum_machine::Arch;
 
 async fn start_here(t: &TestApp, id: &str, runtime: Runtime, provider: Option<Provider>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
     start_at(t, id, runtime, Destination { provider, ..Destination::default() }, env).await
@@ -278,8 +278,8 @@ fn memory_is_a_warning_only_when_the_lab_needs_more_than_is_free() {
 fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     let dir = lab(VMS);
     let spec = crate::runtime::lab::load(&dir).unwrap();
-    assert_eq!(emulated_arches(&spec, Arch::X86_64), [Arch::Aarch64]);
-    assert_eq!(emulated_arches(&spec, Arch::Aarch64), [Arch::X86_64]);
+    assert_eq!(emulated_arches(&spec, Arch::Amd64), [Arch::Arm64]);
+    assert_eq!(emulated_arches(&spec, Arch::Arm64), [Arch::Amd64]);
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -287,7 +287,7 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
 fn a_lab_without_vms_needs_no_emulator() {
     let dir = lab(CONTAINERS);
     let spec = crate::runtime::lab::load(&dir).unwrap();
-    for host in Arch::ALL {
+    for host in isothrum_machine::host::ALL_ARCHES {
         assert!(emulated_arches(&spec, host).is_empty(), "{host:?}");
     }
     std::fs::remove_dir_all(dir).unwrap();

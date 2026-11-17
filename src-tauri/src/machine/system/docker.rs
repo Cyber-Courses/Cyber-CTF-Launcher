@@ -8,7 +8,7 @@ pub use isothrum_machine::docker::{Engine, EngineStatus};
 
 use crate::error::{Error, Result};
 use crate::platform::exec::{docker_denied, docker_denied_error, run};
-use crate::platform::host::Os;
+use isothrum_machine::HostOs;
 
 /// How many times a started engine is asked whether it answers: 90, [`START_POLL`] apart.
 const START_TRIES: u32 = 90;
@@ -89,23 +89,25 @@ pub async fn docker_start_engine(engine: String) -> Result<()> {
 
 /// Opens the engine's app, or runs its CLI, on this OS.
 async fn launch(engine: &str) -> Result<String> {
-    match (Os::HERE, engine) {
-        (Os::Macos, "docker-desktop") => run("open", &["-a", "Docker"], None).await,
-        (Os::Macos, "orbstack") => run("open", &["-a", "OrbStack"], None).await,
+    match (isothrum_runner::this_host(), engine) {
+        (HostOs::Macos, "docker-desktop") => run("open", &["-a", "Docker"], None).await,
+        (HostOs::Macos, "orbstack") => run("open", &["-a", "OrbStack"], None).await,
         // Started on its own, with none of this process's handles: through `cmd /C start` the
         // app inherited them and kept them open, and a caller waiting for this process's output
         // (the guided setup's test entry under a redirect) waited for Docker Desktop to quit.
         #[cfg(windows)]
-        (Os::Windows, "docker-desktop") => crate::platform::exec::launch_detached(r"C:\Program Files\Docker\Docker\Docker Desktop.exe").map(|()| String::new()),
+        (HostOs::Windows, "docker-desktop") => {
+            crate::platform::exec::launch_detached(r"C:\Program Files\Docker\Docker\Docker Desktop.exe").map(|()| String::new())
+        }
         // Unattended (see `platform::elevation`): as root already, or through sudo, never asking.
-        (Os::Linux, "docker-engine") if crate::platform::elevation::unattended() => {
+        (HostOs::Linux, "docker-engine") if crate::platform::elevation::unattended() => {
             if crate::platform::elevation::is_root() {
                 run("systemctl", &["start", "docker"], None).await
             } else {
                 run("sudo", &["-n", "systemctl", "start", "docker"], None).await
             }
         }
-        (Os::Linux, "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
+        (HostOs::Linux, "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
             Error::ToolMissing { .. } => Error::Invalid(crate::machine::tools::steps::NO_PKEXEC.into()),
             e => e,
         }),

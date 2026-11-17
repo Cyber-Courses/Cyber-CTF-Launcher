@@ -6,8 +6,8 @@
 use crate::machine::system::docker::{Engine, EngineStatus};
 use crate::machine::system::wsl::{WslReport, WslState};
 use crate::machine::system::{CloudClis, PackageManager, SystemReport, Tool};
-use crate::platform::host::{Arch, Host, Os};
 use isothrum_machine::providers::{AccountLacks, needs};
+use isothrum_machine::{Arch, Host, HostOs};
 
 use crate::runtime::providers::{Provider, ProviderStatus, Unavailable, UtilityState};
 
@@ -63,14 +63,14 @@ fn status(provider: Provider, vagrant: bool, installed: bool, plugin_installed: 
 }
 
 /// A machine with nothing but its OS and its package manager.
-pub(crate) fn bare(os: Os, arch: Arch) -> SystemReport {
+pub(crate) fn bare(os: HostOs, arch: Arch) -> SystemReport {
     let version = match os {
-        Os::Windows => "v1.9.25200",
-        Os::Linux => "apt 2.9.8 (amd64)",
-        Os::Macos => "Homebrew 4.6.3",
+        HostOs::Windows => "v1.9.25200",
+        HostOs::Linux => "apt 2.9.8 (amd64)",
+        HostOs::Macos => "Homebrew 4.6.3",
     };
-    let pkg_manager = PackageManager { name: os.usual_packages().into(), installed: true, version: Some(version.into()) };
-    let wsl = (os == Os::Windows).then_some(WslReport { state: WslState::Missing, reopens_after_restart: true, virtualization_off: false });
+    let pkg_manager = PackageManager { name: isothrum_machine::host::usual_packages(os).into(), installed: true, version: Some(version.into()) };
+    let wsl = (os == HostOs::Windows).then_some(WslReport { state: WslState::Missing, reopens_after_restart: true, virtualization_off: false });
     let mut r = SystemReport {
         os,
         arch,
@@ -132,7 +132,7 @@ fn hypervisor(r: &mut SystemReport, provider: Provider, plugin: bool) {
 
 /// Windows 11, nothing installed: WSL 2 missing.
 pub(crate) fn bare_windows() -> SystemReport {
-    bare(Os::Windows, Arch::X86_64)
+    bare(HostOs::Windows, Arch::Amd64)
 }
 
 /// Windows once "Turn on WSL 2" ran: it waits for a restart.
@@ -155,7 +155,7 @@ pub(crate) fn windows_hyperv_waits_for_restart() -> SystemReport {
 
 /// Debian 13, nothing installed.
 pub(crate) fn bare_debian() -> SystemReport {
-    bare(Os::Linux, Arch::X86_64)
+    bare(HostOs::Linux, Arch::Amd64)
 }
 
 /// Debian once Docker Engine is installed: its daemon runs, but refuses this account until the
@@ -261,12 +261,12 @@ pub(crate) fn bare_arch() -> SystemReport {
 
 /// An Apple Silicon Mac with Docker Desktop running, but no Vagrant and no hypervisor.
 pub(crate) fn mac_docker_without_vagrant() -> SystemReport {
-    with(bare(Os::Macos, Arch::Aarch64), false, |r| docker_running(r, Engine::DockerDesktop))
+    with(bare(HostOs::Macos, Arch::Arm64), false, |r| docker_running(r, Engine::DockerDesktop))
 }
 
 /// An Apple Silicon Mac with OrbStack in use and Docker Desktop running beside it.
 pub(crate) fn mac_two_engines() -> SystemReport {
-    with(bare(Os::Macos, Arch::Aarch64), false, |r| {
+    with(bare(HostOs::Macos, Arch::Arm64), false, |r| {
         docker_running(r, Engine::Orbstack);
         r.docker_engines_running = vec![Engine::Orbstack, Engine::DockerDesktop];
         r.docker_engines.push(EngineStatus { engine: Engine::DockerDesktop, context: "desktop-linux".into(), running: true, current: false });
@@ -275,7 +275,7 @@ pub(crate) fn mac_two_engines() -> SystemReport {
 
 /// A Mac with VMware Fusion and Vagrant, but neither the VMware plugin nor HashiCorp's utility.
 pub(crate) fn mac_vmware_without_its_parts() -> SystemReport {
-    with(bare(Os::Macos, Arch::Aarch64), false, |r| {
+    with(bare(HostOs::Macos, Arch::Arm64), false, |r| {
         docker_running(r, Engine::DockerDesktop);
         hypervisor(r, Provider::VmwareDesktop, false);
     })
@@ -283,7 +283,7 @@ pub(crate) fn mac_vmware_without_its_parts() -> SystemReport {
 
 /// An Apple Silicon Mac set up: Docker Desktop running, UTM with Vagrant and its plugin.
 pub(crate) fn mac_ready() -> SystemReport {
-    with(bare(Os::Macos, Arch::Aarch64), false, |r| {
+    with(bare(HostOs::Macos, Arch::Arm64), false, |r| {
         docker_running(r, Engine::DockerDesktop);
         hypervisor(r, Provider::Utm, true);
     })

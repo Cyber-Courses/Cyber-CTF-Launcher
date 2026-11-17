@@ -16,7 +16,6 @@ pub mod elevation;
 pub mod env_path;
 pub mod exec;
 pub mod fs;
-pub mod host;
 pub mod http;
 pub mod identity;
 pub mod keychain;

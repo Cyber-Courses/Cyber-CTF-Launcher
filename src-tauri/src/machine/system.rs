@@ -10,8 +10,8 @@ use serde::Serialize;
 pub use isothrum_machine::tools::{CloudClis, PackageManager, Tool};
 
 use crate::platform::exec::docker_denied_error;
-use crate::platform::host::{Arch, Host, Os};
 use crate::runtime::providers::{self, ProviderStatus};
+use isothrum_machine::{Arch, HostOs};
 
 /// What the machine check found on this computer: the OS, the tools, the container engines and
 /// hypervisors, and what the guided setup takes from here.
@@ -19,8 +19,11 @@ use crate::runtime::providers::{self, ProviderStatus};
 #[serde(rename_all = "camelCase")]
 pub struct SystemReport {
     /// The OS.
-    pub os: Os,
-    /// The CPU architecture.
+    #[ts(as = "OsId")]
+    pub os: HostOs,
+    /// The CPU architecture, by Rust's name for it ([`cpu_name`]).
+    #[serde(serialize_with = "cpu_named")]
+    #[ts(as = "CpuName")]
     pub arch: Arch,
     /// The OS's package manager.
     pub pkg_manager: PackageManager,
@@ -81,11 +84,11 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     let data = dirs.data().ok().map(std::path::Path::to_path_buf);
     // A tool installed since the last check (from the app or not) is found without a restart.
     crate::platform::env_path::refresh();
-    let cx = providers::machine_check();
+    let cx = providers::machine_setup().await;
     let (found, (ovftool, ovftool_location)) =
         tokio::join!(Box::pin(isothrum_machine::check::check(&cx, wsl::marks(&dirs))), crate::machine::tools::ovftool::probe(data.as_deref()));
     let docker_denied = found.daemon.denied();
-    let host = Host::here();
+    let host = &cx.host;
     let mut report = SystemReport {
         os: host.os,
         arch: host.arch,
@@ -110,9 +113,45 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         setup: crate::machine::setup::Options::empty(),
     };
     // Hyper-V turned on from here starts at the next restart: until then the setup asks for it.
-    let hyperv_restart = host.os == Os::Windows && wsl::hyperv_on_this_boot(&dirs);
+    let hyperv_restart = host.os == HostOs::Windows && wsl::hyperv_on_this_boot(&dirs);
     report.setup = crate::machine::setup::options(&report, hyperv_restart);
     report
+}
+
+/// `arch` by Rust's name for it (`std::env::consts::ARCH`'s: `x86_64`, `aarch64`), as the machine
+/// report and the player's messages name a CPU.
+pub fn cpu_name(arch: Arch) -> &'static str {
+    match arch {
+        Arch::Amd64 => "x86_64",
+        Arch::Arm64 => "aarch64",
+    }
+}
+
+/// Writes a CPU by [`cpu_name`].
+fn cpu_named<S: serde::Serializer>(arch: &Arch, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(cpu_name(*arch))
+}
+
+/// The webview's type of an OS (`Os`): its id, as isothrum-machine writes [`HostOs`]. A type only,
+/// for the report's TypeScript.
+#[derive(ts_rs::TS)]
+#[ts(rename = "Os", rename_all = "lowercase")]
+#[allow(dead_code)]
+enum OsId {
+    Macos,
+    Windows,
+    Linux,
+}
+
+/// The webview's type of a CPU (`Arch`): [`cpu_name`]'s. A type only, for the report's TypeScript.
+#[derive(ts_rs::TS)]
+#[ts(rename = "Arch")]
+#[allow(dead_code)]
+enum CpuName {
+    #[ts(rename = "x86_64")]
+    X86_64,
+    #[ts(rename = "aarch64")]
+    Aarch64,
 }
 
 #[cfg(test)]

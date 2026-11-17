@@ -70,3 +70,15 @@ async fn a_daemon_that_refuses_this_account_comes_with_its_hint() {
     let report = checked(tools).await;
     assert!(report.docker_denied && !report.docker_running && report.docker_denied_hint.is_some());
 }
+
+/// The webview's `Os` and `Arch` are the ids the report writes: isothrum-machine's for an OS, and
+/// Rust's name for a CPU.
+#[test]
+fn the_reports_os_and_cpu_types_are_what_it_writes() {
+    use ts_rs::TS;
+    let cfg = ts_rs::Config::default();
+    let oses: Vec<String> = isothrum_machine::host::ALL_OSES.iter().map(|os| serde_json::to_string(os).unwrap()).collect();
+    assert_eq!(super::OsId::inline(&cfg), oses.join(" | "));
+    let cpus: Vec<String> = isothrum_machine::host::ALL_ARCHES.iter().map(|arch| format!("\"{}\"", super::cpu_name(*arch))).collect();
+    assert_eq!(super::CpuName::inline(&cfg), cpus.join(" | "));
+}

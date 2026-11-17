@@ -45,7 +45,7 @@ pub async fn run_plan(plan: &[Step], on_line: &mut impl FnMut(String)) -> Result
 /// otherwise keep what it read then, the plugin not installed yet, for minutes after the install.
 pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<()> {
     crate::platform::remembered::forget_all();
-    let cx = crate::runtime::providers::machine_check();
+    let cx = crate::runtime::providers::machine_setup().await;
     // Its lines come through a channel: the step's future stays `Send` whatever `on_line` is.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let run = async move {
@@ -77,7 +77,7 @@ fn is_removal(step: &Step) -> bool {
 /// What a step is, in the player's words, said before it instead of its command line.
 fn said(note: isothrum_machine::install::Note) -> String {
     use isothrum_machine::install::Dependency as Machine;
-    let name = |dep| super::install::name_on(dep, crate::platform::host::Os::Macos);
+    let name = |dep| super::install::name_on(dep, isothrum_machine::HostOs::Macos);
     match note {
         Note::Downloading(dep) => format!("Downloading {}…", name(dep)),
         Note::QemuUpdatingHomebrewFirst => "Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into(),
@@ -86,7 +86,7 @@ fn said(note: isothrum_machine::install::Note) -> String {
         Note::DownloadingVmwareUtility { version } => format!("Downloading HashiCorp's Vagrant VMware Utility {version}…"),
         Note::Removing(Machine::Docker) => "Running Docker Desktop's own uninstaller…".into(),
         Note::Removing(Machine::Virtualbox) => "Running VirtualBox's own uninstaller (macOS asks for your password)…".into(),
-        Note::Removing(Machine::VmwareUtility) if crate::platform::host::Os::HERE == crate::platform::host::Os::Windows => {
+        Note::Removing(Machine::VmwareUtility) if isothrum_runner::this_host() == isothrum_machine::HostOs::Windows => {
             "Removing the Vagrant VMware Utility (Windows asks for an administrator's approval)…".into()
         }
         Note::Removing(Machine::VmwareUtility) => "Removing the Vagrant VMware Utility (macOS asks for your password)…".into(),

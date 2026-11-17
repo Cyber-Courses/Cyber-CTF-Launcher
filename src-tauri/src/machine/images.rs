@@ -15,9 +15,12 @@ fn hub_ref(image: &str) -> Option<(String, String)> {
     Some((repo, r.tag.unwrap_or("latest").to_owned()))
 }
 
-/// Docker Hub's name for this machine's CPU architecture.
+/// Docker Hub's name for this machine's CPU architecture (`amd64`, `arm64`).
 fn hub_arch() -> &'static str {
-    crate::platform::host::Arch::HERE.docker_name()
+    match isothrum_runner::this_arch() {
+        isothrum_runner::Arch::Amd64 => "amd64",
+        isothrum_runner::Arch::Arm64 => "arm64",
+    }
 }
 
 /// Compressed download size in bytes of `image` for this machine, from Docker Hub.

@@ -206,11 +206,11 @@ const DOCKER_ENGINES: &str = "DockerEngines";
 /// setup options out from these, with no core to ask (not a type: imported by its path).
 fn write_setup_tables(dir: &Path) {
     use crate::machine::tools::install::Dependency;
-    use crate::platform::host::Os;
+    use isothrum_machine::HostOs;
     use runtime::providers::Provider;
-    let per_os = |value: &dyn Fn(Os) -> String| {
-        Os::ALL.into_iter().fold(String::new(), |mut lines, os| {
-            let _ = writeln!(lines, "  {}: {},", os.id(), value(os));
+    let per_os = |value: &dyn Fn(HostOs) -> String| {
+        isothrum_machine::host::ALL_OSES.into_iter().fold(String::new(), |mut lines, os| {
+            let _ = writeln!(lines, "  {}: {},", os_id(os), value(os));
             lines
         })
     };
@@ -290,7 +290,7 @@ const DEPLOY_LOG: &str = "DeployLog";
 /// The file of every provider's name as the player reads it ([`Provider::label`]), the one table
 /// the webview names providers from (not a type: imported by its path, not from the index).
 fn write_provider_names(dir: &Path) {
-    use crate::platform::host::Os;
+    use isothrum_machine::HostOs;
     use runtime::providers::Provider;
     let entries = Provider::ALL.iter().chain(&Provider::CLOUDS).fold(String::new(), |mut lines, p| {
         let _ = writeln!(lines, "  {}: \"{}\",", p.id(), p.label());
@@ -298,12 +298,12 @@ fn write_provider_names(dir: &Path) {
     });
     let doc = "/** Each provider's name as the player reads it (Rust's `Provider::label`). */";
     // The names an OS changes (Rust's `Provider::label_on`), by OS.
-    let on = [Os::Macos, Os::Linux, Os::Windows].into_iter().fold(String::new(), |mut lines, os| {
+    let on = [HostOs::Macos, HostOs::Linux, HostOs::Windows].into_iter().fold(String::new(), |mut lines, os| {
         let names = Provider::ALL.iter().filter(|p| p.label_on(os) != p.label()).fold(String::new(), |mut l, p| {
             let _ = write!(l, " {}: \"{}\",", p.id(), p.label_on(os));
             l
         });
-        let _ = writeln!(lines, "  {}: {{{names} }},", os.id());
+        let _ = writeln!(lines, "  {}: {{{names} }},", os_id(os));
         lines
     });
     let ids = |keep: fn(&Provider) -> bool| Provider::ALL.iter().filter(|p| keep(p)).map(|p| format!("\"{}\"", p.id())).collect::<Vec<_>>().join(", ");
@@ -313,11 +313,11 @@ fn write_provider_names(dir: &Path) {
     let listed = |providers: &[Provider]| providers.iter().map(|p| format!("\"{}\"", p.id())).collect::<Vec<_>>().join(", ");
     let (servers, clouds) = (listed(&Provider::SERVERS), listed(&Provider::CLOUDS));
     let doc_clouds = "/** The cloud accounts labs run in, in the launcher's order (Rust's `Provider::CLOUDS`). */";
-    let os_names = Os::ALL.into_iter().fold(String::new(), |mut l, os| {
-        let _ = write!(l, " {}: \"{}\",", os.id(), os.name());
+    let os_names = isothrum_machine::host::ALL_OSES.into_iter().fold(String::new(), |mut l, os| {
+        let _ = write!(l, " {}: \"{}\",", os_id(os), isothrum_machine::host::os_name(os));
         l
     });
-    let os_doc = "/** Each OS's name, by the machine report's id for it (Rust's `Os::name`). */";
+    let os_doc = "/** Each OS's name, by the machine report's id for it (isothrum-machine's `os_name`). */";
     let doc_on = "/** The names an OS changes (Rust's `Provider::label_on`): VMware's desktop hypervisor is Fusion on\n *  macOS and Workstation elsewhere. */";
     let text = format!(
         "{HEADER}import type {{ Os }} from \"./Os\";\nimport type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<Os, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n\n{doc_emulators}\nexport const EMULATORS: readonly Provider[] = [{}];\n\n{doc_servers}\nexport const SERVER_PROVIDERS = [{servers}] as const satisfies readonly Provider[];\n\n{doc_clouds}\nexport const CLOUD_PROVIDERS = [{clouds}] as const satisfies readonly Provider[];\n\n{os_doc}\nexport const OS_NAMES: Record<Os, string> = {{{os_names} }};\n",
@@ -325,6 +325,11 @@ fn write_provider_names(dir: &Path) {
         ids(|p| p.is_emulator()),
     );
     fs::write(dir.join(format!("{PROVIDER_NAMES}.ts")), text).unwrap();
+}
+
+/// `os`'s id, as the machine report writes it (`macos`).
+fn os_id(os: isothrum_machine::HostOs) -> String {
+    serde_json::to_value(os).unwrap().as_str().unwrap().to_owned()
 }
 
 /// The generated file of provider names (a value, not a type).

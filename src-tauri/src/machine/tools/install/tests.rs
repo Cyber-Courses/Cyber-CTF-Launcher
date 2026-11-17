@@ -1,25 +1,29 @@
+use std::sync::LazyLock;
+
+use isothrum_machine::LinuxPackages;
+
 use super::*;
-use crate::platform::host::LinuxPackages;
+use crate::runtime::providers::testing::host_on;
 
 #[test]
 fn docker_is_named_as_the_setup_installs_it_on_each_os() {
-    assert_eq!(name_on(Dependency::Docker, Os::Linux), "Docker Engine");
-    assert_eq!(name_on(Dependency::Docker, Os::Macos), "Docker Desktop");
-    assert_eq!(name_on(Dependency::Docker, Os::Windows), "Docker Desktop");
-    assert_eq!(name_on(Dependency::Awscli, Os::Linux), "AWS CLI");
+    assert_eq!(name_on(Dependency::Docker, HostOs::Linux), "Docker Engine");
+    assert_eq!(name_on(Dependency::Docker, HostOs::Macos), "Docker Desktop");
+    assert_eq!(name_on(Dependency::Docker, HostOs::Windows), "Docker Desktop");
+    assert_eq!(name_on(Dependency::Awscli, HostOs::Linux), "AWS CLI");
 }
 
 #[test]
 fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
     for (dep, oses) in [
-        (Dependency::Utm, [Os::Macos].as_slice()),
-        (Dependency::Libvirt, &[Os::Linux]),
-        (Dependency::Wsl, &[Os::Windows]),
-        (Dependency::Hyperv, &[Os::Windows]),
-        (Dependency::Docker, &[Os::Macos, Os::Linux, Os::Windows]),
-        (Dependency::Qemu, &[Os::Macos, Os::Linux]),
+        (Dependency::Utm, [HostOs::Macos].as_slice()),
+        (Dependency::Libvirt, &[HostOs::Linux]),
+        (Dependency::Wsl, &[HostOs::Windows]),
+        (Dependency::Hyperv, &[HostOs::Windows]),
+        (Dependency::Docker, &[HostOs::Macos, HostOs::Linux, HostOs::Windows]),
+        (Dependency::Qemu, &[HostOs::Macos, HostOs::Linux]),
     ] {
-        for os in Os::ALL {
+        for os in isothrum_machine::host::ALL_OSES {
             assert_eq!(runs_on(dep, os), oses.contains(&os), "{dep:?} on {os:?}");
         }
     }
@@ -27,10 +31,10 @@ fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
     // removal the same way.
     for host in hosts() {
         for dep in Dependency::ALL.into_iter().filter(|d| !runs_on(*d, host.os)) {
-            let said = plan_on(dep, host, None).err().map(|e| e.to_string()).unwrap_or_default();
+            let said = plan_on(dep, &host, None).err().map(|e| e.to_string()).unwrap_or_default();
             assert_eq!(said, super::not_here(dep, host.os).to_string(), "{host:?}");
-            assert!(said.starts_with(&format!("{} doesn't run on {}", name_on(dep, host.os), host.os.name())), "{said}");
-            assert_eq!(uninstall::plan_on(dep, host, None).err().map(|e| e.to_string()), Some(said), "{host:?}");
+            assert!(said.starts_with(&format!("{} doesn't run on {}", name_on(dep, host.os), isothrum_machine::host::os_name(host.os))), "{said}");
+            assert_eq!(uninstall::plan_on(dep, &host, None).err().map(|e| e.to_string()), Some(said), "{host:?}");
         }
     }
 }
@@ -39,34 +43,34 @@ fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
 /// manager (Linux's two).
 fn hosts() -> Vec<Host> {
     let mut hosts = Vec::new();
-    for arch in Arch::ALL {
+    for arch in isothrum_machine::host::ALL_ARCHES {
         for (os, packages) in [
-            (Os::Macos, Some(Packages::Homebrew(BREW))),
-            (Os::Macos, None),
-            (Os::Windows, Some(Packages::Winget)),
-            (Os::Linux, Some(Packages::Linux(LinuxPackages::Apt))),
-            (Os::Linux, Some(Packages::Linux(LinuxPackages::Dnf))),
-            (Os::Linux, None),
+            (HostOs::Macos, Some(Packages::Homebrew(BREW))),
+            (HostOs::Macos, None),
+            (HostOs::Windows, Some(Packages::Winget)),
+            (HostOs::Linux, Some(Packages::Linux(LinuxPackages::Apt))),
+            (HostOs::Linux, Some(Packages::Linux(LinuxPackages::Dnf))),
+            (HostOs::Linux, None),
         ] {
-            hosts.push(Host { os, arch, packages });
+            hosts.push(host_on(os, arch, packages));
         }
     }
     hosts
 }
 
 const BREW: &str = "/opt/homebrew/bin/brew";
-const MAC: Host = Host { os: Os::Macos, arch: Arch::Aarch64, packages: Some(Packages::Homebrew(BREW)) };
-const WINDOWS: Host = Host { os: Os::Windows, arch: Arch::X86_64, packages: Some(Packages::Winget) };
-const APT: Host = Host { os: Os::Linux, arch: Arch::X86_64, packages: Some(Packages::Linux(LinuxPackages::Apt)) };
-const DNF: Host = Host { os: Os::Linux, arch: Arch::X86_64, packages: Some(Packages::Linux(LinuxPackages::Dnf)) };
-const BARE_LINUX: Host = Host { os: Os::Linux, arch: Arch::X86_64, packages: None };
+static MAC: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Macos, Arch::Arm64, Some(Packages::Homebrew(BREW))));
+static WINDOWS: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Windows, Arch::Amd64, Some(Packages::Winget)));
+static APT: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Linux, Arch::Amd64, Some(Packages::Linux(LinuxPackages::Apt))));
+static DNF: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Linux, Arch::Amd64, Some(Packages::Linux(LinuxPackages::Dnf))));
+static BARE_LINUX: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Linux, Arch::Amd64, None));
 
 #[test]
 fn every_tool_on_every_computer_installs_or_says_why_and_each_install_has_a_way_out() {
     for host in hosts() {
         for dep in Dependency::ALL {
-            let install = plan_on(dep, host, Some("ada"));
-            let removal = uninstall::plan_on(dep, host, Some("/x/VirtualBox.dmg"));
+            let install = plan_on(dep, &host, Some("ada"));
+            let removal = uninstall::plan_on(dep, &host, Some("/x/VirtualBox.dmg"));
             if let Ok(steps) = &install {
                 assert!(!steps.is_empty(), "{dep:?} on {host:?}");
                 // A Windows feature is turned off by the player in Windows Features.
@@ -95,21 +99,21 @@ fn a_hypervisor_is_installed_exactly_where_it_runs_and_its_provider_names_the_to
     for dep in Dependency::ALL {
         let Some(provider) = dep.hypervisor() else { continue };
         assert_eq!(Dependency::of_hypervisor(provider), Some(dep), "{provider:?}");
-        for os in Os::ALL {
+        for os in isothrum_machine::host::ALL_OSES {
             assert_eq!(runs_on(dep, os), Provider::from(provider).runs_on(os), "{dep:?} on {os:?}");
         }
     }
-    assert!(plan_on(Dependency::Qemu, WINDOWS, None).is_err());
+    assert!(plan_on(Dependency::Qemu, &WINDOWS, None).is_err());
     assert!(Dependency::Qemu.row().winget.is_none());
 }
 
 #[test]
 fn windows_on_arm_is_refused_the_hypervisors_not_built_for_it_by_the_hypervisor_table() {
-    let arm = Host { arch: Arch::Aarch64, ..WINDOWS };
-    let said = |dep| plan_on(dep, arm, None).err().map(|e| e.to_string()).unwrap_or_default();
+    let arm = Host { arch: Arch::Arm64, ..WINDOWS.clone() };
+    let said = |dep| plan_on(dep, &arm, None).err().map(|e| e.to_string()).unwrap_or_default();
     assert_eq!(said(Dependency::Virtualbox), "VirtualBox doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.");
     assert_eq!(said(Dependency::VmwareUtility), "VMware Workstation doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.");
-    assert!(plan_on(Dependency::Hyperv, arm, None).is_ok() && plan_on(Dependency::Docker, arm, None).is_ok());
+    assert!(plan_on(Dependency::Hyperv, &arm, None).is_ok() && plan_on(Dependency::Docker, &arm, None).is_ok());
 }
 
 #[tokio::test]
@@ -128,28 +132,31 @@ async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
 
 /// The plan for every dependency on `host`: the ones that install there have steps, the
 /// others say why not.
-fn plans(host: Host) -> Vec<(Dependency, Result<Plan>)> {
-    Dependency::ALL.into_iter().map(|d| (d, plan_on(d, host, Some("ada")))).collect()
+fn plans(host: &Host) -> Vec<(Dependency, Result<Plan>)> {
+    Dependency::ALL.into_iter().map(|d| (d, plan_on(d, &host, Some("ada")))).collect()
 }
 
 #[test]
 fn macos_installs_through_isothrum_machine_and_says_why_not_in_the_players_words() {
     // isothrum-machine's Homebrew formulae and vendors' installers; every plan is tested there.
-    let without = Host { packages: None, ..MAC };
-    assert_eq!(plan_on(Dependency::Docker, without, None).err().unwrap().to_string(), "Homebrew is required. Install it from https://brew.sh, then try again.");
-    assert!(plan_on(Dependency::VmwareUtility, without, None).is_ok(), "HashiCorp's own package");
-    for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, MAC, None))) {
+    let without = Host { packages: None, ..MAC.clone() };
+    assert_eq!(
+        plan_on(Dependency::Docker, &without, None).err().unwrap().to_string(),
+        "Homebrew is required. Install it from https://brew.sh, then try again."
+    );
+    assert!(plan_on(Dependency::VmwareUtility, &without, None).is_ok(), "HashiCorp's own package");
+    for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, &MAC, None))) {
         match dep {
             Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(plan.is_err(), "{dep:?}"),
             _ => assert!(!plan.unwrap().is_empty(), "{dep:?}"),
         }
     }
-    assert_eq!(uninstall::plan_on(Dependency::Terraform, without, None).err().unwrap().to_string(), "Homebrew is needed to remove this tool.");
+    assert_eq!(uninstall::plan_on(Dependency::Terraform, &without, None).err().unwrap().to_string(), "Homebrew is needed to remove this tool.");
 }
 
 #[test]
 fn windows_installs_through_winget_and_wsl_through_its_installer() {
-    for (dep, p) in plans(WINDOWS) {
+    for (dep, p) in plans(&WINDOWS) {
         match dep {
             Dependency::Utm | Dependency::Libvirt | Dependency::Qemu => assert!(p.is_err(), "{dep:?}"),
             Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => assert_eq!(p.unwrap()[0].program, "powershell"),
@@ -167,16 +174,16 @@ fn windows_installs_through_winget_and_wsl_through_its_installer() {
 fn a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs() {
     // Regression: Fedora, openSUSE and Arch got `apt-get: not found` from a pkexec prompt.
     for dep in [Dependency::Vagrant, Dependency::Virtualbox, Dependency::Libvirt, Dependency::Qemu, Dependency::Docker] {
-        let err = plan_on(dep, BARE_LINUX, None).err().unwrap_or_else(|| panic!("{dep:?} refused"));
+        let err = plan_on(dep, &BARE_LINUX, None).err().unwrap_or_else(|| panic!("{dep:?} refused"));
         assert!(err.to_string().starts_with("This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install "), "{err}");
-        assert!(plan_on(dep, APT, None).is_ok(), "{dep:?}");
+        assert!(plan_on(dep, &APT, None).is_ok(), "{dep:?}");
     }
-    assert!(plan_on(Dependency::Utm, BARE_LINUX, None).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
+    assert!(plan_on(Dependency::Utm, &BARE_LINUX, None).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
 }
 
 #[test]
 fn without_apt_or_dnf_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
-    let err = plan_on(Dependency::Virtualbox, BARE_LINUX, None).err().unwrap().to_string();
+    let err = plan_on(Dependency::Virtualbox, &BARE_LINUX, None).err().unwrap().to_string();
     assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install VirtualBox yourself, then re-check.");
 }
 
@@ -195,7 +202,7 @@ use crate::testing::test_app::{Sink, TestApp};
 
 /// A dependency this OS doesn't install (on macOS without Homebrew, none does).
 fn not_here() -> Dependency {
-    if Os::HERE == Os::Windows { Dependency::Utm } else { Dependency::Wsl }
+    if isothrum_runner::this_host() == HostOs::Windows { Dependency::Utm } else { Dependency::Wsl }
 }
 
 /// Scripted tools for an install of Terraform: `terraform version` answers once `installed`
@@ -320,14 +327,14 @@ fn a_root_step_prompts_unless_unattended_where_it_runs_as_root_or_through_sudo_n
 #[test]
 fn linux_installs_and_removals_are_isothrum_machines_said_in_the_players_words() {
     // isothrum-machine's root scripts, through pkexec; every plan's steps and refusals are tested there.
-    for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, APT, Some("ada")))) {
+    for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, &APT, Some("ada")))) {
         match dep {
             Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => assert!(plan.is_err(), "{dep:?}"),
             _ => assert_eq!(plan.unwrap()[0].program, "pkexec", "{dep:?}"),
         }
     }
-    let apt_only = plan_on(Dependency::Gcloud, DNF, None).err().unwrap().to_string();
+    let apt_only = plan_on(Dependency::Gcloud, &DNF, None).err().unwrap().to_string();
     assert_eq!(apt_only, "The guided setup installs Google Cloud CLI through apt only for now: install it yourself, then re-check.");
-    let removal = uninstall::plan_on(Dependency::Vagrant, DNF, None).unwrap();
+    let removal = uninstall::plan_on(Dependency::Vagrant, &DNF, None).unwrap();
     assert!(removal[0].args.last().unwrap().ends_with("dnf remove -y vagrant"), "{removal:?}");
 }
