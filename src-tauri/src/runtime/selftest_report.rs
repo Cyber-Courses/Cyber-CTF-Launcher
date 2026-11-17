@@ -96,6 +96,11 @@ impl Reporter {
         }
     }
 
+    /// Sends step `step` (`label`) as failed for `raw`, said through the reporter's explanation.
+    pub(crate) fn failed(&self, step: &'static str, label: &'static str, raw: &str) {
+        self.send(step, label, StepState::Fail, Some((self.explain)(raw)));
+    }
+
     /// Runs one step, reporting it: `running`, then `ok` with the future's detail or `fail` with
     /// its error; a failure stops the test with that step's error.
     pub(crate) async fn step<T>(&self, step: &'static str, label: &'static str, fut: impl Future<Output = Result<(T, Option<String>)>>) -> Result<T> {

@@ -16,7 +16,6 @@ const ALLOWED: &[(&str, &str)] = &[
         "cloud_cli.rs",
         "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
     ),
-    ("machine/selftest/docker.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/selftest/downloads.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/selftest/vm.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/selftest/vm/leftover.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),

@@ -1,8 +1,9 @@
 //! Setup self-tests: prove this machine can actually run labs, not just that the tools exist.
 //!
-//! - `docker`: a throwaway two-container lab (busybox, ~2 MB). It checks the engine answers,
-//!   an image pulls, compose starts the lab, containers reach each other by name on the lab
-//!   network, and a published port is reachable from this machine. Always cleaned up.
+//! - `docker`: isothrum-machine's engine self-test (`selftest::engine`), a throwaway
+//!   two-container deployment (busybox, ~2 MB) through a runner of its own: the engine answers,
+//!   the image is here, the deployment starts, its containers reach each other by name and a
+//!   published port answers on this machine. Always cleaned up.
 //! - `vm`: a real throwaway VM on the first usable local hypervisor. It checks the
 //!   hypervisor answers, gets a small test box (once, then cached), boots it on a private
 //!   lab network, runs a command inside it, pings it from this machine, then destroys it.
@@ -22,7 +23,6 @@ use crate::platform::host::Arch;
 use crate::runtime::providers::Provider;
 use crate::runtime::selftest_report::{Event, Reporter};
 
-use docker::IMAGE;
 use vm::candidate_boxes;
 
 /// Which self-test to run.
@@ -56,15 +56,23 @@ pub(crate) fn work_dir(dirs: &AppDirs, kind: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Runs `op`, a self-test of `kind`, recording what it downloaded as the app's (the test image,
-/// or the test box of whichever provider it used), for Storage to clean up.
-async fn tracked<T>(dirs: &AppDirs, kind: Kind, op: impl std::future::Future<Output = T>) -> T {
-    match kind {
-        Kind::Docker => owned::tracked(dirs.clone(), &[IMAGE.to_string()], &[], op).await,
-        Kind::Vm => {
-            let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, Arch::HERE).iter().map(ToString::to_string)).collect();
-            owned::tracked(dirs.clone(), &[], &boxes, op).await
-        }
+/// Runs `op`, the VM self-test, recording what it downloaded as the app's (the test box of
+/// whichever provider it used), for Storage to clean up.
+async fn tracked<T>(dirs: &AppDirs, op: impl std::future::Future<Output = T>) -> T {
+    let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, Arch::HERE).iter().map(ToString::to_string)).collect();
+    owned::tracked(dirs.clone(), &[], &boxes, op).await
+}
+
+/// Adds the test image a self-test pulled (`pulled`) to the app's runner record, for Storage to
+/// clean up. Best effort: a failure is logged, and only means it isn't cleaned up later.
+async fn keep(dirs: &AppDirs, pulled: Option<isothrum_runner::DownloadToAdopt>) {
+    let Some(pulled) = pulled else { return };
+    let added = match crate::runtime::paths::runner_home(dirs) {
+        Ok(home) => crate::runtime::isothrum::adopt_downloads(&home, vec![pulled]).await.map(drop),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = added {
+        log::warn!("the self-test's image couldn't be added to the runner's record: {e}");
     }
 }
 
@@ -72,7 +80,7 @@ async fn tracked<T>(dirs: &AppDirs, kind: Kind, op: impl std::future::Future<Out
 /// the app's. Errors are ignored by the UI: the test itself retries and reports them.
 pub async fn machine_selftest_prefetch(dirs: AppDirs, kind: Kind, provider: Option<Provider>) -> Result<()> {
     match kind {
-        Kind::Docker => owned::tracked(dirs, &[IMAGE.to_string()], &[], downloads::ensure_image(&[])).await.map(|_| ()),
+        Kind::Docker => docker::prefetch(&dirs).await,
         Kind::Vm => {
             let Some(p) = vm::test_provider(provider).await else { return Ok(()) };
             let (bx, cached) = vm::pick_box(p, Arch::HERE).await;
@@ -110,13 +118,10 @@ pub async fn machine_selftest(
     let _alone = one_at_a_time(kind).lock().await;
     let r = Reporter::explaining(events, explain);
     // Boxed: the steps of a test VM's run make a large future.
-    Box::pin(tracked(&dirs, kind, async {
-        match kind {
-            Kind::Docker => docker::run_test(&work_dir(&dirs, "docker")?, context.as_deref(), &r).await,
-            Kind::Vm => vm::run_test(&work_dir(&dirs, "vm")?, provider, &r).await,
-        }
-    }))
-    .await
+    match kind {
+        Kind::Docker => Box::pin(docker::run_test(&dirs, &work_dir(&dirs, "docker")?, context.as_deref(), &r)).await,
+        Kind::Vm => Box::pin(tracked(&dirs, async { vm::run_test(&work_dir(&dirs, "vm")?, provider, &r).await })).await,
+    }
 }
 
 #[cfg(test)]
@@ -164,65 +169,80 @@ mod tests {
         )
     }
 
-    /// The Docker daemon as isothrum-machine asks it (`docker [--context <c>] info|version`),
-    /// answered by `script`, on this test's thread until dropped; the test keeps the calls.
-    fn daemon(script: isothrum_runner::fake::Script) -> (crate::runtime::providers::testing::Machine, std::sync::Arc<isothrum_runner::fake::FakeProcesses>) {
-        let tools = std::sync::Arc::new(script.build());
-        let runner: std::sync::Arc<dyn isothrum_runner::ProcessRunner> = tools.clone();
+    /// A container engine as isothrum-machine's engine test asks it: answering (or not), the
+    /// test image held, its deployment up with the web server's port published at `port`.
+    fn engine(answers: bool, port: u16) -> isothrum_runner::fake::FakeProcesses {
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        FakeProcesses::model(move |call| {
+            let line = call.args.join(" ");
+            if line.contains("info --format") {
+                return if answers { Reply::ok("27.3.1") } else { Reply::fail(1, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock") };
+            }
+            if line.contains("image inspect") {
+                Reply::ok("sha256:busybox")
+            } else if line.contains("compose version") {
+                Reply::ok("2.29.7")
+            } else if line.contains("config --format json") {
+                Reply::ok(r#"{"services": {"web": {"image": "busybox:1.36"}, "probe": {"image": "busybox:1.36"}}}"#)
+            } else if line.contains(" ps ") {
+                let published = format!(r#"[{{"URL":"127.0.0.1","TargetPort":80,"PublishedPort":{port},"Protocol":"tcp"}}]"#);
+                let probe = r#"{"Service":"probe","State":"running","Health":"","ExitCode":0,"Publishers":[],"Labels":""}"#;
+                Reply::ok(&format!(r#"{{"Service":"web","State":"running","Health":"","ExitCode":0,"Publishers":{published},"Labels":""}}{}{probe}"#, "\n"))
+            } else if line.contains("exec") {
+                Reply::ok("isothrum-selftest-ok")
+            } else {
+                Reply::ok("")
+            }
+        })
+    }
+
+    /// The container test on [`engine`], its events.
+    async fn engine_test(answers: bool) -> (Result<()>, Sink) {
+        let t = crate::testing::test_app::TestApp::new();
+        let web = crate::platform::http::tests::serve_once(b"HTTP/1.0 200 OK\r\nConnection: close\r\n\r\nisothrum-selftest-ok".to_vec()).await;
+        let port = web.trim_start_matches("http://127.0.0.1:").trim_end_matches('/').parse().unwrap();
+        let runner: std::sync::Arc<dyn isothrum_runner::ProcessRunner> = std::sync::Arc::new(engine(answers, port));
         let host = crate::runtime::providers::testing::host(std::path::Path::new("/nonexistent/cyberctf-test-machine"));
-        (crate::runtime::providers::testing::Machine::set(runner, host), tools)
+        let _machine = crate::runtime::providers::testing::Machine::set(runner, host);
+        let (channel, seen) = events();
+        (machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await, seen)
     }
 
     #[tokio::test]
-    async fn the_container_test_runs_every_step_then_cleans_up() {
-        use crate::platform::exec::fake::{Tools, ok};
-        let t = crate::testing::test_app::TestApp::new();
-        // The lab's published port: a loopback server serving the test page.
-        let web =
-            crate::platform::http::tests::serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\ncyberctf-selftest-ok".to_vec()).await;
-        let addr = web.trim_start_matches("http://").trim_end_matches('/').to_string();
-        let _daemon = daemon(isothrum_runner::fake::FakeProcesses::script().expect("docker info", isothrum_runner::fake::Reply::ok("27.3.1\n")));
-        let tools = Tools::new(move |_, args| match args {
-            [.., "exec", "-T", "probe", "wget", _, _, _, _] => ok("cyberctf-selftest-ok\n"),
-            [.., "port", "web", "80"] => ok(format!("{addr}\n")),
-            _ => ok(""),
-        });
-        let (channel, seen) = events();
-        machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await.unwrap();
-        let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
-        assert_eq!(done, ["engine:ok", "pull:ok", "start:ok", "network:ok", "port:ok", "cleanup:ok"]);
-        assert!(tools.called("down -v --remove-orphans"));
-        // The CLI's current engine: no context forced on the calls.
-        assert_eq!(tools.env_of("compose", "DOCKER_CONTEXT"), None);
-        machine_selftest_prefetch(t.dirs(), Kind::Docker, None).await.unwrap();
+    async fn the_container_test_says_each_step_in_the_apps_words_then_cleans_up() {
+        let (ran, seen) = engine_test(true).await;
+        ran.unwrap();
+        let done: Vec<(String, String)> = seen
+            .messages()
+            .iter()
+            .filter(|e| e["state"] != "running")
+            .map(|e| {
+                (
+                    format!("{}:{}:{}", e["step"].as_str().unwrap(), e["state"].as_str().unwrap(), e["label"].as_str().unwrap()),
+                    e["detail"].as_str().unwrap_or("").to_owned(),
+                )
+            })
+            .collect();
+        let said: Vec<(&str, &str)> = done.iter().map(|(s, d)| (s.as_str(), d.as_str())).collect();
+        assert_eq!(
+            &said[..4],
+            [
+                ("engine:ok:Container engine answers", "Docker 27.3.1"),
+                ("pull:ok:Download a test image", "busybox:1.36 (ready)"),
+                ("start:ok:Start a two-container test lab", ""),
+                ("network:ok:Containers reach each other", "probe → web on the lab network"),
+            ]
+        );
+        assert!(said[4].0 == "port:ok:Lab port reachable from this machine" && said[4].1.starts_with("127.0.0.1:"), "{said:?}");
+        assert_eq!(said[5], ("cleanup:ok:Clean up", ""));
     }
 
-    /// What a container test's bookkeeping asks before and after the run, answered as on a
-    /// machine with nothing of the test's left: no images listed, the test lab already down.
-    fn clean_slate() -> [(&'static str, Option<crate::platform::exec::fake::Reply>); 2] {
-        use crate::platform::exec::fake::ok;
-        [("docker image ls -q", ok("")), ("docker compose -p cyberctf-selftest -f docker-compose.yml down", ok(""))]
-    }
-
-    /// The Machine page tests one engine among several: every Docker call of the run, the
-    /// probe, the pull, compose and the clean-up, goes to that engine's context.
     #[tokio::test]
-    async fn the_container_test_runs_on_the_engine_asked_for() {
-        use crate::platform::exec::fake::{Tools, fail};
-        let t = crate::testing::test_app::TestApp::new();
-        let [image_list, down] = clean_slate();
-        let tools = Tools::strict_rules(&[image_list, down, ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
-        let (_daemon, asked) =
-            daemon(isothrum_runner::fake::FakeProcesses::script().expect("docker --context orbstack info", isothrum_runner::fake::Reply::ok("27.3.1\n")));
-        let (channel, seen) = events();
-        assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("orbstack".into()), channel).await.is_err());
-        assert_eq!(states(&seen), ["engine:running", "engine:ok", "pull:running", "pull:fail"]);
-        // (`image inspect busybox`, the test's own: the storage bookkeeping after the run inspects
-        // the image on the CLI's engine, as Storage reads it.)
-        assert_eq!(asked.calls().len(), 1, "the engine is asked on its context");
-        for call in ["image inspect busybox", "pull -q", "down -v"] {
-            assert_eq!(tools.env_of(call, "DOCKER_CONTEXT").as_deref(), Some("orbstack"), "{call}: {:?}", tools.calls());
-        }
+    async fn a_failed_container_test_says_the_hint_and_stops_at_its_step() {
+        let (ran, seen) = engine_test(false).await;
+        assert!(ran.is_err());
+        assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
+        assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
     }
 
     #[tokio::test]
@@ -238,43 +258,6 @@ mod tests {
         assert!(second.is_err(), "it waits");
         assert!(tools.calls().is_empty() && seen.messages().is_empty());
         drop(first);
-    }
-
-    #[tokio::test]
-    async fn a_failed_container_test_stops_at_its_step_and_still_cleans_up() {
-        use crate::platform::exec::fake::Tools;
-        let t = crate::testing::test_app::TestApp::new();
-        let [image_list, down] = clean_slate();
-        let tools = Tools::strict_rules(&[image_list, down, ("docker image inspect", crate::platform::exec::fake::ok(""))]);
-        let down_daemon = isothrum_runner::fake::Reply::fail(1, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock");
-        let _daemon = daemon(isothrum_runner::fake::FakeProcesses::script().expect("docker info", down_daemon));
-        let (channel, seen) = events();
-        assert!(machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await.is_err());
-        assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
-        assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
-        assert!(tools.called("down -v"), "the test lab is torn down even so");
-    }
-
-    /// Regression (Debian 13's `docker.io` 26.1.5): Docker 26 and older exit 0 from `docker info
-    /// --format …` with an empty line when the daemon doesn't answer, and the engine step passed
-    /// ("Docker ") to fail at the pull. It fails with the reason `docker version` gives, asked of
-    /// the same engine.
-    #[tokio::test]
-    async fn an_engine_whose_docker_info_answers_nothing_fails_the_engine_step() {
-        use crate::platform::exec::fake::{Tools, ok};
-        use isothrum_runner::fake::{FakeProcesses, Reply};
-        let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::new(|_, _| ok(""));
-        let down = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
-        let script =
-            FakeProcesses::script().expect("docker --context default info", Reply::ok("\n")).expect("docker --context default version", Reply::fail(1, down));
-        let (_daemon, asked) = daemon(script);
-        let (channel, seen) = events();
-        assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("default".into()), channel).await.is_err());
-        assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
-        assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
-        assert_eq!(asked.calls().len(), 2, "docker version asked of the same engine");
-        assert!(!tools.called("pull"), "{:?}", tools.calls());
     }
 
     #[tokio::test]

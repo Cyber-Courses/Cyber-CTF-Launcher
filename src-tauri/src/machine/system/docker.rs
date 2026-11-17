@@ -22,7 +22,7 @@ fn machine() -> isothrum_machine::Context {
 
 /// Why the daemon gave no answer, as the launcher's error: a refusal or a stopped daemon as the
 /// Docker call that failed, which [`docker_denied`] reads.
-fn no_answer(why: NoAnswer) -> Error {
+pub(crate) fn no_answer(why: NoAnswer) -> Error {
     match why {
         NoAnswer::NoCli => Error::ToolMissing { tool: "docker" },
         NoAnswer::Denied(said) | NoAnswer::Down(said) => Error::CommandFailed { command: "docker info".into(), stderr: said },
@@ -33,14 +33,6 @@ fn no_answer(why: NoAnswer) -> Error {
 /// `docker info`'s operating system line: the daemon answers (for this account).
 async fn daemon_os() -> Result<String> {
     isothrum_machine::docker::daemon_os(&machine()).await.map_err(no_answer)
-}
-
-/// `docker info --format <field>` (`{{.ServerVersion}}`, say), on the context `env` names
-/// (`DOCKER_CONTEXT`), else the current one: the daemon answers (for this account)
-/// ([`isothrum_machine::docker::daemon_info`]).
-pub(crate) async fn daemon_info(field: &str, env: &[(String, String)]) -> Result<String> {
-    let context = env.iter().find(|(k, _)| k == "DOCKER_CONTEXT").map(|(_, v)| v.as_str());
-    isothrum_machine::docker::daemon_info(&machine(), field, context).await.map_err(no_answer)
 }
 
 /// The engine with the webview's id `engine`.

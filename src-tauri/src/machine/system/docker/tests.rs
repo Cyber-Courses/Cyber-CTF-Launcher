@@ -32,14 +32,6 @@ async fn a_daemon_that_refuses_this_account_is_the_denied_error_and_a_stopped_on
 }
 
 #[tokio::test]
-async fn the_self_tests_context_reaches_the_daemon_it_asks() {
-    let (_machine, tools) = docker(FakeProcesses::script().expect("docker --context colima info --format {{.ServerVersion}}", Reply::ok("28.4.0")).build());
-    let env = [("DOCKER_CONTEXT".to_owned(), "colima".to_owned())];
-    assert_eq!(daemon_info("{{.ServerVersion}}", &env).await.unwrap(), "28.4.0");
-    assert_eq!(tools.calls().len(), 1);
-}
-
-#[tokio::test]
 async fn an_engines_context_is_resolved_for_pinning_a_lab_to_it() {
     let _machine = docker(FakeProcesses::script().allow("docker context ls", Reply::ok("default *\norbstack\ncolima-dev\n")).build());
     assert_eq!(engine_context("colima").await.unwrap(), "colima-dev");
