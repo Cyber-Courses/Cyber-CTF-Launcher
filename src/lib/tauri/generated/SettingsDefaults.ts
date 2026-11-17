@@ -12,5 +12,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   "vmForm": null,
   "selfTests": {},
   "serverTests": {},
-  "lastRuns": {}
+  "lastRuns": {},
+  "lastPlaces": {}
 };

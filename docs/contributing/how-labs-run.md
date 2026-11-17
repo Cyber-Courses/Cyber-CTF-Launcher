@@ -48,6 +48,12 @@ asks for the start: the webview through `lab_placement` (its Start dialog's choi
 picked), the command line from its flags (`cyberctf labs start`, the lab's runtime and source read
 from the catalogue first), and the website's launches from the target picked there.
 
+Where the player last started a lab is their own earlier choice. The webview notes each launch's
+placement with the lab's last start (the settings' `lastPlaces`), and a start with nothing newly
+picked (Home's "start again") sends that placement as the choice, through the same rule: a
+placement no longer possible or ready is refused as any choice is. A lab never started here
+follows the saved preference.
+
 ## What says where a lab is
 
 A running lab is the runner's run `cyberctf-<lab id>`, kept in the runner's home

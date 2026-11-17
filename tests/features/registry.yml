@@ -871,7 +871,7 @@ areas:
           integration: no scenario provokes a real port clash; lsof/ss parsing only unit-tested on canned output, Windows holder lookup untested
 
       - id: lab-run.where-it-runs
-        what: Choose where a lab runs (this machine, as VMs, per machine, a server, a cloud) in the run-on dialog; what isn't picked, the saved preference decides among what the lab's spec allows and is ready here, by one rule shared with the command line and the website's launches, and the launch sends that placement as it is.
+        what: Choose where a lab runs (this machine, as VMs, per machine, a server, a cloud) in the run-on dialog; what isn't picked, the saved preference decides among what the lab's spec allows and is ready here, by one rule shared with the command line and the website's launches, and the launch sends that placement as it is. Started again with nothing newly picked (Home's Jump back in), a lab goes back where it was last started, sent as the player's choice to the same rule.
         host: false
         commands:
           - lab_placement
@@ -883,6 +883,11 @@ areas:
             - src-tauri/src/commands/labs.rs > a_lab_is_placed_by_its_spec_the_choice_and_the_saved_preference_never_on_the_default_server_for_containers
             - src-tauri/src/cli/labs.rs > the_flags_pick_what_they_say_and_leave_the_rest_to_the_saved_preference
             - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here where the backend's rule places it, sending that placement as it is
+            - src/features/labs/use-lab-actions.test.tsx > goes back where it was last started: that placement sent as the player's choice
+            - src/features/labs/use-lab-actions.test.tsx > keeps a container lab's form, engine and ports, without asking the ports again
+            - src/features/labs/use-lab-actions.test.tsx > is refused, launching nothing, when the rule says it can't run there now
+            - src/features/home/home-behavior.test.tsx > starts a stopped lab again from Jump back in where it was last started
+            - src-tauri/src/settings/tests.rs > the_tests_and_last_runs_are_kept_by_key_and_a_last_run_is_forgotten_with_its_place
             - src-tauri/src/runtime/lab/run_options/tests.rs > a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow
             - src/features/labs/lab-detail/use-run-target.test.tsx
             - src/features/labs/lab-parts.test.tsx > lists this machine, servers and cloud accounts as platforms
