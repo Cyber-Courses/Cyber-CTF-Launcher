@@ -306,8 +306,8 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
     Ok(runtime::primary_url(dirs, &dir, &launch.lab_id, launch.runtime).await)
 }
 
-/// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending the deploy still running
-/// in its worker, if any (`end_workers`: the app shell runs the workers), and the website's
+/// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending what the runner service
+/// still runs on it, if any (`end_workers`, handed in by the app shell), and the website's
 /// co-location check of it.
 pub(crate) async fn stop_lab_retiring_colocation(
     dirs: &AppDirs,

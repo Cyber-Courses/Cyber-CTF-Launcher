@@ -1,6 +1,6 @@
 //! A panic in a future, caught where it is polled: tokio ends a task that panics without a word
-//! to whoever waits on what it would have done, so what must report every end (a deploy worker's
-//! job, a test scenario) catches it and says it instead.
+//! to whoever waits on what it would have done, so what must report every end (an operation of
+//! the run service, a test scenario) catches it and says it instead.
 
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};

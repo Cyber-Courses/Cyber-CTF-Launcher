@@ -89,7 +89,7 @@ pub(crate) async fn remove_in(dirs: &AppDirs, id: &str) -> Result<labs::remove::
     labs::remove::remove(dirs, id).await
 }
 
-/// The labs with any operation in flight, in this process or a deploy worker: what an update
+/// The labs with any operation in flight, in this process or the runner service: what an update
 /// install waits for (see [`operations::busy_labs`]).
 #[tauri::command]
 pub async fn busy_labs(app: AppHandle) -> std::result::Result<Vec<String>, String> {
@@ -718,7 +718,7 @@ mod tests {
     #[tokio::test]
     async fn lab_launch_offline_refuses_a_lab_that_is_not_installed() {
         // An offline start runs the installed lab: with none installed it fails before the backend
-        // or a deploy worker is involved.
+        // or the runner service is involved.
         let t = TestApp::new();
         let here = Placement::Docker { engine: None, default_ports: false };
         let id = lab_launch(t.handle().clone(), "invoice".into(), here, Some(true)).await.unwrap();

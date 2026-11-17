@@ -187,7 +187,7 @@ export const labInstalled = (id: string) => invoke<boolean>("lab_installed", { i
 export const labRemove = (id: string) => invoke<LabRemoval>("lab_remove", { id });
 
 /** The labs with any operation in flight (a start, a stop, a park, a provisioning run), in the
- *  app or a deploy worker: what an update install waits for (Rust's `busy_labs`). */
+ *  app or the runner service: what an update install waits for (Rust's `busy_labs`). */
 export const busyLabs = () => invoke<string[]>("busy_labs");
 
 /** Quit by finishing in the background: hides the windows and exits once the in-app deploys

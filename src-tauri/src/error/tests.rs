@@ -44,7 +44,7 @@ fn errors_reach_the_webview_with_their_code_and_message() {
 
 #[test]
 fn a_refusal_read_back_from_the_wire_is_still_one() {
-    // A deploy worker hands its error back as a Wire: a refusal it read as Other came back as
+    // An operation's failure comes back as a Wire: a refusal it read as Other came back as
     // Invalid, neither a refusal nor refused before acting.
     let back = Error::from(Error::Refused("still running on esxi1".into()).to_wire());
     assert!(back.is_refusal() && back.to_string() == "still running on esxi1", "{back:?}");

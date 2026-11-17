@@ -19,8 +19,9 @@ The launcher gathers it for you, in **Settings > About**:
   opens a mail to support@cyberctf.com: attach the file there (a mail link can't attach it for you).
 - **Diagnostics > Copy**: the launcher's version, the OS and the machine's setup status. Paste it
   into the issue.
-- **Log files > Open folder**: `cyberctf.log`, and a `deploy-<lab>.log` per lab. Attach the ones
-  from when it went wrong. Read them first: they name your labs, servers and paths.
+- **Log files > Open folder**: `cyberctf.log`. Attach it, with the lines from when it went wrong.
+  Read it first: it names your labs, servers and paths. A lab's operations are in the diagnostics
+  bundle, and `cyberctf labs logs <lab>` lists them.
 
 Also say what you did, what you expected and what happened instead, and where the lab ran (this
 machine, a server, a cloud account).

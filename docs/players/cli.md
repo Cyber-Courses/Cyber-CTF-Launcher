@@ -22,7 +22,7 @@ display, with the app closed, which is its main use; it also runs beside an open
 | `cyberctf labs park <lab> [--shutdown]`                                                                                    | Pauses the lab (state saved), or shuts its machines down, keeping them.                                                                                                                              |
 | `cyberctf labs resume <lab>`                                                                                               | Brings a parked lab back.                                                                                                                                                                            |
 | `cyberctf labs remove <lab>`                                                                                               | Removes the lab from this computer, with everything the app keeps for it. Asks first.                                                                                                                |
-| `cyberctf labs logs <lab> [--follow]`                                                                                      | The log of the lab's last operation in a deploy worker, followed while it runs.                                                                                                                      |
+| `cyberctf labs logs <lab> [--follow]`                                                                                      | The operations the runner service recorded for the lab's run, newest first; `--follow` follows those under way to their end.                                                                         |
 | `cyberctf attack-box start <lab> [--network n] [--image i] [--desktop]`                                                    | Adds the attack box to the running lab.                                                                                                                                                              |
 | `cyberctf attack-box stop <lab>`                                                                                           | Takes it out.                                                                                                                                                                                        |
 | `cyberctf attack-box status <lab> [--show-secrets]`                                                                        | Its state, its address and how to sign in to it.                                                                                                                                                     |
@@ -43,8 +43,9 @@ display, with the app closed, which is its main use; it also runs beside an open
 A lab command acts on the lab in the form its installed spec declares (containers, VMs or cloud
 services); `--runtime docker|vm|cloud` says it when the spec can't.
 
-Ctrl+C stops following an operation: one that runs in a deploy worker (a start, a resume, a
-park) goes on there; one that runs in the command line itself (a stop, the attack box) ends.
+Ctrl+C stops following an operation and ends the command: what it already asked of the lab's run
+goes on in the runner service (`cyberctf labs logs <lab> --follow` follows it again); the
+launcher's own steps it hadn't reached yet (a download, the attack box's edits) don't run.
 
 Global options: `--json`, `--yes` (`-y`), `--data-dir <dir>` (or `CYBERCTF_DATA_DIR`: a data
 folder other than the app's, for a sandbox or a test), `--verbose` (`-v`: the launcher's log on
@@ -110,10 +111,11 @@ an install changes what comes next.
 
 ## Beside the open app
 
-`cyberctf` uses the app's data folder, its saved servers, its store and its deploy workers. The
-workers' pidfiles, the labs' locks and the store's transactions keep the two from acting on the
-same lab at once: an operation the app runs refuses one from the command line, and the other way
-round (exit 3).
+`cyberctf` uses the app's data folder, its saved servers, its store and its runner service, the
+one process that runs the labs' operations (started by whichever of the two needs it first). The
+runner service runs one operation per lab at a time, and the store's transactions keep the rest
+whole: an operation the app runs refuses one from the command line, and the other way round
+(exit 3).
 
 Known limit: until the launcher reads its operations from Isothrum's runner service, each process
 tells its own operations' events to itself only. The open app doesn't show an operation the

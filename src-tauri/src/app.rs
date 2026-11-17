@@ -1,4 +1,4 @@
-//! The app shell: starting the launcher (or a deploy worker), its plugins, windows, menu and
+//! The app shell: starting the launcher (or the runner service), its plugins, windows, menu and
 //! quitting, and the log file.
 
 pub mod events;
@@ -35,7 +35,7 @@ pub fn open_folder(path: &std::path::Path) -> crate::error::Result<()> {
 }
 
 /// Records this process's tools from now on in the runner's ledger in the app's data folder,
-/// which a later start reads to end what an app or deploy worker killed outright left running; the
+/// which a later start reads to end what an app killed outright left running; the
 /// folder, when the OS gave the app's.
 pub(crate) fn record_tools(app: &AppHandle) -> Option<PathBuf> {
     let dir = platform::AppDirs::from(app).data_file(platform::processes::LEDGER_DIR)?;
@@ -77,7 +77,7 @@ struct Started {
     proxy_note: Option<String>,
 }
 
-/// Runs the launcher, as the app or as a deploy worker (see `crate::run`).
+/// Runs the launcher, as the app or as the runner service of a home (see `crate::run`).
 ///
 /// # Errors
 ///
@@ -105,7 +105,7 @@ pub fn run() -> tauri::Result<()> {
 /// The start both Tauri roles share, while `only` this thread runs: GUI launches don't get the
 /// shell PATH (docker, vagrant, ovftool) nor, on macOS, the proxy, so both are set here, before
 /// any thread can read the environment. The OVF Tool the setup places in the app data folder is
-/// on `PATH` too, for the deploy workers and the labs' runs.
+/// on `PATH` too, for the runner service and the labs' runs.
 #[allow(clippy::needless_pass_by_value, reason = "taking the token ends the start's claim to be the only thread")]
 fn start(only: platform::sys::SingleThreaded) -> Started {
     // `<exe> serve --home <home>`: this process is the runner service of that home (see
@@ -119,7 +119,7 @@ fn start(only: platform::sys::SingleThreaded) -> Started {
     let mut context = tauri::generate_context!();
     window::frame_configured(context.config_mut());
     // An end-to-end run's app (a `wdio` build given the run's folder) keeps all of its own there,
-    // never in the user's folders; its deploy workers get the same context.
+    // never in the user's folders; the runner service it starts gets the same context.
     let test_root = platform::test_root::root();
     if let Some(root) = &test_root {
         test_root_config(context.config_mut(), root);
@@ -291,8 +291,8 @@ fn wdio_seed(handle: &crate::AppHandle) {
 
 fn setup(app: &mut App) {
     logging::log_startup(app.handle(), "app");
-    // Before any tool starts: this app's tools are recorded, and those an app or deploy worker
-    // killed outright left running are ended (Vagrant's lock and Terraform's state free again).
+    // Before any tool starts: this app's tools are recorded, and those an app killed outright
+    // left running are ended (Vagrant's lock and Terraform's state free again).
     if let Some(dir) = record_tools(app.handle()) {
         tauri::async_runtime::spawn(async move {
             platform::processes::end_left_behind(&dir).await;

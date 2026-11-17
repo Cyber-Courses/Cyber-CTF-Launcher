@@ -386,7 +386,7 @@ impl Error {
         }
     }
 
-    /// The error as the webview gets it (and as a deploy worker hands it back to the app).
+    /// The error as the webview gets it (and as an operation's failure reaches the command line).
     pub fn to_wire(&self) -> Wire {
         Wire { code: self.code(), message: self.to_string() }
     }

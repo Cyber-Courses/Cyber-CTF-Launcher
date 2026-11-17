@@ -35,7 +35,7 @@ const streams =
   };
 
 /** `active_operations`, the operations already running when the core started (the run events a
- *  window replays first: see `run-service`): a deploy worker's launch on each of `ids`, as the
+ *  window replays first: see `run-service`): a launch in the runner service on each of `ids`, as the
  *  backend reports a lab it deploys (`busy_labs` lists them too). */
 export const deployingOps =
   (ids: () => string[]): Handler =>

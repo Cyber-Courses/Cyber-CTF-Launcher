@@ -1,8 +1,9 @@
 //! What a diagnostics bundle says, read from the launcher's own data: the installed labs, the
-//! last operations (the deploy workers' verdicts, and each run's last operation as the Isothrum
-//! runner's API records it), the saved servers' kinds, the policy, and the recent logs. Read only:
-//! nothing here starts, settles or changes anything. Values that could identify a host or an
-//! account (a server's name, address and user, a run's params) are left out, not scrubbed.
+//! last operations (each run's last operation as the Isothrum runner's API records it, and the
+//! verdicts the deploy workers of an earlier launcher left in `deploys/`), the saved servers'
+//! kinds, the policy, and the recent logs. Read only: nothing here starts, settles or changes
+//! anything. Values that could identify a host or an account (a server's name, address and user,
+//! a run's params) are left out, not scrubbed.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -40,10 +41,10 @@ pub(crate) struct InstalledLab {
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Operation {
-    /// Who recorded it: `launcher` (a deploy worker's verdict) or `isothrum` (the runner's record
+    /// Who recorded it: `launcher` (a verdict an older launcher's deploy worker left) or `isothrum` (the runner's record
     /// of the run's last operation).
     pub source: &'static str,
-    /// Its id: the deploy worker's key, or the runner's run name.
+    /// Its id: the lab's key in `deploys/`, or the runner's run name.
     pub id: String,
     /// The lab it acted on.
     pub lab: String,
@@ -79,8 +80,9 @@ fn names_in(dir: &Path) -> Vec<String> {
     std::fs::read_dir(dir).map(|entries| entries.flatten().filter_map(|e| e.file_name().into_string().ok()).collect()).unwrap_or_default()
 }
 
-/// The deploy workers' operations: each lab's last verdict (`<key>.status`), or one in progress
-/// (its job file there, no verdict yet).
+/// The operations the deploy workers of an earlier launcher left in `deploys/`: each lab's last
+/// verdict (`<key>.status`), or one in progress (its job file there, no verdict yet). This
+/// launcher writes none.
 pub(crate) fn worker_operations(dirs: &AppDirs) -> Vec<Operation> {
     let Ok(base) = dirs.data() else { return Vec::new() };
     let dir = base.join("deploys");
