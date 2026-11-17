@@ -193,11 +193,10 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {
-            let up = run.up(&[], &mut log("pve")).await;
-            check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
+            started(run.up(&[], &mut log("pve")).await, f);
             match run.status().await {
                 Ok(s) => {
-                    println!("status: running={} url={:?} machines={:?}", s.running, s.url, s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
+                    said(&s);
                     check(s.running && s.url.is_some(), format!("it runs, with its entry (running={} url={:?})", s.running, s.url), f);
                     reached(&run, &s, f).await;
                 }
@@ -207,14 +206,26 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
             // (and through the node first when only it reaches the lab).
             checks_pass(run.check().await, f);
         },
-        async |f: &mut Vec<String>| {
-            let down = run.down(&mut log("pve")).await;
-            check(down.is_ok(), format!("it stops ({:?})", down.err()), f);
-            check(run.status().await.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
-        },
+        async |f: &mut Vec<String>| stopped(run.down(&mut log("pve")).await, run.status().await, f),
     )
     .await;
     assert!(f.is_empty(), "{f:#?}");
+}
+
+/// The lab started (`up`).
+fn started(up: crate::error::Result<()>, f: &mut Vec<String>) {
+    check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
+}
+
+/// Prints the lab's status `s`: whether it runs, its entry, its machines' states.
+fn said(s: &crate::runtime::LabStatus) {
+    println!("status: running={} url={:?} machines={:?}", s.running, s.url, s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
+}
+
+/// The lab stopped (`down`), and its status (`status`, read after) says it is gone.
+fn stopped(down: crate::error::Result<()>, status: crate::error::Result<crate::runtime::LabStatus>, f: &mut Vec<String>) {
+    check(down.is_ok(), format!("it stops ({:?})", down.err()), f);
+    check(status.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
 }
 
 /// The lab's checks, read through the runner, all pass.
@@ -312,11 +323,10 @@ async fn a_vm_lab_runs_on_esxi_through_the_runner() {
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {
-            let up = run.up(crate::runtime::launch::Inputs::default(), Some("vmware_esxi"), &mut log("esxi")).await;
-            check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
+            started(run.up(crate::runtime::launch::Inputs::default(), Some("vmware_esxi"), &mut log("esxi")).await, f);
             match run.status().await {
                 Ok(s) => {
-                    println!("status: running={} url={:?} machines={:?}", s.running, s.url, s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
+                    said(&s);
                     match s.url {
                         // Its entry at the VM's own address, fetched while it runs.
                         Some(url) => {
@@ -333,11 +343,7 @@ async fn a_vm_lab_runs_on_esxi_through_the_runner() {
             let provisioned = run.provision(None, &mut log("esxi")).await;
             check(provisioned.is_ok(), format!("it provisions again ({:?})", provisioned.err()), f);
         },
-        async |f: &mut Vec<String>| {
-            let down = run.down(&mut log("esxi")).await;
-            check(down.is_ok(), format!("it stops ({:?})", down.err()), f);
-            check(run.status().await.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
-        },
+        async |f: &mut Vec<String>| stopped(run.down(&mut log("esxi")).await, run.status().await, f),
     )
     .await;
     assert!(f.is_empty(), "{f:#?}");
