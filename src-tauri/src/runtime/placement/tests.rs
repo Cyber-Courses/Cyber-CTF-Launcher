@@ -155,7 +155,7 @@ fn what_the_spec_cant_do_or_isnt_ready_is_refused_never_replaced() {
     let pve_per_machine = Choice { host: Some("pve".into()), per_machine_vm: true, ..Choice::default() };
     assert_eq!(said(placed(Runtime::Docker, &dual(), &ready(), &pve_per_machine, &none)), crate::runtime::launch::PER_MACHINE_NOT_ON_SERVERS);
     // Forms Isoloom doesn't generate there: ESXi, a hypervisor or a cloud form it lacks.
-    assert_eq!(said(placed(Runtime::Vm, &vms(), &ready(), &host("esx"), &none)), "This lab doesn't run as ESXi.");
+    assert_eq!(said(placed(Runtime::Vm, &vms(), &ready(), &host("esx"), &none)), "This lab doesn't run as VMware ESXi.");
     assert_eq!(said(placed(Runtime::Vm, &vms(), &ready(), &provider(Qemu), &none)), "This lab doesn't run as QEMU.");
     let gcp_per_machine = Choice { host: Some("gcp1".into()), per_machine_vm: true, ..Choice::default() };
     assert!(said(placed(Runtime::Docker, &dual(), &ready(), &gcp_per_machine, &none)).starts_with("This lab doesn't run as one VM per machine on"));
