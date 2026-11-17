@@ -106,6 +106,8 @@ setting a scenario needs, it is skipped, naming those not set:
 - `server-lab-proxmox-connection`: `CYBERCTF_TEST_PVE_HOST` and `_PASSWORD`; with `_TOKEN_ID`,
   `_TOKEN_SECRET` and `_SSH_KEY` it also checks the API token (`_FINGERPRINT` pins a self-signed
   certificate; `_STORAGE`, `_BRIDGE` and `_NODE` default to `local-lvm`, `vmbr1` and `pve`).
+- `server-lab-proxmox-setup`: the connection test's knobs, `_TOKEN_ID`, `_TOKEN_SECRET` and `_SSH_KEY`
+  all needed.
 - `server-lab-proxmox`: `CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN_ID`, `_TOKEN_SECRET`, `_NODE`,
   `_BRIDGE`, `_SSH_KEY` (the snippet upload signs in to the node with it) and
   `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus `_JUMP` when the lab bridge is internal to the node;
@@ -119,6 +121,7 @@ setting a scenario needs, it is skipped, naming those not set:
 | Scenario                        | Proves                                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `server-lab-proxmox-connection` | the Servers page's Test on Proxmox: root's password, a wrong one, a missing bridge; the API token and a wrong secret |
+| `server-lab-proxmox-setup`      | the Servers page's three setups on Proxmox: root's password, an API token, a key the node lets in; each one tested   |
 | `server-lab-proxmox`            | a VM lab on Proxmox: up, status, checks over SSH through the node, down                                              |
 | `server-vm-test-proxmox`        | the Servers page's VM test on Proxmox: every step of its plan passes in order, nothing of it left                    |
 | `server-lab-esxi`               | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down                                             |

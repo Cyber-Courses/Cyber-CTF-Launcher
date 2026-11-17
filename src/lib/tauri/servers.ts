@@ -25,17 +25,7 @@ export type ProxmoxPlacement = Placement;
 export type ProxmoxNodeChoices = NodeChoices;
 export type ProxmoxBridge = Bridge;
 
-export type {
-  HostCapacity,
-  MonthSpend,
-  ServerCheck,
-  ServerCheckState,
-  ServerIdentity,
-  ServerTest,
-  SshHostKey,
-  SshHostKeys,
-  SshKeySignIn,
-};
+export type { HostCapacity, MonthSpend, ServerCheck, ServerCheckState, ServerIdentity, ServerTest, SshHostKey, SshHostKeys, SshKeySignIn };
 
 // --- Server (the player's own ESXi / Proxmox host) ---
 
