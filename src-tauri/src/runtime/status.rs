@@ -24,7 +24,7 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     };
     let here = host.as_ref().is_some_and(Host::is_here);
     // What the page may do on it, by the lifecycle's own rules.
-    let controls = super::lifecycle::controls(host.as_ref(), status.provider.as_deref());
+    let controls = super::lifecycle::controls(host.as_ref(), &status.parks);
     // The attack box the launcher added is no machine of the lab's own (`attack_box`).
     let status = attack_box::set_apart(status, dir)?;
     // The sign-in each service ships with, as the lab's spec declares it beside the port.

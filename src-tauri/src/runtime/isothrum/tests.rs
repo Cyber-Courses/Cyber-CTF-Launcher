@@ -581,6 +581,21 @@ fn a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out() {
     assert_eq!(stopped.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db"]);
 }
 
+/// The ways the page offers to park a run are the runner's (`Status::parks`): a QEMU run lists no
+/// pause (vagrant-qemu has no suspend), so none is offered.
+#[test]
+fn a_run_parks_as_the_runner_says_it_can() {
+    let home = Home::new("parks", TWO, &[], lab::Target::Docker);
+    let manifest = described::Described::of(&home.dir, described::Form::Containers).unwrap();
+    let parks = |listed: serde_json::Value| {
+        let status: Status =
+            serde_json::from_value(serde_json::json!({ "state": "ready", "provider": null, "outputs": [], "machines": [], "parks": listed })).unwrap();
+        view::lab_status(&manifest, &status, None).parks
+    };
+    assert_eq!(parks(serde_json::json!(["pause", "shutdown"])), [Park::Pause, Park::Shutdown]);
+    assert_eq!(parks(serde_json::json!(["shutdown"])), [Park::Shutdown]);
+}
+
 #[test]
 fn a_one_vm_labs_vm_destroyed_outside_the_app_is_shown_gone() {
     // Regression (resilience-vm-destroyed): a gone machine was shown only while another of the

@@ -186,6 +186,15 @@ pub enum Park {
     Shutdown,
 }
 
+impl From<isothrum_runner::Park> for Park {
+    fn from(park: isothrum_runner::Park) -> Park {
+        match park {
+            isothrum_runner::Park::Pause => Park::Pause,
+            _ => Park::Shutdown,
+        }
+    }
+}
+
 /// A lab as the UI shows it right now: whether it runs, its machines and networks, where it
 /// runs and what can be done to it there.
 #[derive(Serialize, Debug, PartialEq, Clone, Default, TS)]
@@ -234,6 +243,11 @@ pub struct LabStatus {
     /// What can be done on the lab where it runs, in the form it was started in: set by the
     /// status dispatcher (`lifecycle::controls`), none from the per-runtime probes.
     pub controls: Vec<Control>,
+    /// The ways its run can be parked, as the runner says its form allows (`Status::parks`): what
+    /// [`controls`](LabStatus::controls) offers of parking where it runs here.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub parks: Vec<Park>,
 }
 
 /// One thing that can be done on a started lab where it runs: the backend's own rules, so the

@@ -91,17 +91,18 @@ fn provisioning_needs_a_running_lab_and_a_known_machine() {
 fn a_lab_is_parked_only_in_a_mode_its_page_is_offered() {
     use crate::runtime::lab::Target;
     // A container lab an earlier version runs inside a helper VM is only stopped.
-    for mode in [Park::Pause, Park::Shutdown] {
-        assert_eq!(park_refusal(mode, None, Some("virtualbox")), Some(super::LEFT_IN_A_HELPER_VM));
+    let both = [Park::Pause, Park::Shutdown];
+    for mode in both {
+        assert_eq!(park_refusal(mode, None, &both), Some(super::LEFT_IN_A_HELPER_VM));
     }
     // Containers on Docker pause (frozen) as well as shut down. Regression: a pause on QEMU went
-    // to a `vagrant suspend` it refuses.
-    for mode in [Park::Pause, Park::Shutdown] {
-        assert_eq!(park_refusal(mode, Some(Target::Docker), Some("docker")), None);
+    // to a `vagrant suspend` it refuses (the runner lists no pause for it).
+    for mode in both {
+        assert_eq!(park_refusal(mode, Some(Target::Docker), &both), None);
     }
-    assert!(park_refusal(Park::Pause, Some(Target::Vagrant), Some("qemu")).unwrap().starts_with("QEMU can't pause"));
-    assert_eq!(park_refusal(Park::Shutdown, Some(Target::Vagrant), Some("qemu")), None);
-    assert_eq!(park_refusal(Park::Pause, Some(Target::Vagrant), Some("virtualbox")), None);
+    assert!(park_refusal(Park::Pause, Some(Target::Vagrant), &[Park::Shutdown]).unwrap().starts_with("QEMU can't pause"));
+    assert_eq!(park_refusal(Park::Shutdown, Some(Target::Vagrant), &[Park::Shutdown]), None);
+    assert_eq!(park_refusal(Park::Pause, Some(Target::Vagrant), &both), None);
     assert!(parked_message(Park::Pause).starts_with("Lab paused."));
     assert!(parked_message(Park::Shutdown).starts_with("Lab shut down."));
 }
@@ -155,12 +156,18 @@ async fn clearing_a_lab_that_is_not_parked_does_nothing() {
     assert_eq!(tools.calls(), [] as [String; 0]);
 }
 
-/// What the page may do on lab `t`, declared `runtime`, where it is located now, on `provider`:
-/// whether it pauses, shuts down, provisions and repairs.
+/// What the page may do on lab `t`, declared `runtime`, where it is located now, on `provider`
+/// (its run parked as the runner says a run on it is): whether it pauses, shuts down, provisions
+/// and repairs.
 async fn controls_of(t: &TestApp, dir: &std::path::Path, runtime: Runtime, provider: Option<&str>) -> (bool, bool, bool, bool) {
     use crate::runtime::Control;
     let host = crate::runtime::host::locate(&t.dirs(), dir, "t", runtime).await.unwrap();
-    let c = super::controls(host.as_ref(), provider);
+    let parks = match provider {
+        Some("docker" | "virtualbox") => vec![Park::Pause, Park::Shutdown],
+        Some("qemu") => vec![Park::Shutdown],
+        _ => Vec::new(),
+    };
+    let c = super::controls(host.as_ref(), &parks);
     let has = |x| c.contains(&x);
     (has(Control::Pause), has(Control::Shutdown), has(Control::Provision), has(Control::Repair))
 }

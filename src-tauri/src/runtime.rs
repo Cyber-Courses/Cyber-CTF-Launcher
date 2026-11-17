@@ -141,6 +141,7 @@ pub(crate) mod test_support {
             message: None,
             reap_error: None,
             controls: Vec::new(),
+            parks: Vec::new(),
         }
     }
 

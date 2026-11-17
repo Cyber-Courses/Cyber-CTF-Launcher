@@ -9,7 +9,6 @@ use super::host::{self, Host};
 use super::inflight::lock_lab;
 use super::launch::policy_allows;
 use super::paths::lab_dir;
-use super::providers::Provider;
 use super::recorded::Recorded;
 use super::{Control, LabRef, Park, Runtime, isothrum, lab};
 use crate::error::{Error, Result};
@@ -23,7 +22,7 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
     let run = local_run(dirs, lab, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.").await?;
     // Only what the page is offered for this run ([`controls`]): QEMU refuses a pause.
-    if let Some(why) = park_refusal(mode, run.target(), run.recorded_provider().await?.as_deref()) {
+    if let Some(why) = park_refusal(mode, run.target(), &run.parks().await?) {
         return Err(Error::Refused(why.into()));
     }
     run.park(mode, &mut log).await?;
@@ -54,18 +53,19 @@ fn refuse_cloud_park(runtime: Runtime) -> Result<()> {
 /// Why a cloud-services lab isn't parked.
 const CLOUD_PARK: &str = "A cloud lab can't be paused: stop it to end what it costs, and start it again later.";
 
-/// Why a run on this machine for `target` (none: a helper VM an earlier version left), on
-/// `provider`, can't be parked in `mode`: the [`local_controls`] it is offered don't hold that
-/// mode's control. None when they do.
-fn park_refusal(mode: Park, target: Option<lab::Target>, provider: Option<&str>) -> Option<&'static str> {
+/// Why a run on this machine for `target` (none: a helper VM an earlier version left), parked in
+/// the ways `parks`, can't be parked in `mode`: the [`local_controls`] it is offered don't hold
+/// that mode's control. None when they do.
+fn park_refusal(mode: Park, target: Option<lab::Target>, parks: &[Park]) -> Option<&'static str> {
     let control = match mode {
         Park::Pause => Control::Pause,
         Park::Shutdown => Control::Shutdown,
     };
-    if local_controls(target, provider).contains(&control) {
+    if local_controls(target, parks).contains(&control) {
         return None;
     }
-    // Every form here shuts down: only a pause on QEMU is refused, or anything of a helper VM's run.
+    // Every form here shuts down: only a pause on QEMU (no suspend) is refused, or anything of a
+    // helper VM's run.
     Some(match target {
         None => LEFT_IN_A_HELPER_VM,
         Some(_) => "QEMU can't pause a lab: shut it down instead.",
@@ -77,37 +77,33 @@ fn park_refusal(mode: Park, target: Option<lab::Target>, provider: Option<&str>)
 const LEFT_IN_A_HELPER_VM: &str =
     "This lab runs Docker inside a VM, as an earlier version of Cyber CTF started it, which this version no longer does: stop it, then start it again.";
 
-/// Whether a run on this machine for `target`, on `provider`, can be paused: its containers
-/// freeze (`compose pause`) and its VMs suspend, unless the provider has no suspend
-/// (vagrant-qemu answers "this provider doesn't support this action").
-fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
-    target == lab::Target::Docker || provider.and_then(Provider::from_id) != Some(Provider::Qemu)
-}
-
-/// What can be done on a lab where it runs (`host`, on `provider` as its status reads it): pause
-/// and shut down only here ([`park`] refuses elsewhere, and a cloud-services lab, which locates
+/// What can be done on a lab where it runs (`host`, parked in the ways `parks` as its status
+/// reads them): pause and shut down only here ([`park`] refuses elsewhere, and a cloud-services lab, which locates
 /// no run here, is never parked); provisioning on a lab run as VMs through Vagrant, here or on an
 /// ESXi host ([`provision`]); bringing machines that went down back ([`resume`], which runs here
 /// only) on a lab run as VMs here, a container lab run as one VM per machine included, and on a
 /// container lab on Docker here (Compose starts its stopped containers again). None where nothing
 /// runs.
-pub(crate) fn controls(host: Option<&Host>, provider: Option<&str>) -> Vec<Control> {
+pub(crate) fn controls(host: Option<&Host>, parks: &[Park]) -> Vec<Control> {
     match host {
-        Some(Host { run, conn: None }) => local_controls(run.target(), provider),
+        Some(Host { run, conn: None }) => local_controls(run.target(), parks),
         Some(host) if host.on_esxi() && host.target() == Some(lab::Target::Vagrant) => vec![Control::Provision],
         Some(_) | None => Vec::new(),
     }
 }
 
-/// [`controls`] for a run on this machine for `target`, on `provider`: the one rule [`park`]
-/// holds too. None for a helper VM an earlier version left (no `target`): it is only stopped.
-fn local_controls(target: Option<lab::Target>, provider: Option<&str>) -> Vec<Control> {
+/// [`controls`] for a run on this machine for `target`, parked in the ways `parks`: the one rule
+/// [`park`] holds too. Its containers freeze (`compose pause`) and its VMs suspend, unless the
+/// provider has no suspend (vagrant-qemu); every form shuts down. None for a helper VM an earlier
+/// version left (no `target`): it is only stopped.
+fn local_controls(target: Option<lab::Target>, parks: &[Park]) -> Vec<Control> {
     let Some(target) = target else { return Vec::new() };
     let vms = target == lab::Target::Vagrant;
     // Containers stopped outside the app (`docker stop`, Docker Desktop's Stop) come back with a
     // resume as VMs do; one removed can't, and the page offers its reset instead.
     let repairs = vms || target == lab::Target::Docker;
-    [(pauses(target, provider), Control::Pause), (true, Control::Shutdown), (vms, Control::Provision), (repairs, Control::Repair)]
+    let parks = |mode| parks.contains(&mode);
+    [(parks(Park::Pause), Control::Pause), (parks(Park::Shutdown), Control::Shutdown), (vms, Control::Provision), (repairs, Control::Repair)]
         .into_iter()
         .filter_map(|(offered, c)| offered.then_some(c))
         .collect()
