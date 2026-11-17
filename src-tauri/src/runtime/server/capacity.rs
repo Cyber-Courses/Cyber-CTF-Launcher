@@ -8,7 +8,10 @@ use super::store::load_host;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
-use crate::runtime::proxmox::api::NodeStatus;
+use isothrum_machine::place::proxmox::{self, Capacity};
+use isothrum_runner::tls::{Fingerprint, Refusal, Trust};
+
+use super::tls_pin;
 
 /// A host's cores and memory (bytes), as its node reports them.
 #[derive(Serialize, ts_rs::TS)]
@@ -33,18 +36,39 @@ pub(crate) async fn capacity(dirs: &AppDirs, id: &str) -> Result<Option<HostCapa
     proxmox_capacity(&host, &password).await.map(Some)
 }
 
+/// Signs in to Proxmox server `h` with `password` and reads its node's cores and memory, through
+/// isothrum-machine's Proxmox client ([`proxmox::sign_in`], [`Capacity::of`]).
 async fn proxmox_capacity(h: &HostProfile, password: &str) -> Result<HostCapacity> {
-    let session = crate::runtime::proxmox::sign_in(h, password).await.map_err(|e| e.into_error("couldn't sign in to the Proxmox server"))?;
-    let node = session.node(h).await.map_err(|e| Error::Invalid(format!("couldn't list the Proxmox server's nodes: {e}")))?;
-    let status: NodeStatus =
-        session.call(&format!("/nodes/{node}/status")).await.map_err(|e| Error::Invalid(format!("couldn't read the node {node}'s status: {e}")))?;
-    capacity_from(&status).ok_or_else(|| Error::Invalid(format!("the node {node} reported no cores or memory figures")))
+    let server = proxmox::Server::new(h.host.as_str(), h.port);
+    let session = proxmox::sign_in(&server, &proxmox::Credentials::from_login(&h.username, password), trust_of(h)).await.map_err(|e| match e {
+        proxmox::SignInError::Certificate(refused) => certificate_error(refused, &h.name),
+        other => Error::Invalid(format!("couldn't sign in to the Proxmox server: {other}")),
+    })?;
+    let node = session.node(h.node.as_deref()).await.map_err(|e| Error::Invalid(format!("couldn't list the Proxmox server's nodes: {e}")))?;
+    let status = session.status(&node).await.map_err(|e| Error::Invalid(format!("couldn't read the node {node}'s status: {e}")))?;
+    let c = Capacity::of(&status).ok_or_else(|| Error::Invalid(format!("the node {node} reported no cores or memory figures")))?;
+    Ok(HostCapacity { cores: c.cores, mem_total: c.mem_total, mem_free: c.mem_free })
 }
 
-/// A Proxmox node's `/status` as the row's capacity (None when a figure is missing).
-fn capacity_from(d: &NodeStatus) -> Option<HostCapacity> {
-    let (cpu, memory) = (d.cpuinfo.as_ref()?, d.memory.as_ref()?);
-    Some(HostCapacity { cores: cpu.cpus?, mem_total: memory.total?, mem_free: memory.free? })
+/// How `h`'s certificate is trusted, as the runner's TLS takes it: the system's trust store, or the
+/// fingerprint the learner confirmed.
+fn trust_of(h: &HostProfile) -> Trust {
+    match h.tls_trust() {
+        tls_pin::Trust::System => Trust::System,
+        tls_pin::Trust::Pinned(pin) => Trust::Pinned(pin.and_then(|p| Fingerprint::parse(&p.to_string()))),
+    }
+}
+
+/// A certificate refused, as the launcher's one error for it ([`tls_pin::Refusal::error`]).
+fn certificate_error(refused: Refusal, server: &str) -> Error {
+    let ours = |f: &Fingerprint| tls_pin::Fingerprint::parse(&f.to_string());
+    let refusal = match refused {
+        Refusal::Unconfirmed { presented } => ours(&presented).map(|presented| tls_pin::Refusal::Unconfirmed { presented }),
+        Refusal::Changed { pinned, presented } => {
+            ours(&pinned).zip(ours(&presented)).map(|(pinned, presented)| tls_pin::Refusal::Changed { pinned, presented })
+        }
+    };
+    refusal.map_or_else(|| Error::Invalid(format!("couldn't sign in to the Proxmox server: {refused}")), |r| r.error(server))
 }
 
 #[cfg(test)]
@@ -52,11 +76,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capacity_needs_every_figure() {
-        let status = |json: serde_json::Value| -> NodeStatus { serde_json::from_value(json).unwrap() };
-        let c = capacity_from(&status(serde_json::json!({"cpuinfo": {"cpus": 8}, "memory": {"total": 64, "free": 20}}))).unwrap();
-        assert_eq!((c.cores, c.mem_total, c.mem_free), (8, 64, 20));
-        assert!(capacity_from(&status(serde_json::json!({"cpuinfo": {"cpus": 8}}))).is_none());
+    fn a_refused_certificate_is_the_launchers_one_error() {
+        let a = Fingerprint::parse(crate::runtime::server::tls_pin::tests::FINGERPRINT_A).unwrap();
+        let err = certificate_error(Refusal::Unconfirmed { presented: a }, "Home lab");
+        assert!(matches!(err.code(), crate::error::Code::TlsUnconfirmed { .. }), "{err}");
     }
 
     #[tokio::test]
