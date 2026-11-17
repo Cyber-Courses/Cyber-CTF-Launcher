@@ -172,9 +172,12 @@ and its module's outputs, in Isothrum (its `docs/reference/terraform.md`):
   (`OpenedRun::module_check`); their lines are Isoloom's check protocol, as everywhere else. A
   cloud's don't run yet.
 
-Terraform's own SSH to the router while it applies the module is the launcher's SOCKS proxy
-through the node (`isothrum/tunnel.rs`, the module's `ssh_proxy_host` and `ssh_proxy_port`), for
-that operation only.
+Terraform's own SSH to the router while it applies the module goes through the runner's SOCKS
+proxy through the node (the module's `ssh_proxy_host` and `ssh_proxy_port`), for that operation
+only. Every SSH to the node (that proxy, the shell's and the checks' first hop, a published port's
+forward) checks its host keys against the ones the player confirmed (`<app data>/ssh/nodes_known_hosts`,
+the run's `ssh_jump_known_hosts_file`): a node offering another key is refused, never trusted on
+first use.
 
 ## Servers and cloud accounts
 

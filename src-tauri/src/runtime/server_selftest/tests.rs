@@ -59,6 +59,7 @@ fn proxmox_place() -> ServerPlace {
         vars: vars.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
         node: Some("pve-a".into()),
         jump: Some("root@10.0.0.5".into()),
+        nodes_known_hosts: Some("/data/ssh/nodes_known_hosts".into()),
     }
 }
 
@@ -96,6 +97,7 @@ fn a_proxmox_server_is_tested_where_a_launch_would_put_its_lab() {
     assert_eq!(p.node_ssh_key_file.as_deref(), Some(Path::new("/keys/node")));
     assert_eq!(p.node_address.as_deref(), Some("10.0.0.5"));
     assert_eq!(p.jump.as_deref(), Some("root@10.0.0.5"));
+    assert_eq!(p.jump_known_hosts.as_deref(), Some(Path::new("/data/ssh/nodes_known_hosts")), "the confirmed node keys");
     let key = p.key.as_ref().expect("the runner's key");
     assert_eq!((key.private_file.as_path(), key.public.as_str()), (Path::new("/runner/ssh/id_ed25519"), "ssh-ed25519 AAAA runner"));
     assert_eq!((words.reached.as_str(), words.prepared.as_deref()), ("Lab server", Some("on node pve-a")));

@@ -6,7 +6,8 @@
 //! token as a secret), the node when the profile names none (the server's first, as the profile's
 //! Test connection picks it), the node login SSH goes through first when the lab bridge is
 //! internal to the node ([`crate::runtime::server::proxmox_jump_for_host`], with the runner's key, which is the
-//! launcher's own: both live in the app data folder), and the words the player reads. The runner
+//! launcher's own: both live in the app data folder; its host keys the ones the player confirmed),
+//! and the words the player reads. The runner
 //! opens the SOCKS proxy through that node Terraform's SSH goes through while the module is
 //! applied or destroyed, and ends it with the step.
 //! The runner keeps the Terraform state and the run's slot on the server.
@@ -30,6 +31,10 @@ const JUMP_VALUE: &str = "ssh_jump";
 /// The run's value naming the key that signs in to the jump host (Isothrum's).
 const JUMP_KEY_VALUE: &str = "ssh_jump_key_file";
 
+/// The run's value naming the `known_hosts` file the jump host's keys are checked against
+/// (Isothrum's).
+const JUMP_KNOWN_HOSTS_VALUE: &str = "ssh_jump_known_hosts_file";
+
 /// The module's variables that are the server's secret: connection slots, never params.
 const SECRET_VARS: [&str; 2] = ["proxmox_password", "proxmox_api_token"];
 
@@ -47,6 +52,9 @@ pub(crate) struct ServerPlace {
     pub(crate) node: Option<String>,
     /// The node login SSH goes through first (`root@<node>`), when the lab bridge is internal.
     pub(crate) jump: Option<String>,
+    /// The node host keys the player confirmed (`nodes_known_hosts`), which the jump host's are
+    /// checked against: never trusted on first use.
+    pub(crate) nodes_known_hosts: Option<std::path::PathBuf>,
 }
 
 impl ServerPlace {
@@ -60,13 +68,18 @@ impl ServerPlace {
 /// What an operation that applies the module on `place` runs with: its [`options`], with the
 /// launch's values `env`, and, when the lab bridge is internal to the node (`place.jump`), the node
 /// as the run's jump host (`ssh_jump`, recorded with the run), signed in to with `key` (the
-/// launcher's node key, `ssh_jump_key_file`). Through it the runner's own SSH goes first (a
-/// console, a command, its endpoints' forwards), and Terraform's SSH to the router through the
-/// SOCKS proxy the runner opens for each apply and destroy.
+/// launcher's node key, `ssh_jump_key_file`), its keys checked against the confirmed ones
+/// (`ssh_jump_known_hosts_file`). Through it the runner's own SSH goes first (a console, a
+/// command, its endpoints' forwards), and Terraform's SSH to the router through the SOCKS proxy
+/// the runner opens for each apply and destroy.
 pub(super) fn applying(place: &ServerPlace, env: &[(String, String)], key: &Path) -> RunOptions {
     let opts = options(place, env);
     let Some(jump) = &place.jump else { return opts };
-    opts.with_env(JUMP_VALUE, jump.clone()).with_env(JUMP_KEY_VALUE, key.to_string_lossy().into_owned())
+    let opts = opts.with_env(JUMP_VALUE, jump.clone()).with_env(JUMP_KEY_VALUE, key.to_string_lossy().into_owned());
+    match &place.nodes_known_hosts {
+        Some(file) => opts.with_env(JUMP_KNOWN_HOSTS_VALUE, file.to_string_lossy().into_owned()),
+        None => opts,
+    }
 }
 
 impl Deployment {
@@ -168,6 +181,7 @@ mod tests {
             vars: vars.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
             node: Some("pve-lab".into()),
             jump: Some("root@10.0.0.5".into()),
+            nodes_known_hosts: Some("/data/ssh/nodes_known_hosts".into()),
         }
     }
 
@@ -339,7 +353,12 @@ mod tests {
             let mut vars = place.vars.clone();
             vars.push(("ssh_private_key_file".into(), run.key().to_string_lossy().into_owned()));
             vars.push(("ssh_public_key".into(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl runner".into()));
-            let jumped = ServerPlace { jump: Some("root@node.lab".into()), node: Some("pve".into()), vars, ..place.clone() };
+            // The node's keys, as the player confirmed them.
+            let confirmed = run.key().with_file_name("nodes_known_hosts");
+            std::fs::create_dir_all(confirmed.parent().unwrap()).unwrap();
+            std::fs::write(&confirmed, "node.lab ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n").unwrap();
+            let jumped =
+                ServerPlace { jump: Some("root@node.lab".into()), node: Some("pve".into()), vars, nodes_known_hosts: Some(confirmed.clone()), ..place.clone() };
             let updated = run.at(Site::Server(jumped)).update(&mut |_| {}).await;
             assert!(updated.is_ok(), "the update went through the proxy: {:?}", updated.err().map(|e| e.error.to_string()));
             let calls = f.fake.calls();
@@ -348,6 +367,10 @@ mod tests {
             assert_eq!(proxies[0].args.last().map(String::as_str), Some("root@node.lab"));
             let key = run.key().to_string_lossy().into_owned();
             assert!(proxies[0].args.windows(2).any(|w| w[0] == "-i" && w[1] == key), "the launcher's node key: {:?}", proxies[0].args);
+            let checked = format!("UserKnownHostsFile=\"{}\"", confirmed.display());
+            assert!(proxies[0].args.contains(&checked), "the node's keys checked against the confirmed ones: {:?}", proxies[0].args);
+            assert!(proxies[0].args.iter().any(|a| a == "StrictHostKeyChecking=yes"), "{:?}", proxies[0].args);
+            assert!(calls.iter().all(|c| c.program != "ssh-keyscan"), "the node never trusted on first use");
             let at = proxies[0].args.iter().position(|a| a == "-D").unwrap();
             let port = proxies[0].args[at + 1].trim_start_matches("127.0.0.1:").to_owned();
             let applied = calls.iter().find(|c| c.program == "terraform" && c.args.first().map(String::as_str) == Some("apply")).expect("terraform applied");

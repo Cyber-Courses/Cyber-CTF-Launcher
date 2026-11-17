@@ -164,6 +164,7 @@ pub(crate) fn proxmox_target(name: &str, place: &ServerPlace, vm: &str) -> Resul
     // The runner's key, which the lab's VMs and the node (for the jump) let in.
     p.key = var("ssh_private_key_file").zip(var("ssh_public_key")).map(|(private, public)| Key::new(private, public));
     p.jump.clone_from(&place.jump);
+    p.jump_known_hosts.clone_from(&place.nodes_known_hosts);
     let words = Words {
         kind: Kind::Proxmox { bridge: p.bridge.clone() },
         vm: vm.to_owned(),
