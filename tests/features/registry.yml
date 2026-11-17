@@ -2883,9 +2883,12 @@ areas:
             - src-tauri/src/runtime/server/setup/tests.rs > an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup
             - src/features/servers/host-setup/server-setup.test.tsx > asks for the server first, then signs in with the first usual SSH key
             - src/features/servers/host-setup/server-setup.test.tsx > shows the launcher
+          integration:
+            - server-lab-proxmox-setup
+        rig:
+          - server:proxmox
         gaps:
           desktop: server-lab signs in with an API token, never with an SSH key
-          integration: no test makes a token over SSH on a real Proxmox
 
       - id: servers.identity-confirm
         what: Before the launcher signs in to a server, it shows the server's TLS certificate and each node's SSH host key fingerprints; it goes on only once the player confirms them, then accepts only those (a changed certificate or key stops it and says so).
