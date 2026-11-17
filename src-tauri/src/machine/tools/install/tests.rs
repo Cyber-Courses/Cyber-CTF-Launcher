@@ -119,7 +119,7 @@ fn windows_on_arm_is_refused_the_hypervisors_not_built_for_it_by_the_hypervisor_
 #[tokio::test]
 async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
     let _policy = policy::Override::with(&[Key::DisableToolInstalls]);
-    let tools = crate::testing::tools::Tools::strict_rules(&[]);
+    let tools = fake(FakeProcesses::script().build());
     let t = crate::testing::test_app::TestApp::new();
     let mut lines = Vec::new();
     let err = install_dependency(t.dirs(), Dependency::Docker, |l| lines.push(l)).await.unwrap_err();
@@ -194,11 +194,13 @@ fn dependencies_use_lowercase_names() {
     assert_eq!(serde_json::to_string(&Dependency::Hyperv).unwrap(), "\"hyperv\"");
 }
 
-use std::cell::Cell;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use isothrum_runner::fake::{FakeProcesses, Reply};
+
+use crate::runtime::providers::testing::fake;
 use crate::testing::test_app::{Sink, TestApp};
-use crate::testing::tools::{Tools, fail, ok};
 
 /// A dependency this OS doesn't install (on macOS without Homebrew, none does).
 fn not_here() -> Dependency {
@@ -208,26 +210,26 @@ fn not_here() -> Dependency {
 /// Scripted tools for an install of Terraform: `terraform version` answers once `installed`
 /// is set, and the install step (whichever package manager runs it) sets it when `works`. The
 /// package manager's own `--version` (Linux's lookup of apt or dnf) only answers.
-fn terraform_tools(installed: Rc<Cell<bool>>, works: bool) -> Tools {
-    Tools::new(move |program, args| {
-        if matches!(program, "apt-get" | "dnf") && args == ["--version"] {
-            return ok("apt 2.9.8 (amd64)");
+fn terraform_tools(installed: Arc<AtomicBool>, works: bool) -> FakeProcesses {
+    FakeProcesses::model(move |call| {
+        if matches!(call.program.as_str(), "apt-get" | "dnf") && call.args == ["--version"] {
+            return Reply::ok("apt 2.9.8 (amd64)");
         }
-        if program == "terraform" {
-            return if installed.get() { ok("Terraform v1.9.8") } else { fail("terraform: not found") };
+        if call.program == "terraform" {
+            return if installed.load(Ordering::Relaxed) { Reply::ok("Terraform v1.9.8") } else { Reply::fail(1, "terraform: not found") };
         }
         if !works {
-            return fail("E: Unable to locate package terraform");
+            return Reply::fail(1, "E: Unable to locate package terraform");
         }
-        installed.set(true);
-        ok("Setting up terraform (1.9.8-1) ...")
+        installed.store(true, Ordering::Relaxed);
+        Reply::ok("Setting up terraform (1.9.8-1) ...")
     })
 }
 
 #[tokio::test]
 async fn a_dependency_this_os_does_not_install_is_refused_in_the_log_before_running_anything() {
     let t = TestApp::new();
-    let tools = Tools::strict_rules(&[]);
+    let tools = fake(FakeProcesses::script().build());
     let log = Sink::default();
     let err = install_dependency(t.dirs(), not_here(), log.on_line()).await.unwrap_err();
     assert_eq!(log.lines(), [err.to_string()]);
@@ -238,7 +240,7 @@ async fn a_dependency_this_os_does_not_install_is_refused_in_the_log_before_runn
 #[tokio::test]
 async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     let t = TestApp::new();
-    let tools = terraform_tools(Rc::new(Cell::new(false)), true);
+    let tools = fake(terraform_tools(Arc::new(AtomicBool::new(false)), true));
     let log = Sink::default();
     let steps = match plan(Dependency::Terraform).await {
         Ok(steps) => steps,
@@ -256,7 +258,7 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     assert_eq!(lines.first(), Some(&crate::platform::redact::redact(&isothrum_machine::install::command_line(&steps[0])).into_owned()), "{lines:?}");
     assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
     assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
-    assert!(tools.called(&format!("{} {}", steps[0].program, steps[0].args.join(" "))));
+    assert!(tools.last(&format!("{} {}", steps[0].program, steps[0].args.join(" "))).is_some());
     let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
     assert_eq!(ours, [Dependency::Terraform]);
 
@@ -275,7 +277,7 @@ async fn a_tool_that_was_already_there_is_never_recorded() {
         return;
     }
     let t = TestApp::new();
-    let _tools = terraform_tools(Rc::new(Cell::new(true)), true);
+    let _tools = fake(terraform_tools(Arc::new(AtomicBool::new(true)), true));
     install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
     assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
 }
@@ -286,13 +288,18 @@ async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
         return;
     }
     let t = TestApp::new();
-    let present = Rc::new(Cell::new(false));
+    let present = Arc::new(AtomicBool::new(false));
     // The step "works" but the tool isn't on PATH yet (an installer left open).
     let probe = present.clone();
-    let _tools = Tools::new(move |program, _| if program == "terraform" && !probe.get() { fail("not found") } else { ok("") });
+    let _tools =
+        fake(FakeProcesses::model(
+            move |call| {
+                if call.program == "terraform" && !probe.load(Ordering::Relaxed) { Reply::fail(1, "not found") } else { Reply::ok("") }
+            },
+        ));
     install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
     assert!(uninstall::installed_tools(t.dirs()).await.is_empty(), "pending, not shown");
-    present.set(true);
+    present.store(true, Ordering::Relaxed);
     let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
     assert_eq!(ours, [Dependency::Terraform]);
 }
@@ -303,7 +310,7 @@ async fn a_failed_install_says_so_and_records_nothing() {
         return;
     }
     let t = TestApp::new();
-    let _tools = terraform_tools(Rc::new(Cell::new(false)), false);
+    let _tools = fake(terraform_tools(Arc::new(AtomicBool::new(false)), false));
     let log = Sink::default();
     let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
     assert!(err.to_string().contains("exited with"), "{err}");

@@ -184,6 +184,9 @@ pub(crate) mod testing {
 
     thread_local! {
         static MACHINE: RefCell<Option<(Arc<dyn ProcessRunner>, isothrum_machine::Host)>> = const { RefCell::new(None) };
+        /// The tool set (`exec::ToolSet`) of the machine this thread's test set: never the
+        /// machine's own (0), never another test's.
+        static SET: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
     }
 
     /// Whether this process's detection reads this machine ([`read_this_machine`]).
@@ -204,7 +207,10 @@ pub(crate) mod testing {
     impl Machine {
         /// `runner` runs the tools, `host` is the machine (its devices a test's own).
         pub(crate) fn set(runner: Arc<dyn ProcessRunner>, host: isothrum_machine::Host) -> Machine {
+            // Apart from the launcher's scripted tools' sets (`testing::tools`), counted from 1.
+            static SETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1 << 32);
             MACHINE.with(|m| *m.borrow_mut() = Some((runner, host)));
+            SET.with(|s| s.set(Some(SETS.fetch_add(1, Ordering::Relaxed))));
             Machine
         }
     }
@@ -212,6 +218,36 @@ pub(crate) mod testing {
     impl Drop for Machine {
         fn drop(&mut self) {
             MACHINE.with(|m| *m.borrow_mut() = None);
+            SET.with(|s| s.set(None));
+        }
+    }
+
+    /// The tool set of the machine this thread's test set, if it set one.
+    pub(crate) fn tool_set() -> Option<u64> {
+        SET.with(std::cell::Cell::get)
+    }
+
+    /// A test's scripted tools ([`FakeProcesses`]) on a machine with nothing else on it (no
+    /// device, no package manager), until dropped: every tool the code under test runs, the
+    /// launcher's and isothrum-machine's, is answered by `fake`, which the guard reads as itself
+    /// (`calls`, `made`, `last`). Dropped, the fake checks its script was run as written.
+    pub(crate) fn fake(fake: FakeProcesses) -> Faked {
+        let fake = Arc::new(fake);
+        let machine = Machine::set(Arc::<FakeProcesses>::clone(&fake), host(std::path::Path::new("/nonexistent/cyberctf-test-machine")));
+        Faked { fake, _machine: machine }
+    }
+
+    /// [`fake`]'s guard. Its fields drop in order: the guard's handle on the fake, then the
+    /// machine's, so the fake's own check runs as the machine goes.
+    pub(crate) struct Faked {
+        fake: Arc<FakeProcesses>,
+        _machine: Machine,
+    }
+
+    impl std::ops::Deref for Faked {
+        type Target = FakeProcesses;
+        fn deref(&self) -> &FakeProcesses {
+            &self.fake
         }
     }
 
