@@ -73,6 +73,11 @@ pub enum Code {
         /// The account's user name, for the `net localgroup` command the message gives.
         user: String,
     },
+    /// Docker's install stopped, changing nothing: this Linux distribution isn't Debian, Ubuntu or
+    /// one built on them, so the player installs Docker Engine themselves.
+    DockerOtherDistribution,
+    /// Hyper-V can't be turned on: this edition of Windows (Home) has none.
+    HypervHomeEdition,
     /// The auto-stop couldn't destroy a lab: no account is recorded for its run. (Its other
     /// failures are the runner's, with their own codes.)
     ReapNoHost,

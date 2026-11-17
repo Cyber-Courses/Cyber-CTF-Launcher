@@ -183,11 +183,6 @@ impl Provider {
         self.row().is_none_or(|row| row.oses.contains(&os.isothrum()))
     }
 
-    /// Whether it is built for Windows on Arm (a server or a cloud account, reached from it, is).
-    pub(crate) fn on_windows_on_arm(self) -> bool {
-        self.row().is_none_or(|row| row.windows_on_arm)
-    }
-
     /// Where its vendor offers it, when the setup doesn't install it (behind a login, a licence,
     /// or a Windows feature the player turns on by hand).
     pub(crate) fn vendor(self) -> Option<&'static str> {

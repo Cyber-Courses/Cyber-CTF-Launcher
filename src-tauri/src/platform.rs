@@ -28,7 +28,6 @@ pub mod private_fs;
 pub mod proxy;
 pub mod redact;
 pub mod remembered;
-pub mod root_script;
 pub mod sync;
 pub mod sys;
 pub mod test_root;

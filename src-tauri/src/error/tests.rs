@@ -108,6 +108,8 @@ fn form(code: &Code) -> usize {
         Code::HostHasLabs { .. } => 21,
         Code::ToolMissing { .. } => 22,
         Code::CommandFailed { .. } => 23,
+        Code::DockerOtherDistribution => 50,
+        Code::HypervHomeEdition => 51,
         Code::TurnedOffByPolicy { .. } => 24,
         Code::Refused => 25,
         Code::RefusedBeforeActing => 26,
@@ -138,7 +140,7 @@ fn form(code: &Code) -> usize {
 }
 
 /// How many forms [`form`] tells apart.
-const FORMS: usize = 50;
+const FORMS: usize = 52;
 
 #[test]
 fn every_form_has_a_sample() {
@@ -166,6 +168,8 @@ fn sample_codes() -> Vec<Code> {
         Code::DockerNotRunning,
         Code::DockerDenied { user: "player".into() },
         Code::DockerDeniedWindows { user: "Ada Lovelace".into() },
+        Code::DockerOtherDistribution,
+        Code::HypervHomeEdition,
         Code::PlacementLockedHost { count: 1, fields: "node, host".into() },
         Code::PlacementLockedAccount { count: 2, fields: "region".into() },
         Code::HostHasLabs { count: 1 },

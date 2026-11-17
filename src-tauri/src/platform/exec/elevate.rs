@@ -368,6 +368,7 @@ fn powershell() -> std::path::PathBuf {
 
 /// `s` as a PowerShell single-quoted string. PowerShell also takes the typographic single quotes
 /// as quote characters, so every one of them is doubled too.
+#[cfg_attr(not(windows), allow(dead_code, reason = "the elevated broker's scripts, built on Windows (and in its tests)"))]
 pub(crate) fn ps_quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('\'');

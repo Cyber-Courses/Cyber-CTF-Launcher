@@ -46,6 +46,15 @@ impl Os {
         }
     }
 
+    /// The OS Isothrum names `os`.
+    pub fn of_isothrum(os: isothrum_runner::HostOs) -> Os {
+        match os {
+            isothrum_runner::HostOs::Macos => Os::Macos,
+            isothrum_runner::HostOs::Windows => Os::Windows,
+            isothrum_runner::HostOs::Linux => Os::Linux,
+        }
+    }
+
     /// Its id, `std::env::consts::OS`'s (`macos`), as the machine report and the webview write it.
     pub fn id(self) -> &'static str {
         match self {
@@ -160,14 +169,6 @@ impl Packages {
             Packages::Winget => isothrum_machine::Packages::Winget,
             Packages::Linux(LinuxPackages::Apt) => isothrum_machine::Packages::Linux(isothrum_machine::LinuxPackages::Apt),
             Packages::Linux(LinuxPackages::Dnf) => isothrum_machine::Packages::Linux(isothrum_machine::LinuxPackages::Dnf),
-        }
-    }
-
-    /// The Linux distribution's, when it is one.
-    pub fn linux(self) -> Option<LinuxPackages> {
-        match self {
-            Packages::Linux(packages) => Some(packages),
-            Packages::Homebrew(_) | Packages::Winget => None,
         }
     }
 }

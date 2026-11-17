@@ -1,14 +1,5 @@
 use super::*;
-
-/// Regression (a clean Windows 11): `winget install -e --id Docker.DockerDesktop` without a source
-/// failed with 0x8a15005e, the Microsoft Store source's certificate pinning failing, in both
-/// passes. winget is asked of its own source alone.
-#[test]
-fn winget_installs_and_removes_from_its_own_source_alone() {
-    let install = winget("install", "Docker.DockerDesktop", &["--accept-source-agreements", "--accept-package-agreements"]);
-    assert_eq!(command_line(&install), "$ winget install -e --id Docker.DockerDesktop --source winget --accept-source-agreements --accept-package-agreements");
-    assert_eq!(command_line(&winget("uninstall", "Hashicorp.Vagrant", &[])), "$ winget uninstall -e --id Hashicorp.Vagrant --source winget");
-}
+use crate::platform::host::LinuxPackages;
 
 #[test]
 fn docker_is_named_as_the_setup_installs_it_on_each_os() {
@@ -136,45 +127,6 @@ async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
 }
 
 #[test]
-fn a_root_install_carries_the_proxy_through_pkexec_off_its_command_line() {
-    // Regression: the proxy went on pkexec's command line (`env https_proxy=http://user:pass@…`),
-    // which every local user reads in `ps` while the password prompt is up.
-    let proxy = ["https_proxy=http://ada:s3cret@proxy.corp:3128".to_string(), "no_proxy=.corp".into(), "http_proxy=$(echo ran)`echo ran`".into()];
-    let step = as_root(RootScript::new(r#"printf '%s|%s|%s' "$https_proxy" "$no_proxy" "$http_proxy""#), &proxy).unwrap();
-    assert!(step.args[3].starts_with(crate::platform::root_script::PRELUDE), "the prelude first: {}", step.args[3]);
-    assert_eq!(step.program, "pkexec");
-    assert_eq!(step.args[..3], ["env", "sh", "-c"]);
-    assert!(!step.args.iter().any(|a| a.contains("s3cret") || a.contains("proxy.corp")), "{:?}", step.args);
-    let dir = step.private.as_ref().unwrap().path().to_owned();
-    #[cfg(unix)]
-    {
-        use crate::platform::private_fs::tests::mode;
-        assert_eq!((mode(&dir), mode(&dir.join("proxy"))), (0o700, 0o600), "owner-only");
-        // The script, run as pkexec runs it (no environment), has the proxy, its values as
-        // written, never run.
-        let out = std::process::Command::new(&step.args[1]).args(&step.args[2..]).env_clear().output().unwrap();
-        assert!(out.status.success(), "{out:?}");
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "http://ada:s3cret@proxy.corp:3128|.corp|$(echo ran)`echo ran`");
-    }
-    drop(step);
-    assert!(!dir.exists(), "the folder goes with the step");
-    // No proxy: no file, the script alone.
-    let step = as_root(RootScript::new("true"), &[]).unwrap();
-    assert_eq!((step.args, step.private.is_none()), (vec!["env".to_string(), "sh".into(), "-c".into(), RootScript::new("true").into_string()], true));
-}
-
-#[cfg(unix)]
-#[test]
-fn only_proxy_variables_are_read_from_the_proxy_file() {
-    let dir = crate::testing::temp_dir("proxy");
-    let file = dir.join("proxy");
-    std::fs::write(&file, "PATH=/nowhere\nhttps_proxy=http://p:3128\nLD_PRELOAD=/x.so\n").unwrap();
-    let script = format!(r#"{}; printf '%s|%s|%s' "$https_proxy" "${{LD_PRELOAD:-}}" "$PATH""#, read_proxy(&file));
-    let out = std::process::Command::new("sh").arg("-c").arg(script).env("PATH", "/usr/bin:/bin").output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "http://p:3128||/usr/bin:/bin");
-}
-
-#[test]
 fn only_vagrant_plugin_names_are_installed() {
     assert!(valid_plugin("vagrant-vmware-esxi") && valid_plugin("vagrant_proxmox"));
     assert!(!valid_plugin("vagrant-x; touch /tmp/x") && !valid_plugin("--plugin-source") && !valid_plugin("rails"));
@@ -183,83 +135,23 @@ fn only_vagrant_plugin_names_are_installed() {
 
 /// The plan for every dependency on `host`: the ones that install there have steps, the
 /// others say why not.
-fn plans(host: Host) -> Vec<(Dependency, Result<Vec<Step>>)> {
+fn plans(host: Host) -> Vec<(Dependency, Result<Plan>)> {
     Dependency::ALL.into_iter().map(|d| (d, plan_on(d, host, Some("ada")))).collect()
 }
 
 #[test]
-fn macos_installs_through_homebrew() {
+fn macos_installs_through_isothrum_machine_and_says_why_not_in_the_players_words() {
+    // isothrum-machine's Homebrew formulae and vendors' installers; every plan is tested there.
     let without = Host { packages: None, ..MAC };
-    assert!(plan_on(Dependency::Docker, without, None).err().unwrap().to_string().contains("Homebrew is required"));
+    assert_eq!(plan_on(Dependency::Docker, without, None).err().unwrap().to_string(), "Homebrew is required. Install it from https://brew.sh, then try again.");
     assert!(plan_on(Dependency::VmwareUtility, without, None).is_ok(), "HashiCorp's own package");
-    for (dep, p) in plans(MAC) {
+    for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, MAC, None))) {
         match dep {
-            Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
-            _ => assert!(!p.unwrap().is_empty(), "{dep:?}"),
+            Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(plan.is_err(), "{dep:?}"),
+            _ => assert!(!plan.unwrap().is_empty(), "{dep:?}"),
         }
     }
-    let azure = plan_on(Dependency::Azurecli, MAC, None).unwrap();
-    assert_eq!(azure.len(), 3);
-    assert!(azure[2].note.is_some() && azure[2].args.contains(&"azure-cli-preview".to_string()));
-    // QEMU is one shell step: a best-effort Homebrew update that never aborts the install
-    // (`|| …`), then the install itself. It must not be a second, fatal `brew update` step.
-    let qemu = plan_on(Dependency::Qemu, MAC, None).unwrap();
-    assert_eq!(qemu.len(), 1);
-    assert_eq!(qemu[0].program, "sh");
-    let script = qemu[0].args.join(" ");
-    assert!(script.contains("update ||") && script.contains("install qemu"), "{script}");
-}
-
-#[test]
-fn linux_installs_through_pkexec() {
-    for (dep, p) in plans(APT) {
-        match dep {
-            Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
-            _ => assert_eq!(p.unwrap()[0].program, "pkexec", "{dep:?}"),
-        }
-    }
-    // libvirt brings what the vagrant-libvirt plugin builds against, and joins its group.
-    let libvirt = plan_on(Dependency::Libvirt, APT, Some("ada")).unwrap()[0].args.join(" ");
-    assert!(libvirt.contains("libvirt-dev") && libvirt.contains("build-essential"), "{libvirt}");
-    // And the virtiofsd libvirt shares the attack box's folder through, on apt and on dnf.
-    for host in [APT, DNF] {
-        let libvirt = plan_on(Dependency::Libvirt, host, None).unwrap()[0].args.join(" ");
-        assert!(libvirt.contains("install -y virtiofsd") || libvirt.contains(" virtiofsd;"), "{:?}: {libvirt}", host.packages);
-        // And the virtiofsd vagrant-qemu starts for QEMU's.
-        let qemu = plan_on(Dependency::Qemu, host, None).unwrap()[0].args.join(" ");
-        assert!(qemu.split([' ', ';']).any(|w| w == "virtiofsd"), "{:?}: {qemu}", host.packages);
-    }
-    let aws = plan_on(Dependency::Awscli, APT, None).unwrap()[0].args.join(" ");
-    assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");
-}
-
-/// Every step run as root on Linux, for each tool, package manager and way (install, removal).
-fn every_linux_root_step() -> Vec<(String, Step)> {
-    let mut steps = Vec::new();
-    for dep in Dependency::ALL {
-        for host in [APT, DNF] {
-            let install = plan_on(dep, host, Some("ada")).unwrap_or_default();
-            let removal = uninstall::plan_on(dep, host, None).unwrap_or_default();
-            for (way, plan) in [("install", install), ("removal", removal)] {
-                steps.extend(plan.into_iter().filter(|s| s.program == "pkexec").map(|s| (format!("{dep:?} {:?} {way}", host.packages), s)));
-            }
-        }
-    }
-    steps
-}
-
-#[test]
-fn every_root_step_starts_with_the_prelude_and_parses() {
-    // Regression: the libvirt and QEMU installs ran without `set -e`, and a failed
-    // `apt-get install` read as done; the hand-kept list of root scripts the tests checked
-    // didn't name them. Every plan is read here, whatever it installs.
-    let steps = every_linux_root_step();
-    assert!(steps.len() >= 25, "{} root steps", steps.len());
-    for (what, step) in steps {
-        let script = step.args.last().unwrap();
-        assert!(script.starts_with(crate::platform::root_script::PRELUDE), "{what}: {script}");
-        assert!(crate::platform::sh_parses(script), "{what}: not valid sh: {script}");
-    }
+    assert_eq!(uninstall::plan_on(Dependency::Terraform, without, None).err().unwrap().to_string(), "Homebrew is needed to remove this tool.");
 }
 
 #[test]
@@ -279,21 +171,11 @@ fn windows_installs_through_winget_and_wsl_through_its_installer() {
 }
 
 #[test]
-fn vagrant_comes_from_hashicorps_repository_not_the_distributions() {
-    // Regression: the setup ran `apt-get install vagrant`, Debian 13's 2.3.8, and every VM lab
-    // then refused it ("needs Vagrant 2.4.0 or later").
-    let plan = plan_on(Dependency::Vagrant, APT, None).unwrap();
-    let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
-    assert!(script.contains("apt.releases.hashicorp.com") && script.contains("apt-get install -y vagrant"), "{script}");
-    assert!(!script.contains("apt-get update && apt-get install -y vagrant"), "the distribution's package: {script}");
-}
-
-#[test]
 fn a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs() {
     // Regression: Fedora, openSUSE and Arch got `apt-get: not found` from a pkexec prompt.
     for dep in [Dependency::Vagrant, Dependency::Virtualbox, Dependency::Libvirt, Dependency::Qemu, Dependency::Docker] {
         let err = plan_on(dep, BARE_LINUX, None).err().unwrap_or_else(|| panic!("{dep:?} refused"));
-        assert_eq!(err.to_string(), without_packages(dep).to_string());
+        assert!(err.to_string().starts_with("This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install "), "{err}");
         assert!(plan_on(dep, APT, None).is_ok(), "{dep:?}");
     }
     assert!(plan_on(Dependency::Utm, BARE_LINUX, None).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
@@ -301,37 +183,8 @@ fn a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anythin
 
 #[test]
 fn without_apt_or_dnf_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
-    let err = without_packages(Dependency::Virtualbox).to_string();
+    let err = plan_on(Dependency::Virtualbox, BARE_LINUX, None).err().unwrap().to_string();
     assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install VirtualBox yourself, then re-check.");
-}
-
-#[test]
-fn a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand() {
-    // Regression: on Fedora the setup failed on "this distribution isn't supported".
-    for dep in
-        [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt, Dependency::Awscli]
-    {
-        let plan = plan_on(dep, DNF, Some("ada")).unwrap_or_else(|e| panic!("{dep:?}: {e}"));
-        let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
-        let own = script
-            .replace(crate::platform::root_script::NEED_CURL, "")
-            .replace(crate::platform::root_script::NEED_GPG, "")
-            .replace(crate::platform::root_script::NEED_UNZIP, "");
-        assert!(!own.contains("apt-get"), "{dep:?} through apt: {script}");
-        if dep != Dependency::Awscli {
-            assert!(script.contains("dnf install -y"), "{dep:?}: {script}");
-        }
-    }
-    for dep in [Dependency::Azurecli, Dependency::Gcloud, Dependency::VmwareUtility] {
-        assert_eq!(plan_on(dep, DNF, None).err().map(|e| e.to_string()), Some(apt_only(dep).to_string()), "{dep:?}");
-    }
-}
-
-#[test]
-fn hyper_v_is_turned_on_by_dism_elevated_and_refused_on_windows_home() {
-    // DISM's "done, restart to finish" (3010) is a success; Home has no Hyper-V to turn on.
-    assert!(HYPERV_ON.contains("/FeatureName:Microsoft-Hyper-V") && HYPERV_ON.contains("/NoRestart") && HYPERV_ON.contains("-Verb RunAs"));
-    assert!(HYPERV_ON.contains("-eq 3010) { exit 0 }") && HYPERV_ON.contains("EditionID -like 'Core*'"));
 }
 
 #[test]
@@ -396,7 +249,7 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     };
     install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
     let lines = log.lines();
-    assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
+    assert_eq!(lines.first(), Some(&crate::platform::redact::redact(&isothrum_machine::install::command_line(&steps[0])).into_owned()), "{lines:?}");
     assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
     assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
     assert!(tools.called(&format!("{} {}", steps[0].program, steps[0].args.join(" "))));
@@ -459,4 +312,29 @@ async fn a_failed_install_says_so_and_records_nothing() {
 async fn an_invalid_plugin_is_refused_before_running_anything() {
     let err = install_vagrant_plugin("rails".into(), |_| {}).await.unwrap_err();
     assert_eq!(err.to_string(), "invalid plugin name `rails`");
+}
+
+#[test]
+fn a_root_step_prompts_unless_unattended_where_it_runs_as_root_or_through_sudo_n() {
+    use isothrum_machine::install::Elevation;
+    assert_eq!(super::linux_root().elevation, Elevation::Prompt, "the app prompts whoever runs it");
+    crate::platform::elevation::set_unattended(true);
+    let unattended = super::linux_root().elevation;
+    crate::platform::elevation::set_unattended(false);
+    assert_eq!(unattended, Elevation::Unattended { root: crate::platform::elevation::is_root() });
+}
+
+#[test]
+fn linux_installs_and_removals_are_isothrum_machines_said_in_the_players_words() {
+    // isothrum-machine's root scripts, through pkexec; every plan's steps and refusals are tested there.
+    for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, APT, Some("ada")))) {
+        match dep {
+            Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => assert!(plan.is_err(), "{dep:?}"),
+            _ => assert_eq!(plan.unwrap()[0].program, "pkexec", "{dep:?}"),
+        }
+    }
+    let apt_only = plan_on(Dependency::Gcloud, DNF, None).err().unwrap().to_string();
+    assert_eq!(apt_only, "The guided setup installs Google Cloud CLI through apt only for now: install it yourself, then re-check.");
+    let removal = uninstall::plan_on(Dependency::Vagrant, DNF, None).unwrap();
+    assert!(removal[0].args.last().unwrap().ends_with("dnf remove -y vagrant"), "{removal:?}");
 }

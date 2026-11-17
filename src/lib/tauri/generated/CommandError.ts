@@ -36,7 +36,7 @@ user: string, } } | { "code": "dockerDeniedWindows", "args": {
 /**
  * The account's user name, for the `net localgroup` command the message gives.
  */
-user: string, } } | { "code": "reapNoHost" } | { "code": "placementLockedHost", "args": { 
+user: string, } } | { "code": "dockerOtherDistribution" } | { "code": "hypervHomeEdition" } | { "code": "reapNoHost" } | { "code": "placementLockedHost", "args": { 
 /**
  * How many labs are on the host.
  */

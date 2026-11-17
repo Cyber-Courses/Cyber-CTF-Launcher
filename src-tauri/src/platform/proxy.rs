@@ -5,17 +5,14 @@
 //!   system's proxy (System Settings > Network > Proxies, or an MDM profile, as `scutil --proxy`
 //!   reports it) is put into this process's environment at startup, which every child inherits.
 //!   A proxy auto-config (PAC) file can't be put into variables: the log says so.
-//! - pkexec (Linux installs) clears the environment: `assignments` lists the variables the root
-//!   command is handed, through an owner-only file it reads, never its command line.
+//! - pkexec (Linux installs) clears the environment: isothrum-machine hands the root command the
+//!   variables that are set (`install::linux::proxy_assignments`), through an owner-only file it
+//!   reads, never its command line.
 
-/// The proxy variables, both cases: tools read one or the other (curl and apt the lowercase
-/// ones, Go's and Docker's either).
-pub const VARS: [&str; 6] = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
-
-/// The proxy variables `var` reads that are set, as `NAME=value` (what `env` takes).
-pub fn assignments(var: impl Fn(&str) -> Option<String>) -> Vec<String> {
-    VARS.into_iter().filter_map(|name| var(name).filter(|v| !v.is_empty()).map(|v| format!("{name}={v}"))).collect()
-}
+// The proxy variables, both cases: tools read one or the other (curl and apt the lowercase ones,
+// Go's and Docker's either). isothrum-machine's list, which a Linux root step is handed.
+#[cfg(any(target_os = "macos", test))]
+use isothrum_machine::install::linux::PROXY_VARS as VARS;
 
 /// Whether a proxy variable is set (`var` reads one), to a value: an empty one is unset.
 #[cfg(any(target_os = "macos", test))]
@@ -148,6 +145,7 @@ mod tests {
 
     #[test]
     fn root_commands_get_the_proxy_variables_that_are_set() {
+        use isothrum_machine::install::linux::proxy_assignments;
         // Regression: pkexec cleared the environment, so apt and curl ran as root without the
         // corporate proxy and the install failed behind it.
         let env = |name: &str| match name {
@@ -156,8 +154,8 @@ mod tests {
             "HTTP_PROXY" => Some(String::new()),
             _ => None,
         };
-        assert_eq!(assignments(env), ["NO_PROXY=.corp,localhost", "https_proxy=http://proxy.corp:3128"]);
-        assert_eq!(assignments(|_| None), [] as [String; 0]);
+        assert_eq!(proxy_assignments(env), ["NO_PROXY=.corp,localhost", "https_proxy=http://proxy.corp:3128"]);
+        assert_eq!(proxy_assignments(|_| None), [] as [String; 0]);
     }
 
     #[test]
