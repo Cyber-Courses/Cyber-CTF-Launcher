@@ -7,8 +7,6 @@ use std::ffi::OsStr;
 
 pub use elevation::is_elevated;
 #[cfg(test)]
-pub use registry::registry_string;
-#[cfg(test)]
 pub use registry::registry_value_exists;
 pub use registry::{Hive, delete_user_registry_value, registry_values, set_user_registry_string};
 

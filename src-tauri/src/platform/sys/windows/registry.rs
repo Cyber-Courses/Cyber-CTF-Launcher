@@ -16,7 +16,8 @@ use crate::platform::sys::RegistryValue;
 pub enum Hive {
     /// `HKEY_LOCAL_MACHINE`: the machine's settings.
     LocalMachine,
-    /// `HKEY_CURRENT_USER`: this user's settings.
+    /// `HKEY_CURRENT_USER`: this user's settings, which only a test reads (the app writes them).
+    #[cfg(test)]
     CurrentUser,
 }
 
@@ -24,6 +25,7 @@ impl Hive {
     fn key(self) -> HKEY {
         match self {
             Hive::LocalMachine => HKEY_LOCAL_MACHINE,
+            #[cfg(test)]
             Hive::CurrentUser => HKEY_CURRENT_USER,
         }
     }
