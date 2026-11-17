@@ -99,10 +99,7 @@ pub(crate) fn parked(record: &RunRecord) -> Option<Park> {
     if record.state != RunState::Parked {
         return None;
     }
-    Some(match record.parked? {
-        isothrum_runner::Park::Pause => Park::Pause,
-        _ => Park::Shutdown,
-    })
+    record.parked.map(Park::from)
 }
 
 /// The labs whose runs run on this machine, as the runner records them ([`runs_here`]); none

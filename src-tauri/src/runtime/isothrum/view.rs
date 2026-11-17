@@ -36,6 +36,7 @@ pub(super) fn lab_status(lab: &Described, status: &Status, marked: Option<Park>)
         // and offers Pause only where that provider can suspend (vagrant-qemu can't). A lab on a
         // server or cloud account has its provider set by its own run.
         provider: status.provider.map(|p| isothrum_runner::wire_name(&p)),
+        parks: status.parks.iter().copied().map(Park::from).collect(),
         ..LabStatus::default()
     }
 }

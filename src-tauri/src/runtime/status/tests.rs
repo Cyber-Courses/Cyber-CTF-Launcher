@@ -187,11 +187,12 @@ async fn the_status_carries_what_the_page_may_do_where_the_lab_runs() {
     let t = crate::testing::test_app::TestApp::new();
     let _tools = crate::testing::tools::Tools::strict_rules(&[]);
     let dir = t.lab("web", &[]);
+    // Never run: nothing to pause or shut down (the runner lists the ways a run parks from its
+    // record, `Status::parks`). Containers stopped outside the app come back with a resume
+    // (docs/contributing/testing/resilience.md M4); VMs are provisioned again too.
     let docker = super::status(&t.dirs(), &dir, "web", Runtime::Docker).await.unwrap().controls;
-    // Containers pause (frozen) or shut down, and those stopped outside the app come back with a
-    // resume (docs/contributing/testing/resilience.md M4).
-    assert_eq!(docker, [Control::Pause, Control::Shutdown, Control::Repair]);
+    assert_eq!(docker, [Control::Repair]);
     let vm = super::status(&t.dirs(), &dir, "web", Runtime::Vm).await.unwrap().controls;
-    assert_eq!(vm, [Control::Pause, Control::Shutdown, Control::Provision, Control::Repair]);
+    assert_eq!(vm, [Control::Provision, Control::Repair]);
     assert_eq!(super::status(&t.dirs(), &dir, "web", Runtime::Cloud).await.unwrap().controls, [] as [Control; 0]);
 }
