@@ -97,17 +97,6 @@ impl Choices for Picks<'_> {
         })
     }
 
-    /// UTM, asked as a lab's start asks it ([`check_utm`](crate::runtime::launch::check_utm)):
-    /// opened hidden when it isn't running, where `utmctl list` would bring its window up.
-    fn probe(&self, p: isothrum_runner::Provider) -> BoxFuture<'_, std::result::Result<bool, String>> {
-        Box::pin(async move {
-            if p != isothrum_runner::Provider::Utm {
-                return Ok(false);
-            }
-            crate::runtime::launch::check_utm(&mut |_| {}).await.map(|()| true).map_err(|e| e.to_string())
-        })
-    }
-
     fn fetch_box<'a>(
         &'a self,
         p: isothrum_runner::Provider,
