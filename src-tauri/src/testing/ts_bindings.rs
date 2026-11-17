@@ -96,9 +96,9 @@ fn generate(dir: &Path) {
     write_index(dir);
 }
 
-/// Exports the settings' types: their changes and the import's answer, with the settings
-/// themselves (`crate::settings`).
+/// Exports the settings' types: the settings themselves and their changes (`crate::settings`).
 fn export_settings(cfg: &Config) {
+    crate::settings::Settings::export_all(cfg).unwrap();
     crate::settings::Change::export_all(cfg).unwrap();
 }
 
