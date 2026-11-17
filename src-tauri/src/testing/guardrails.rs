@@ -110,7 +110,6 @@ const SHELL_ALLOWED: &[(&str, &str, &str)] = &[
         "[\"sh\".to_owned(), \"-c\".to_owned(), self.runner_code(check)?]",
         "a lab's check runner, whole as Isoloom generated it (or its command), run in the lab's VM",
     ),
-    ("runtime/terminal_launch.rs", "args([flag, \"sh\", \"-c\", &run])", "the attack shell's line, quoted word by word with shell_words"),
     ("screen/rdp.rs", "vec![\"-c\".into(), file]", "Remmina's -c is its connection file, not a shell"),
 ];
 
