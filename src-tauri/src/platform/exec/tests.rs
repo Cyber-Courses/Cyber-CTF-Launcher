@@ -181,7 +181,7 @@ async fn a_killed_apps_tools_end_with_it() {
 #[test]
 #[ignore = "run as a child process by a_killed_apps_tools_end_at_the_next_start"]
 fn ledger_owner_helper() {
-    record_tools_in(std::path::PathBuf::from(std::env::var("CYBERCTF_LEDGER").unwrap()));
+    crate::platform::processes::keep_ledger_in(std::path::PathBuf::from(std::env::var("CYBERCTF_LEDGER").unwrap()));
     run_a_parent_of_a_child();
 }
 
@@ -210,7 +210,7 @@ async fn a_killed_apps_tools_end_at_the_next_start() {
     owner.kill().unwrap();
     owner.wait().unwrap();
     let alive = crate::platform::sys::process_exists(tool) && crate::platform::sys::process_exists(child);
-    let ended = end_orphaned_tools(ledger.path()).await;
+    let ended = crate::platform::processes::end_left_behind(ledger.path()).await;
     assert!(alive, "the killed app's tool and its child ran on until the next start");
     assert_eq!(ended, [tool]);
     assert!(fake::gone(tool).await, "the tool {tool} outlived the next start");

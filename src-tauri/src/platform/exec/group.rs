@@ -21,6 +21,7 @@ struct Live {
     #[cfg(windows)]
     job: std::sync::Arc<Job>,
     /// Its record in the tools' ledger, held for its drop: removed when this drops.
+    #[cfg_attr(windows, expect(dead_code, reason = "held for its drop: the job ends the tree on Windows"))]
     record: Option<super::ledger::Recorded>,
 }
 
@@ -61,16 +62,6 @@ impl GroupGuard {
 
     fn enter(tool: Live) {
         live_groups().push(tool);
-    }
-
-    /// The tool exited on its own: leave whatever it started alone.
-    pub(crate) fn disarm(mut self) {
-        if let Some(live) = forget(self.0.take()) {
-            #[cfg(windows)]
-            live.job.release();
-            // Done with: its record goes.
-            drop(live.record);
-        }
     }
 }
 

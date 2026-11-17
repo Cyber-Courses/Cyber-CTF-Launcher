@@ -24,6 +24,7 @@ pub mod loopback_http;
 pub mod msix_data;
 pub mod policy;
 pub mod private_fs;
+pub mod processes;
 pub mod proxy;
 pub mod redact;
 pub mod remembered;
