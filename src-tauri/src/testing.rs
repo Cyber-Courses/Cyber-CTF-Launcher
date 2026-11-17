@@ -1,6 +1,7 @@
 //! What the unit tests share: an app on Tauri's mock runtime, the property tests' strategies, the
 //! scans over the crate's own source, the warnings the code logs, and the TypeScript types written
-//! from the command structs, and the scripted tools ([`tools`]).
+//! from the command structs, the scripted tools ([`tools`]), and a [`Switch`] a test shares with
+//! the model of its fake tools.
 
 mod guardrails;
 pub mod logs;
@@ -13,6 +14,8 @@ pub mod tools;
 mod ts_bindings;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A fresh folder under the temp dir for one test, named after `tag` (`cyberctf-<tag>-XXXXXX`),
 /// removed with what it holds when the returned guard drops: at the end of the test, and when a
@@ -77,6 +80,21 @@ pub fn thread_dir(tag: &'static str) -> PathBuf {
         dirs.push((tag, ThreadDir(path.clone())));
         path
     })
+}
+
+/// A switch a test and the model of its fake tools (`FakeProcesses::model`) share: off until one
+/// of them turns it on (a daemon started, a sign-in that ran out), which the other then sees.
+#[derive(Debug, Clone, Default)]
+pub struct Switch(Arc<AtomicBool>);
+
+impl Switch {
+    pub fn turn_on(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_on(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
 }
 
 /// Asserts that `actual` is `expected` as a float can be: within a millionth of it (an exact

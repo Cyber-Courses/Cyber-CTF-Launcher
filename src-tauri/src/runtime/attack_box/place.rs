@@ -221,12 +221,12 @@ fn declared_address(dir: &Path, name: &str, network: &str, vm: bool) -> Option<S
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
 
     use isothrum_runner::fake::{FakeProcesses, Reply};
 
     use super::*;
     use crate::runtime::isothrum;
+    use crate::testing::Switch;
 
     /// Every file of the lab's generated module for `cloud` (a container lab, `cloud-docker`), by
     /// its path under it.
@@ -248,9 +248,9 @@ mod tests {
         files
     }
 
-    /// A Terraform whose sign-in to AWS runs out once `ran_out` is set: its apply then refuses, as
+    /// A Terraform whose sign-in to AWS runs out once `ran_out` is on: its apply then refuses, as
     /// Terraform's AWS provider says it.
-    fn signing_out(ran_out: Arc<AtomicBool>) -> FakeProcesses {
+    fn signing_out(ran_out: Switch) -> FakeProcesses {
         FakeProcesses::model(move |call| match call.args.first().map(String::as_str) {
             // The runner's key, which the lab's instances let in.
             _ if call.program.ends_with("ssh-keygen") => {
@@ -265,7 +265,7 @@ mod tests {
                 r#"{"values":{"root_module":{"resources":[{"address":"aws_instance.web","mode":"managed","type":"aws_instance","values":{"id":"i-1"}}]}}}"#,
             ),
             Some("output") => Reply::ok("{}"),
-            Some("apply") if ran_out.load(Ordering::SeqCst) => Reply::fail(
+            Some("apply") if ran_out.is_on() => Reply::fail(
                 1,
                 "Error: failed to refresh cached credentials: login session has expired, please reauthenticate\n  with provider[\"registry.terraform.io/hashicorp/aws\"]",
             ),
@@ -286,14 +286,14 @@ mod tests {
         let home = dir.join("home");
         let runner_home = crate::runtime::paths::runner_home_in(&home);
         // Terraform, whose sign-in to AWS runs out once the lab is up.
-        let expired = Arc::new(AtomicBool::new(false));
-        let fake = Arc::new(signing_out(Arc::clone(&expired)));
+        let expired = Switch::default();
+        let fake = Arc::new(signing_out(expired.clone()));
         let mut config = isothrum_runner::RunnerConfig::new(runner_home.clone());
         config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
         let place = isothrum::CloudPlace { region: Some("eu-west-3".into()), allowed_cidr: Some("203.0.113.7/32".into()), ..isothrum::CloudPlace::default() };
         let run = isothrum::Deployment::in_cloud_with(config, &dir, "t", (Runtime::Docker, "aws"), place).unwrap();
         run.up(isothrum::Inputs::default(), None, &mut |_| {}).await.unwrap();
-        expired.store(true, Ordering::SeqCst);
+        expired.turn_on();
         let before = module(&dir, "aws");
         let conn = crate::runtime::server::Connection {
             id: String::new(),
