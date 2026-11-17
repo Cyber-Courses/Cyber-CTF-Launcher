@@ -153,6 +153,27 @@ async fn a_taken_fixed_port_names_what_holds_it() {
     }
 }
 
+/// A VM lab's fixed forward is checked as a container's fixed port: here on a hypervisor, a taken
+/// one is said with the rest (no hypervisor ready on this test machine); on a server (no such
+/// server saved here: refused for that), it isn't this machine's port.
+#[tokio::test]
+async fn a_vm_labs_fixed_forward_already_taken_is_said_too() {
+    let t = TestApp::new();
+    let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = held.local_addr().unwrap().port();
+    let forwarded = vms().replace(
+        "networks: { lan: 10 } }",
+        &format!("networks: {{ lan: 10 }}, ports: {{ site: {{ port: 80, protocol: http, publish: {{ host: {port}, fixed: true }} }} }} }}"),
+    );
+    installed(&t, "ad", &forwarded);
+    let _tools = machine(true);
+    let said = checked(&t, "ad", Runtime::Vm, &Placement::Vms { provider: Provider::Qemu }).await.unwrap_err().to_string();
+    assert!(said.contains(&format!("Host port {port} is already in use")), "{said}");
+    // On a server, the forward isn't this machine's port.
+    let on_server = checked(&t, "ad", Runtime::Vm, &Placement::Server { host: "pve".into() }).await.unwrap_err().to_string();
+    assert!(!on_server.contains(&format!("Host port {port}")), "{on_server}");
+}
+
 #[tokio::test]
 async fn every_problem_is_said_at_once() {
     let t = TestApp::new();

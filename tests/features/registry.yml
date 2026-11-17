@@ -853,13 +853,14 @@ areas:
           integration: no scenario races two operations on one real lab
 
       - id: lab-run.ports
-        what: Pick the lab's own ports or random ones (ports step, remembered mode), and on a port clash see who holds it and retry on random ports; a fixed port already taken is said with its holder before the start.
+        what: Pick the lab's own ports or random ones (ports step, remembered mode), and on a port clash see who holds it and retry on random ports; a fixed port already taken (a container's, or a VM's forward here) is said with its holder before the start.
         host: true
         tests:
           unit:
             - src-tauri/src/runtime/isothrum/errors/tests.rs > a_tools_failure_reaches_the_webview_as_the_code_it_translates
             - src-tauri/src/runtime/isothrum/errors/tests.rs > a_taken_port_names_its_holder_as_the_player_knows_it
             - src-tauri/src/runtime/preflight/tests.rs > a_taken_fixed_port_names_what_holds_it
+            - src-tauri/src/runtime/preflight/tests.rs > a_vm_labs_fixed_forward_already_taken_is_said_too
             - src/features/labs/use-lab-actions.test.tsx > asks for the ports, remembers them, and starts on the lab
             - src/features/failure-states.test.tsx > reads Failed to start, offers Retry and, for a port clash, Retry on random ports with a hint
             - src/features/failure-states.test.tsx > offers no random-ports retry when the clash was a VM here

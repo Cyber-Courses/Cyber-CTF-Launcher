@@ -52,18 +52,25 @@ async fn problems(dirs: &AppDirs, c: &Checked<'_>) -> Vec<Error> {
     let allowed = super::policy_allows(dirs, c.runtime, c.placement.host(), || Ok(privileged))
         .and_then(|()| placement::allowed(c.runtime, c.options, c.placement, |id| server::host_provider(dirs, id)));
     found.extend(allowed.err());
-    match c.placement {
-        Placement::Vms { provider } => found.extend(hypervisor_ready(*provider, c.lab).await.err()),
+    let here = match c.placement {
+        Placement::Vms { provider } => {
+            found.extend(hypervisor_ready(*provider, c.lab).await.err());
+            true
+        }
         // Containers here, for a container lab (any other is refused above).
         Placement::Docker { engine, .. } if c.runtime == Runtime::Docker => {
             found.extend(engine_answers(engine.map(crate::machine::system::docker::Engine::id)).await.err());
-            if !c.present
-                && let Some(lab) = c.lab
-            {
-                found.extend(taken_ports(&fixed_ports(lab)).await);
-            }
+            true
         }
-        Placement::Docker { .. } | Placement::Server { .. } | Placement::Cloud { .. } => {}
+        Placement::Docker { .. } | Placement::Server { .. } | Placement::Cloud { .. } => false,
+    };
+    // The host ports the spec keeps fixed, wherever on this machine it runs: its containers'
+    // published ports, or its VMs' forwards (a fixed forward never moves to a free port either).
+    if here
+        && !c.present
+        && let Some(lab) = c.lab
+    {
+        found.extend(taken_ports(&fixed_ports(lab)).await);
     }
     found
 }
@@ -123,8 +130,9 @@ async fn engine_answers(engine: Option<&str>) -> Result<()> {
 }
 
 /// The host ports the lab's spec keeps fixed (`publish` with `fixed: true`: apps whose pages call
-/// `localhost:<that port>` themselves), each with its protocol. Every other published port is a
-/// free one the runner picks at the start.
+/// `localhost:<that port>` themselves), each with its protocol: a container's published port or a
+/// VM's forward. Every other published port is a free one the runner (or Vagrant) picks at the
+/// start.
 fn fixed_ports(lab: &Lab) -> Vec<(u16, Protocol)> {
     let mut ports: Vec<(u16, Protocol)> = lab
         .spec()
