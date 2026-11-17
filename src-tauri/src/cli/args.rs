@@ -159,7 +159,7 @@ pub struct StartArgs {
     /// The saved server or cloud account to run it on, by id.
     #[arg(long)]
     pub host: Option<String>,
-    /// Publish the lab's ports on their own numbers.
+    /// Publish the lab's ports on their own numbers (unset: as the saved port mode says).
     #[arg(long)]
     pub default_ports: bool,
     /// Start the installed copy without asking Cyber CTF.

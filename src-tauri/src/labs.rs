@@ -387,12 +387,14 @@ async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(
 pub struct LaunchRequest {
     /// The lab.
     pub lab_id: String,
-    /// The Vagrant provider a VM lab runs on (this machine's default when None).
+    /// The Vagrant provider a VM lab runs on (when None: the player's saved hypervisor, else this
+    /// machine's default).
     pub provider: Option<Provider>,
     /// The saved server or cloud account it runs on (this machine when None).
     pub host: Option<String>,
-    /// A container lab's services published on their own ports instead of random free ones.
-    pub default_ports: bool,
+    /// A container lab's services published on their own ports instead of random free ones (when
+    /// None: as the player's saved port mode says, else random ones).
+    pub default_ports: Option<bool>,
     /// The installed lab started without the backend when it can't be reached (no progress
     /// saved): the player's answer to a launch that failed with `Code::OfflineReady`.
     pub offline: bool,
@@ -400,8 +402,27 @@ pub struct LaunchRequest {
     /// (the form of a VM lab) on `provider`, instead of as containers.
     pub per_machine_vm: bool,
     /// The container engine a container lab here runs on, when the player chose one other than the
-    /// current context (`docker-desktop`, `orbstack`, …). Resolved to its Docker context at launch.
+    /// current context (`docker-desktop`, `orbstack`, …), else the player's saved engine. Resolved
+    /// to its Docker context at launch.
     pub docker_engine: Option<String>,
+}
+
+impl LaunchRequest {
+    /// The request with what it leaves open taken from the player's settings `saved`, as the
+    /// window would have filled it: on this machine, the hypervisor, the container engine and the
+    /// port mode they saved. A launch on a server or a cloud account takes none of them. So a
+    /// start from the command line runs where and how one from the window does.
+    fn with_saved(self, saved: &crate::settings::Settings) -> LaunchRequest {
+        if self.host.is_some() {
+            return self;
+        }
+        LaunchRequest {
+            provider: self.provider.or(saved.vm_provider),
+            docker_engine: self.docker_engine.or_else(|| saved.docker_engine.map(|e| e.id().to_owned())),
+            default_ports: self.default_ports.or_else(|| saved.port_mode.map(|m| m == crate::settings::PortMode::Default)),
+            ..self
+        }
+    }
 }
 
 /// A launch ready to run: the lab, its `startLab` spec, and where and how it runs (the Docker
@@ -419,7 +440,9 @@ pub(crate) struct PreparedLaunch {
 /// runner service (so quitting the app never cuts them short); `log` carries the one "starting
 /// offline" line the preparation may emit.
 pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
+    let request = request.with_saved(&crate::settings::settings_get(dirs)?);
     let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
+    let default_ports = default_ports.unwrap_or(false);
     let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
     let launch = launch_spec(dirs, &lab_id, offline, log).await?;
     Ok(PreparedLaunch { launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
@@ -759,6 +782,39 @@ mod tests {
         // On a server, or with no engine chosen, nothing is pinned.
         assert_eq!(pinned_context(Some("orbstack"), Some("pve")).await.unwrap(), None);
         assert_eq!(pinned_context(None, None).await.unwrap(), None);
+    }
+
+    #[test]
+    fn a_launch_leaves_to_the_saved_settings_only_what_it_doesnt_say_and_only_here() {
+        use crate::settings::{PortMode, Settings};
+        let saved = Settings {
+            vm_provider: Some(Provider::Libvirt),
+            docker_engine: Some(crate::machine::system::docker::Engine::Orbstack),
+            port_mode: Some(PortMode::Default),
+            ..Settings::default()
+        };
+        let open = LaunchRequest {
+            lab_id: "invoice".into(),
+            provider: None,
+            host: None,
+            default_ports: None,
+            offline: false,
+            per_machine_vm: false,
+            docker_engine: None,
+        };
+        // As the command line asks: the saved hypervisor, engine and port mode.
+        let filled = open.clone().with_saved(&saved);
+        assert_eq!((filled.provider, filled.docker_engine.as_deref(), filled.default_ports), (Some(Provider::Libvirt), Some("orbstack"), Some(true)));
+        // What the request says wins.
+        let said = LaunchRequest { provider: Some(Provider::Virtualbox), docker_engine: Some("colima".into()), default_ports: Some(false), ..open.clone() };
+        let kept = said.with_saved(&saved);
+        assert_eq!((kept.provider, kept.docker_engine.as_deref(), kept.default_ports), (Some(Provider::Virtualbox), Some("colima"), Some(false)));
+        // On a server, nothing of this machine's.
+        let there = LaunchRequest { host: Some("pve".into()), ..open.clone() }.with_saved(&saved);
+        assert_eq!((there.provider, there.docker_engine, there.default_ports), (None, None, None));
+        // Nothing saved: nothing filled.
+        let none = open.with_saved(&Settings::default());
+        assert_eq!((none.provider, none.docker_engine, none.default_ports), (None, None, None));
     }
 
     #[test]

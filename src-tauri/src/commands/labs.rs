@@ -34,7 +34,7 @@ pub async fn lab_launch(
         lab_id,
         provider,
         host,
-        default_ports: default_ports.unwrap_or(false),
+        default_ports,
         offline: offline.unwrap_or(false),
         per_machine_vm: per_machine_vm.unwrap_or(false),
         docker_engine,
