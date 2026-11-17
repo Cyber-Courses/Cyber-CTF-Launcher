@@ -217,10 +217,16 @@ pub enum Code {
         /// The hypervisor's name ("libvirt", "QEMU").
         hypervisor: String,
     },
-    /// macOS refused `hypervisor` (UTM) an action the lab's start asked of it: its app answered
-    /// the VM's start with the system's "Operation not permitted", or this app may not drive it
-    /// (Automation). No wait fixes it: a permission in System Settings, or the app's install.
+    /// macOS doesn't let this app drive `hypervisor` (UTM) through Apple events (`-1743`, the
+    /// Automation permission). No wait fixes it: the permission in System Settings.
     HypervisorNotPermitted {
+        /// The hypervisor's name ("UTM").
+        hypervisor: String,
+    },
+    /// macOS never approved `hypervisor`'s app (UTM): downloaded, never opened from Finder, it
+    /// answered the VM's start with the system's "Operation not permitted", refused its own VM
+    /// launcher. No wait fixes it: the app opened once from Finder, or reinstalled.
+    HypervisorNotApproved {
         /// The hypervisor's name ("UTM").
         hypervisor: String,
     },

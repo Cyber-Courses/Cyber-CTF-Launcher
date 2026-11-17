@@ -92,10 +92,15 @@ fn of_tool(report: &ErrorReport) -> Error {
         (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Virtiofsd) })) => {
             Error::coded(Code::VirtiofsdMissing { hypervisor: hypervisor_name(provider) })
         }
-        // The system refused the hypervisor's app (UTM's start answered "Operation not permitted",
-        // or the Apple events refused): the way out is a permission, never a wait or a retry.
-        (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Permission) })) => {
+        // macOS refused this app the Apple events that drive the hypervisor's (Automation): the
+        // way out is that permission, never a wait or a retry.
+        (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Automation) })) => {
             Error::coded(Code::HypervisorNotPermitted { hypervisor: hypervisor_name(provider) })
+        }
+        // The hypervisor's app answered the VM's start with "Operation not permitted": macOS never
+        // approved the app and refused its own VM launcher; opening it once from Finder approves it.
+        (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::AppApproval) })) => {
+            Error::coded(Code::HypervisorNotApproved { hypervisor: hypervisor_name(provider) })
         }
         // The prompt declined or unanswered, or the elevated session ended (the reason says which).
         (ErrorCode::ElevationFailed, Some(Detail::Elevation { reason })) => Error::coded(Code::ElevationFailed { reason: reason.clone() }),

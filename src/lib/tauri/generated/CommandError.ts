@@ -160,6 +160,10 @@ hypervisor: string, } } | { "code": "hypervisorNotPermitted", "args": {
 /**
  * The hypervisor's name ("UTM").
  */
+hypervisor: string, } } | { "code": "hypervisorNotApproved", "args": { 
+/**
+ * The hypervisor's name ("UTM").
+ */
 hypervisor: string, } } | { "code": "turnedOffByPolicy", "args": { 
 /**
  * The policy setting's name.

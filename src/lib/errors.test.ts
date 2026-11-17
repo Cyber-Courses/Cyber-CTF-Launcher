@@ -102,6 +102,7 @@ describe("command errors", () => {
         "virtiofsdMissing",
         "runnerUnreachable",
         "hypervisorNotPermitted",
+        "hypervisorNotApproved",
       ].sort(),
     );
   });
