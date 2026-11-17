@@ -1,6 +1,6 @@
 //! Removing a lab from this computer: the app's copy of it (the folder an import copied, or a
-//! release unpacked) and every record the app keeps for it under its data folder: the deploy
-//! workers' job, logs and verdicts, an update's or an import's leftover copies, a catalogue lab's source kept for an offline start, and the password
+//! release unpacked) and every record the app keeps for it under its data folder: an update's or
+//! an import's leftover copies, a catalogue lab's source kept for an offline start, and the password
 //! kept for its attack box (the OS keychain's `attack-box:<lab id>`) and the values its run was
 //! launched with (`launch-values:cyberctf-<lab id>`). The generated project
 //! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it. Its run is the
@@ -63,7 +63,7 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
         return Err(runtime::status::still_running(&up));
     }
     let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
-    let mut removal = blocking(move || remove_files(&base, &owned, &[], rename_retrying, delete)).await?;
+    let mut removal = blocking(move || remove_files(&base, &owned, rename_retrying, delete)).await?;
     // The runner's record of its run, through the runner's store: its files went above.
     if let Err(e) = runtime::isothrum::forget_run(&runtime::paths::runner_home(dirs)?, id).await {
         log::warn!("removing lab {id}: the runner keeps its run's record: {e}");
@@ -104,15 +104,9 @@ fn traces(base: &Path, id: &str) -> Vec<PathBuf> {
 }
 
 /// Moves lab `id`'s copy under `base` aside with `rename`, then deletes it and every trace of the
-/// lab, `extra` too, with `remove`: what stays is in the answer. Nothing is deleted when the copy
+/// lab with `remove`: what stays is in the answer. Nothing is deleted when the copy
 /// doesn't move (a file in it held open): the lab stays whole.
-fn remove_files(
-    base: &Path,
-    id: &str,
-    extra: &[PathBuf],
-    rename: impl Fn(&Path, &Path) -> std::io::Result<()>,
-    remove: impl Fn(&Path) -> std::io::Result<()>,
-) -> Result<Removal> {
+fn remove_files(base: &Path, id: &str, rename: impl Fn(&Path, &Path) -> std::io::Result<()>, remove: impl Fn(&Path) -> std::io::Result<()>) -> Result<Removal> {
     let labs = paths::labs_root_in(base);
     let (dir, aside) = (labs.join(id), aside(&labs, id));
     // An earlier removal that left its copy: gone first, or the move below can't land.
@@ -121,7 +115,7 @@ fn remove_files(
     }
     rename(&dir, &aside).map_err(|e| held(e, &dir))?;
     let mut left = Vec::new();
-    for path in std::iter::once(aside).chain(traces(base, id)).chain(extra.iter().cloned()) {
+    for path in std::iter::once(aside).chain(traces(base, id)) {
         if let Err(e) = remove(&path) {
             log::warn!("removing lab {id}: {} stayed: {e}", path.display());
             left.push(leftover(&path, &e));

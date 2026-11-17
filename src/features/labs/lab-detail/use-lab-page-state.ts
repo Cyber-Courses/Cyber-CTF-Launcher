@@ -55,8 +55,8 @@ export function useLabPageState(
 ) {
   // Labs the backend is still deploying, so a window reload recovers the "starting" state.
   const backendDeploying = useDeployingLabs().has(labId);
-  // A deploy running in its worker process after this page reloaded (or the app relaunched): no
-  // local log of it, so follow the worker's log file instead.
+  // An operation the runner service runs on the lab after this page reloaded (or the app
+  // relaunched): no local log of it, so follow its lines in the run events instead.
   const worker = useWorkerLog(labId, backendDeploying && !input.busy && logs.length === 0);
   const active = useActiveOperations().get(labId);
   const backendOp = active?.op;

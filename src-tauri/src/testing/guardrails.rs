@@ -150,8 +150,6 @@ const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
     ("account/api.rs", "serde_json::from_str(text)", "the backend's HTTP answer"),
     ("store.rs", "serde_json::from_str(text)", "the launcher's own store's JSON columns"),
     ("english.rs", "serde_json::from_str(source)", "the webview's bundled English messages"),
-    ("diagnostics/collect.rs", "serde_json::from_str::<Value>(body)", "an earlier version's deploy verdict file, left in the data folder"),
-    ("diagnostics/collect.rs", "serde_json::from_slice::<Value>(&std::fs::read(dir.join(n))", "an earlier version's deploy job files, left in the data folder"),
 ];
 
 #[test]

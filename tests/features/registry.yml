@@ -4035,6 +4035,7 @@ areas:
           unit:
             - src-tauri/src/diagnostics/tests.rs > no_seeded_secret_and_no_home_path_is_in_the_bundle
             - src-tauri/src/diagnostics/tests.rs > the_bundle_holds_the_summary_the_report_and_the_logs
+            - src-tauri/src/diagnostics/tests.rs > the_bundle_holds_the_runner_services_operations
             - src-tauri/src/diagnostics/tests.rs > an_empty_data_folder_still_makes_a_bundle
             - src/features/settings/save-diagnostics.test.tsx
         gaps:

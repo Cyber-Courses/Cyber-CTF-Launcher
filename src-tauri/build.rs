@@ -200,8 +200,8 @@ fn isoloom_versions(lock: &str) -> Vec<(String, String)> {
 /// link line, each `--as-needed`: kept only if the executable uses it. lld decides that after
 /// dropping the code nothing reaches, so none is kept. GNU ld decides it on every archive member it
 /// pulled in, reached or not, and a debug build's shared generics pull in Tauri's, tao's and wry's:
-/// on x86_64 Rust links with lld by default, on aarch64 with the system's (GNU ld), whose `cyberctf`
-/// needed GTK, GDK, Pango, Cairo and WebKitGTK, and wouldn't start where they aren't installed.
+/// on `x86_64` Rust links with lld by default, on aarch64 with the system's (GNU ld), whose `cyberctf`
+/// needed GTK, GDK, Pango, Cairo and `WebKitGTK`, and wouldn't start where they aren't installed.
 fn link_cli_with_lld() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("linux") || std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("gnu") {
         return Ok(());
