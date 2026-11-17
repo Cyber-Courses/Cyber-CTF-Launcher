@@ -189,6 +189,11 @@ isothrum-runner = { version = "3.0.0", features = ["fake"] }
 # the tree through reqwest.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 
+# A test binary's room for open files, made once as it loads (`platform::sys`): macOS starts a
+# process with 256. Already in the tree through Tauri.
+[target.'cfg(unix)'.dev-dependencies]
+ctor = { version = "1", default-features = false }
+
 # The test rig's prebuilt set (the workspace's rig/lib/ci/prebuilt.py builds with --profile rig):
 # release behaviour, built fast: no LTO, many codegen units, no debug info, opt-level 2. The rig
 # tests what the app does, not how fast its binary is; a release stays `release`.
