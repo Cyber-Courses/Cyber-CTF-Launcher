@@ -169,14 +169,6 @@ async fn a_second_operation_on_a_busy_lab_is_refused_and_a_panicking_one_still_e
     assert!(!service.is_busy("web"));
 }
 
-/// Operation `id`'s end as `service` tells it, if it ended yet.
-fn ended_yet(service: &super::LocalRunService, id: &OperationId) -> Option<std::result::Result<(), Wire>> {
-    service.events().since(None).into_iter().find_map(|e| match e.event {
-        RunEvent::Ended { operation, error, .. } if operation == *id => Some(error.map_or(Ok(()), Err)),
-        _ => None,
-    })
-}
-
 #[tokio::test]
 async fn two_starts_of_a_lab_one_is_refused_and_a_start_during_a_stop_is_refused_too() {
     let t = TestApp::new();
@@ -216,12 +208,23 @@ async fn a_stop_waits_for_the_operation_asked_before_it_then_runs() {
         })
         .unwrap();
     // Asked while the launch runs (still downloading, say): taken, never refused, but it waits.
+    // Its end is waited on, to a deadline: one that ran beside the launch ends well within it.
     let stop = service.start(Request::Stop { lab_id: "web".into(), runtime: Runtime::Docker }).unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(ended_yet(&service, &stop).is_none(), "the stop runs after the launch, never beside it");
+    let beside = tokio::time::timeout(Duration::from_millis(300), service.events().ended(&stop)).await;
+    assert!(beside.is_err(), "the stop runs after the launch, never beside it: {beside:?}");
     release.send(()).unwrap();
     assert_eq!(service.events().ended(&launch).await, Ok(()));
     service.events().ended(&stop).await.unwrap();
+    let ends: Vec<OperationId> = service
+        .events()
+        .since(None)
+        .into_iter()
+        .filter_map(|e| match e.event {
+            RunEvent::Ended { operation, .. } => Some(operation),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends, [launch, stop], "the launch ends first, then the stop");
     assert!(!service.is_busy("web"));
 }
 
