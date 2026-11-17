@@ -208,9 +208,10 @@ pub(crate) fn protocol_word(protocol: isothrum_runner::ConsoleProtocol) -> &'sta
     }
 }
 
-/// What a start hands the lab: the launch's values for the lab's secret and input slots (a
-/// value no slot takes is never delivered), and whether its services keep their own host ports
-/// (`CTFd` on 8000) rather than free ones picked at random.
+/// What a start hands the lab: the launch's values (all of them go to the run, and the runner
+/// gives its tool each one; only the inputs the lab's spec declares are read by its generated
+/// files), and whether its services keep their own host ports (`CTFd` on 8000) rather than free
+/// ones picked at random.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Inputs<'a> {
     /// The launch's values, by the name of the lab's slot each goes to.
