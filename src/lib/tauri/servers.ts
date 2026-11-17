@@ -70,6 +70,14 @@ export const serverIdentity = (input: ServerHostInput) => invoke<ServerIdentity>
 /** Confirms the node's SSH host keys the player was shown (`fingerprints`); rejects when the node
  *  offers others by now. */
 export const serverTrustSshKeys = (input: ServerHostInput, fingerprints: string[]) => invokeUnit("server_trust_ssh_keys", { input, fingerprints });
+/** The SSH host keys of saved server `id`'s node for the player to confirm before a lab runs
+ *  through it (a Proxmox server whose lab bridge is internal to the node); null when none needs
+ *  confirming. Rejects with `sshHostKeyRefused` when the node offers other keys than the
+ *  confirmed ones. */
+export const serverNodeHostKeys = (id: string) => invoke<SshHostKeys | null>("server_node_host_keys", { id });
+/** Confirms those keys, shown to the player as `fingerprints`; rejects when the node offers
+ *  others by now. */
+export const serverTrustNodeHostKeys = (id: string, fingerprints: string[]) => invokeUnit("server_trust_node_host_keys", { id, fingerprints });
 /** The first of ~/.ssh/id_ed25519, id_ecdsa, id_rsa that exists (null when none does). */
 export const serverDefaultSshKey = () => invoke<string | null>("server_default_ssh_key");
 export const serverRemove = (id: string) => invokeUnit("server_remove", { id });

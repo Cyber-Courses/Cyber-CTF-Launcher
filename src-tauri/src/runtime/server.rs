@@ -31,6 +31,7 @@ pub mod gcp;
 pub(crate) mod hosts;
 pub(crate) mod input;
 pub(crate) mod kind;
+pub(crate) mod node_keys;
 pub(crate) mod profile;
 mod reachability;
 pub(crate) mod secrets;

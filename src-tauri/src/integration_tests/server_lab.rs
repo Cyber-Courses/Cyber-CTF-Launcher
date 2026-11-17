@@ -85,6 +85,21 @@ async fn trust_on_first_use(address: &str, identities: &[&Path]) {
     known_hosts::confirm(address, 22, &shown, &files).await.unwrap_or_else(|e| panic!("{address}'s SSH host keys are confirmed: {e}"));
 }
 
+/// The node's SSH host keys, as a start through `node` reads them (`server::node_keys`): when none
+/// were confirmed in `file` (a server set up before they were), the player is shown them and
+/// confirms them; when they are, nothing is asked. Said either way, for the run's log.
+async fn confirm_node_as_a_start_does(node: &str, file: &Path) {
+    use crate::runtime::server::node_keys;
+    match node_keys::unconfirmed_at(node, file).await.unwrap_or_else(|e| panic!("{node}'s SSH host keys read: {e}")) {
+        None => println!("{node}: its SSH host keys are the confirmed ones, nothing asked"),
+        Some(shown) => {
+            let fingerprints: Vec<String> = shown.keys.into_iter().map(|k| k.fingerprint).collect();
+            println!("{node}: its SSH host keys were never confirmed: shown {fingerprints:?}, confirmed");
+            node_keys::confirm_at(node, &fingerprints, file).await.unwrap_or_else(|e| panic!("{node}'s SSH host keys are confirmed: {e}"));
+        }
+    }
+}
+
 /// The test server as Servers saves a Proxmox profile: at `address`:`port`, signed in as
 /// `username`, its labs on `bridge`, its certificate, storage and node from the knobs.
 fn proxmox_profile(address: &str, port: u16, username: &str, bridge: &str) -> HostProfile {
@@ -379,7 +394,7 @@ async fn proxmox_place() -> (ServerPlace, PathBuf) {
     let key = home.join("ssh").join("id_ed25519");
     if let Some((_, node)) = jump.as_deref().and_then(|j| j.split_once('@')) {
         // The runner checks the node's host key against the ones confirmed beside the key.
-        trust_on_first_use(node, &[&key]).await;
+        confirm_node_as_a_start_does(node, &crate::runtime::ssh::node_known_hosts(&key)).await;
     }
     let place = ServerPlace {
         label: "pve-lab".into(),

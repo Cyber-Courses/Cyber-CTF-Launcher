@@ -2890,13 +2890,15 @@ areas:
           desktop: server-lab signs in with an API token, never with an SSH key
 
       - id: servers.identity-confirm
-        what: Before the launcher signs in to a server, it shows the server's TLS certificate and each node's SSH host key fingerprints; it goes on only once the player confirms them, then accepts only those (a changed certificate or key stops it and says so).
+        what: Before the launcher signs in to a server, it shows the server's TLS certificate and each node's SSH host key fingerprints; it goes on only once the player confirms them, then accepts only those (a changed certificate or key stops it and says so). A server set up before its node's keys were confirmed is asked the same before a lab runs through its node, and at Test connection.
         providers:
           - proxmox
         host: true
         commands:
           - server_identity
           - server_trust_ssh_keys
+          - server_node_host_keys
+          - server_trust_node_host_keys
         tests:
           unit:
             - src-tauri/src/runtime/server/tls_pin/tests.rs > the_certificate_is_read_for_confirmation_without_sending_a_request
@@ -2907,6 +2909,17 @@ areas:
             - src-tauri/src/runtime/ssh/known_hosts/tests.rs > a_refused_host_key_is_the_learners_error
             - src/features/servers/host-setup/server-setup.test.tsx > shows the certificate and node key fingerprints before signing in, and goes on only once they are confirmed
             - src/features/servers/host-setup/server-setup.test.tsx > asks nothing of a server whose certificate and keys are confirmed
+            - src-tauri/src/runtime/server/node_keys/tests.rs > a_node_whose_keys_are_confirmed_asks_nothing
+            - src-tauri/src/runtime/server/node_keys/tests.rs > a_node_never_confirmed_is_shown_then_confirmed_once_for_every_run
+            - src-tauri/src/runtime/server/node_keys/tests.rs > a_node_never_confirmed_whose_keys_are_declined_stays_unconfirmed
+            - src-tauri/src/runtime/server/node_keys/tests.rs > a_node_offering_other_keys_than_the_confirmed_ones_is_refused_and_never_replaced
+            - src-tauri/src/runtime/server/node_keys/tests.rs > a_server_whose_labs_dont_go_through_its_node_asks_nothing
+            - src/features/labs/use-lab-actions.test.tsx > starts at once when the node's keys are the confirmed ones
+            - src/features/labs/use-lab-actions.test.tsx > asks to confirm keys never confirmed, as the setup does, then starts
+            - src/features/labs/use-lab-actions.test.tsx > starts nothing and fails nothing when the player declines
+            - src/features/labs/use-lab-actions.test.tsx > refuses a node offering other keys than the confirmed ones, in the host key words
+            - src/features/servers/servers-screen.test.tsx > confirms a node's never-confirmed SSH host keys at a Test the player asks for, never at the page's own
+            - src/features/servers/servers-screen.test.tsx > asks nothing at Test when the node offers other keys than the confirmed ones
         gaps:
           desktop: server-lab signs in to a server whose certificate the test set confirms beforehand
           integration: no scenario changes a real server's certificate or host key

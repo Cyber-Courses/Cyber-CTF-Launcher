@@ -23,6 +23,7 @@ import { tell } from "@/lib/failure";
 import { translate, type MessageKey } from "@/lib/i18n";
 import { failureTitleKey } from "@/features/labs/failure-hints";
 import { askOfflineStart } from "@/features/labs/offline-start-prompt";
+import { confirmNodeKeys } from "@/features/servers/node-keys-prompt";
 
 // The operations on a lab (launch, stop, park, resume, provision) that useLabActions runs: each
 // one's body, streamed into the lab's deploy log, and the run around it.
@@ -58,6 +59,11 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
     }, lab.runtime);
     return null;
   } catch (e) {
+    // The player said no to a question the start needed answered: nothing ran, nothing failed.
+    if (e instanceof NotStarted) {
+      restoreDeploy(lab.id, previous);
+      return null;
+    }
     // The backend's answer to an operation started while another one runs on the lab
     // (deploy_worker::start_worker): refused, not failed.
     if (errorCode(e) === "alreadyInProgress") {
@@ -79,6 +85,9 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
     await settle(lab);
   }
 }
+
+/** A start the player called off when asked (`localLaunch`): no failure, nothing to show. */
+class NotStarted extends Error {}
 
 /** A cloud lab, created in the cloud account `host`. No attack box: the player works from
  *  their own machine. */
@@ -159,6 +168,9 @@ export const localLaunch =
     const remote = host != null;
     // Here: a VM lab on its hypervisor, a container lab's VM form on the one picked for it.
     const provider = remote ? null : isVmLab ? vmHypervisor(vmProvider, place) : (vmProvider ?? null);
+    // On a server reached through its node, the run checks the node's SSH host keys against the
+    // confirmed ones: never confirmed yet (a server set up before), the player confirms them first.
+    if (remote && !where.inCloud && !(await confirmNodeKeys(host))) throw new NotStarted();
     await launchOrOfferOffline(lab.title, (offline) =>
       labLaunch(
         {

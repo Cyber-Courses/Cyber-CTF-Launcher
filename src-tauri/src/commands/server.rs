@@ -22,8 +22,9 @@ use crate::runtime::server::connection_test::test_connection;
 use crate::runtime::server::hosts::{running_by_host, set_default_host};
 use crate::runtime::server::input::HostInput;
 use crate::runtime::server::profile::HostProfile;
-use crate::runtime::server::setup;
 use crate::runtime::server::store::{load, update};
+use crate::runtime::server::{node_keys, setup};
+use crate::runtime::ssh::known_hosts;
 
 /// The saved servers and cloud accounts, and which one is the default.
 #[derive(Serialize, ts_rs::TS)]
@@ -77,6 +78,20 @@ pub async fn server_identity(app: AppHandle, input: HostInput) -> Result<setup::
 #[tauri::command]
 pub async fn server_trust_ssh_keys(app: AppHandle, input: HostInput, fingerprints: Vec<String>) -> Result<()> {
     setup::trust_ssh_keys(&AppDirs::from(&app), &input, &fingerprints).await
+}
+
+/// The SSH host keys of saved server `id`'s node for the player to confirm before a lab runs
+/// through it; null when none needs confirming (see `server::node_keys::unconfirmed`).
+#[tauri::command]
+pub async fn server_node_host_keys(app: AppHandle, id: String) -> Result<Option<known_hosts::Offered>> {
+    node_keys::unconfirmed(&AppDirs::from(&app), &id).await
+}
+
+/// Confirms saved server `id`'s node keys, shown as `fingerprints` (see
+/// `server::node_keys::confirm`).
+#[tauri::command]
+pub async fn server_trust_node_host_keys(app: AppHandle, id: String, fingerprints: Vec<String>) -> Result<()> {
+    node_keys::confirm(&AppDirs::from(&app), &id, &fingerprints).await
 }
 
 /// Saves a Proxmox host set up with the player's SSH key (see `server::setup::save_with_ssh_key`).

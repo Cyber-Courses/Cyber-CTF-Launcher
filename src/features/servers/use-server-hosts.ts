@@ -4,9 +4,17 @@ import { useCallback, useRef, useState } from "react";
 import { serverCapacity, serverOpenSetup, serverRunningLabs, type HostCapacity } from "@/lib/tauri";
 import { onPremHosts } from "@/features/servers/servers-model";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
-import { ignore } from "@/lib/failure";
+import { ignore, tell } from "@/lib/failure";
 import { usePolled } from "@/lib/use-poll";
-import { describeError } from "@/lib/errors";
+import { describeError, errorCode } from "@/lib/errors";
+import { translate } from "@/lib/i18n";
+import { confirmNodeKeys } from "@/features/servers/node-keys-prompt";
+
+/** A node offering other SSH host keys than the confirmed ones is told, in the setup's words;
+ *  keys that couldn't be read are left to the start that needs them, which says so. */
+function keysRefused(e: unknown) {
+  if (errorCode(e) === "sshHostKeyRefused") tell(translate("servers.setup.trust.titleChanged"))(e);
+}
 
 /** The labs running per host, by its id (a host with none isn't listed). */
 const readRunning = (): Promise<Partial<Record<string, number>>> => serverRunningLabs();
@@ -62,15 +70,20 @@ export function useServerHosts() {
   const open = (id: string | null) => {
     serverOpenSetup(id, "server").catch(fail);
   };
+  /** Test connection the player asked for (a row's Test, Test all): a server that passes and whose
+   *  labs run through its node then has the node's SSH host keys confirmed, when they never were. */
+  const testAsked = async (id: string) => {
+    if ((await test(id)).ok) await confirmNodeKeys(id).catch(keysRefused);
+  };
   const testAll = () => {
-    for (const h of hosts ?? []) void test(h.id);
+    for (const h of hosts ?? []) void testAsked(h.id);
   };
   /** Runs a change, then reloads the list; its failure is the page's error. */
   const act = (change: () => Promise<unknown>) => {
     change().then(reload, fail);
   };
 
-  return { hosts, defaultId, tests, test, caps, running, loadRunning, error, open, testAll, act };
+  return { hosts, defaultId, tests, test, testAsked, caps, running, loadRunning, error, open, testAll, act };
 }
 
 export type ServerHosts = ReturnType<typeof useServerHosts>;

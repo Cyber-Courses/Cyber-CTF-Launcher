@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
+import { NodeKeysPrompt } from "@/features/servers/node-keys-prompt";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
 import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
@@ -13,7 +14,7 @@ import { setLocalePreference } from "@/lib/i18n";
 import type { CommandError } from "@/lib/errors";
 import { setPortMode, setVmProvider, type PortMode } from "@/lib/settings";
 import { readyReport as armReport } from "@/test/fixtures";
-import { commands, installTauri, rejects, type Call } from "@/test/tauri";
+import { commands, installTauri, rejects, type Call, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
 import { rejectWith } from "@/features/labs/labs-test-kit";
@@ -220,6 +221,66 @@ describe("useLabActions: launch", () => {
     const { calls, hook } = setup();
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-remote" }, "aws-1", undefined));
     expect(launchArgs(calls)).toEqual({ labId: "act-remote", provider: null, host: "aws-1", defaultPorts: false });
+  });
+
+  describe("on a Proxmox server reached through its node", () => {
+    const NODE_KEYS = {
+      pattern: "10.0.0.5",
+      keys: [{ algorithm: "ssh-ed25519", fingerprint: "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ" }],
+      state: "new",
+    };
+    const REFUSED: CommandError = {
+      code: "sshHostKeyRefused",
+      args: { host: "10.0.0.5" },
+      message: "The SSH host key of 10.0.0.5 isn't the one confirmed for it (or none was confirmed yet), so the connection was refused.",
+    };
+
+    /** A launch of the VM lab as `id` on the server "pve", whose node's keys `keys` answers. */
+    async function onPve(id: string, keys: Handler) {
+      const { calls, hook } = setup({ server_node_host_keys: keys }, [savedHost("pve", "proxmox")]);
+      const user = userEvent.setup();
+      render(<NodeKeysPrompt />);
+      const done = startInAct(() => hook.result.current.launch({ ...vmLab, id }, "pve", undefined));
+      await flush();
+      return { calls, user, done };
+    }
+
+    it("starts at once when the node's keys are the confirmed ones", async () => {
+      const { calls, done } = await onPve("act-pve-known", () => null);
+      await act(() => done);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+      expect(launchArgs(calls)?.host).toBe("pve");
+    });
+
+    it("asks to confirm keys never confirmed, as the setup does, then starts", async () => {
+      const { calls, user, done } = await onPve("act-pve-new", () => NODE_KEYS);
+      const dialog = screen.getByRole("dialog", { name: "Confirm this server's identity" });
+      expect(dialog.textContent).toContain(NODE_KEYS.keys[0]?.fingerprint);
+      expect(launchArgs(calls)).toBeUndefined();
+      await user.click(screen.getByRole("button", { name: "They match: trust this server" }));
+      await act(() => done);
+      expect(calls.find((c) => c.cmd === "server_trust_node_host_keys")?.args).toEqual({ id: "pve", fingerprints: [NODE_KEYS.keys[0]?.fingerprint] });
+      expect(commands(calls).indexOf("server_trust_node_host_keys")).toBeLessThan(commands(calls).indexOf("lab_launch"));
+      expect(logsOf("act-pve-new").at(-1)).toBe("✓ Lab is running");
+    });
+
+    it("starts nothing and fails nothing when the player declines", async () => {
+      const { calls, user, done } = await onPve("act-pve-declined", () => NODE_KEYS);
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await act(() => done);
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+      expect(launchArgs(calls)).toBeUndefined();
+      expect(getDeploySnapshot().runs["act-pve-declined"]).toBeUndefined();
+    });
+
+    it("refuses a node offering other keys than the confirmed ones, in the host key words", async () => {
+      const { calls, done } = await onPve("act-pve-changed", rejects(REFUSED));
+      await act(() => done);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(launchArgs(calls)).toBeUndefined();
+      expect(logsOf("act-pve-changed").at(-1)).toMatch(/^✗ The SSH host key of 10\.0\.0\.5 isn't the one confirmed for it/);
+    });
   });
 
   it("says a container lab is ready on the server or in the cloud account it runs on", async () => {
