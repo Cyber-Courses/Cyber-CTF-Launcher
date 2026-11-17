@@ -157,12 +157,13 @@ mod tests {
         // Regression: the Cloud screen read the spend of an account added with stored keys through
         // the host CLI's default profile: another account's spend, or nothing, while the launch
         // budget gate read the stored keys.
-        use crate::testing::tools::{Tools, ok};
+        use crate::runtime::providers::testing::fake;
+        use isothrum_runner::fake::{FakeProcesses, Reply};
         let t = crate::testing::test_app::TestApp::new();
         let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs", "monthlyLimit": 10.0 }));
-        let tools = Tools::expect(&[("aws ce get-cost-and-usage", ok("7.25\n"))]);
+        let tools = fake(FakeProcesses::script().expect("aws ce get-cost-and-usage", Reply::ok("7.25\n")).build());
         assert_eq!(account_month_spend(&t.dirs(), &cli).await.unwrap(), MonthSpend { spent: 7.25, over: false });
-        assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
+        assert_eq!(tools.last("ce get-cost-and-usage").as_ref().and_then(|c| c.env("AWS_PROFILE")), Some("labs"));
         // At the budget, the verdict the launch gate gives: over.
         let tight = t.host("aws-tight", "aws", serde_json::json!({ "useCliCreds": true, "monthlyLimit": 7.25 }));
         assert_eq!(account_month_spend(&t.dirs(), &tight).await.unwrap(), MonthSpend { spent: 7.25, over: true });
@@ -213,9 +214,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_spend_cost_explorer_answers_in_words_is_unverifiable_never_under_budget() {
-        use crate::testing::tools::{Tools, ok};
+        use crate::runtime::providers::testing::fake;
+        use isothrum_runner::fake::{FakeProcesses, Reply};
         for answer in ["None", "NaN", "12,5"] {
-            let _tools = Tools::expect(&[("aws ce get-cost-and-usage", ok(answer))]);
+            let _tools = fake(FakeProcesses::script().expect("aws ce get-cost-and-usage", Reply::ok(answer)).build());
             assert!(matches!(verdict(40.0, cli_month_to_date_cost(None).await), BudgetCheck::Unverifiable(_)), "{answer}");
         }
         // An infinite spend is over any limit.

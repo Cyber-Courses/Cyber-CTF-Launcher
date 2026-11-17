@@ -5,7 +5,9 @@ use crate::runtime::{
     providers::Provider,
     server::{checks::CheckState, profile::tests::profile},
 };
-use crate::testing::tools::{Tools, fail, ok};
+use isothrum_runner::fake::{Call, FakeProcesses, Reply};
+
+use crate::runtime::providers::testing::{Faked, fake};
 
 const SIZE: &str = "Standard_D2als_v6";
 
@@ -32,14 +34,19 @@ fn entry(name: &str, location: &str, reason: Option<&str>, vcpus: u32, memory: u
 const USAGE: &str = r#"[{"name": {"value": "standardDALSv6Family"}, "limit": "10", "currentValue": "4"}]"#;
 
 /// `az` answering the region's sizes, the size's across every region, and the quotas.
-fn azure(region: &[serde_json::Value], everywhere: &[serde_json::Value]) -> Tools {
+fn azure(region: &[serde_json::Value], everywhere: &[serde_json::Value]) -> Faked {
     let (region, everywhere) = (json!(region).to_string(), json!(everywhere).to_string());
-    Tools::new(move |program, args| match (program, args) {
-        ("az", ["vm", "list-skus", rest @ ..]) if rest.contains(&"-l") => ok(region.clone()),
-        ("az", ["vm", "list-skus", ..]) => ok(everywhere.clone()),
-        ("az", ["vm", "list-usage", ..]) => ok(USAGE),
-        _ => None,
-    })
+    fake(FakeProcesses::model(move |call| match az(call).as_slice() {
+        ["vm", "list-skus", rest @ ..] if rest.contains(&"-l") => Reply::ok(&region),
+        ["vm", "list-skus", ..] => Reply::ok(&everywhere),
+        ["vm", "list-usage", ..] => Reply::ok(USAGE),
+        _ => Reply::missing(),
+    }))
+}
+
+/// The arguments of a call to `az`, none for another program.
+fn az(call: &Call) -> Vec<&str> {
+    if call.program == "az" { call.args.iter().map(String::as_str).collect() } else { Vec::new() }
 }
 
 /// The check's detail after its first sentence, the one that says why: what it suggests.
@@ -54,11 +61,11 @@ async fn a_size_this_subscription_can_use_passes_on_its_quota_and_its_region_is_
     assert_eq!((c.state, c.detail.as_str()), (CheckState::Ok, "Standard_D2als_v6 is available in swedencentral (6 cores of quota free)."));
     // `--all`: without it az leaves out the sizes refused to the subscription, which then read as
     // not offered. Narrowed to the region, the one filter Azure applies itself.
-    assert!(tools.called("vm list-skus --subscription sub-ok --resource-type virtualMachines --all -o json -l swedencentral"), "{:?}", tools.calls());
-    assert!(!tools.calls().iter().any(|c| c.contains("list-skus") && !c.contains("-l")), "the size everywhere isn't read when it can be had here");
+    assert!(tools.last("vm list-skus --subscription sub-ok --resource-type virtualMachines --all -o json -l swedencentral").is_some(), "{:?}", tools.lines());
+    assert!(!tools.lines().iter().any(|c| c.contains("list-skus") && !c.contains("-l")), "the size everywhere isn't read when it can be had here");
     // Tested again this session: the region's sizes aren't read again (a minute each).
     capacity_check(&account("sub-ok", "swedencentral")).await;
-    assert_eq!(tools.calls().iter().filter(|c| c.contains("list-skus")).count(), 1, "{:?}", tools.calls());
+    assert_eq!(tools.made("az vm list-skus").len(), 1, "{:?}", tools.lines());
 }
 
 #[tokio::test]
@@ -74,7 +81,7 @@ async fn a_size_not_offered_in_the_region_names_regions_that_offer_it_never_the_
     let c = capacity_check(&account("sub-not-offered", "swedencentral")).await;
     assert_eq!(c.state, CheckState::Fail);
     assert_eq!(c.detail, "Standard_D2als_v6 isn't offered in swedencentral. This subscription can use it in francecentral, northeurope or uksouth.");
-    assert!(tools.called("--size Standard_D2als_v6"), "{:?}", tools.calls());
+    assert!(tools.last("--size Standard_D2als_v6").is_some(), "{:?}", tools.lines());
 }
 
 #[tokio::test]
@@ -140,12 +147,12 @@ async fn a_size_not_offered_anywhere_says_so_with_the_regions_sizes_and_never_th
 
 #[tokio::test]
 async fn a_size_list_across_regions_that_cant_be_read_still_names_the_regions_sizes() {
-    let _tools = Tools::new(|program, args| match (program, args) {
-        ("az", ["vm", "list-skus", rest @ ..]) if rest.contains(&"-l") => ok(json!([entry("Standard_B2s", "westeurope", None, 2, 4)]).to_string()),
-        ("az", ["vm", "list-skus", ..]) => fail("throttled"),
-        ("az", ["vm", "list-usage", ..]) => ok(USAGE),
-        _ => None,
-    });
+    let _tools = fake(FakeProcesses::model(|call| match az(call).as_slice() {
+        ["vm", "list-skus", rest @ ..] if rest.contains(&"-l") => Reply::ok(&json!([entry("Standard_B2s", "westeurope", None, 2, 4)]).to_string()),
+        ["vm", "list-skus", ..] => Reply::fail(1, "throttled"),
+        ["vm", "list-usage", ..] => Reply::ok(USAGE),
+        _ => Reply::missing(),
+    }));
     let c = capacity_check(&account("sub-throttled", "westeurope")).await;
     assert_eq!(c.detail, "Standard_D2als_v6 isn't offered in westeurope. Sizes this subscription can use in westeurope: Standard_B2s.");
 }
@@ -154,7 +161,12 @@ async fn a_size_list_across_regions_that_cant_be_read_still_names_the_regions_si
 async fn an_azure_cli_that_fails_says_it_couldnt_ask_never_that_the_size_isnt_offered() {
     // Regression: a failed `az vm list-skus` (signed out, throttled, a bad region) read as an
     // empty list, and the check said the size isn't offered there.
-    let _tools = Tools::strict_rules(&[("list-skus", fail("ERROR: Please run 'az login' to setup account.")), ("list-usage", ok(USAGE))]);
+    let _tools = fake(
+        FakeProcesses::script()
+            .expect("az vm list-skus", Reply::fail(1, "ERROR: Please run 'az login' to setup account."))
+            .allow("az vm list-usage", Reply::ok(USAGE))
+            .build(),
+    );
     let c = capacity_check(&account("sub-signed-out", "westeurope")).await;
     assert_eq!(c.state, CheckState::Warn);
     assert!(c.detail.starts_with("Couldn't ask Azure whether Standard_D2als_v6 is offered in westeurope: "), "{}", c.detail);
@@ -166,7 +178,7 @@ async fn an_azure_cli_that_fails_says_it_couldnt_ask_never_that_the_size_isnt_of
 
 /// `subscription`'s quotas in a region, as `az vm list-usage` lists them.
 async fn quotas_of(usage: &str) -> Result<Vec<azure::Quota>, Failure> {
-    let _tools = Tools::strict_rules(&[("vm list-usage", ok(usage))]);
+    let _tools = fake(FakeProcesses::script().expect("az vm list-usage", Reply::ok(usage)).build());
     azure::quotas(&machine(), "sub", "westeurope").await
 }
 

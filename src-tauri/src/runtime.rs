@@ -104,7 +104,32 @@ pub(crate) struct LabRef<'a> {
 /// Builders shared by the runtime's unit tests.
 #[cfg(test)]
 pub(crate) mod test_support {
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+
     use super::{LabStatus, Machine};
+
+    /// The Azure CLI as testing an Azure account reads it: signed in to the "Pay-As-You-Go"
+    /// subscription, with no VM size or usage listed, and Terraform there.
+    pub(crate) fn azure_signed_in() -> FakeProcesses {
+        FakeProcesses::script()
+            .expect("az account show", Reply::ok("Pay-As-You-Go\n"))
+            .allow("az vm list-skus", Reply::ok(""))
+            .allow("az vm list-usage", Reply::ok(""))
+            .allow("terraform version", Reply::ok(""))
+            .build()
+    }
+
+    /// A node reached over SSH (`ssh … -- user@node 'command'`) answering each command by the
+    /// first of `answers` whose text the command contains. Any other call fails the test.
+    pub(crate) fn node_over_ssh(answers: Vec<(&'static str, Reply)>) -> FakeProcesses {
+        FakeProcesses::model(move |call| {
+            let command = call.args.last().map(String::as_str).unwrap_or_default();
+            match answers.iter().find(|(text, _)| call.program == "ssh" && command.contains(text)) {
+                Some((_, reply)) => reply.clone(),
+                None => panic!("unscripted call `{}`", call.line()),
+            }
+        })
+    }
 
     /// A lab spec with a privileged machine: one `RefusePrivilegedLabs` turns off.
     pub(crate) const PRIVILEGED_LAB: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    privileged: true\n    app: { image: nginx:1.27 }\n";

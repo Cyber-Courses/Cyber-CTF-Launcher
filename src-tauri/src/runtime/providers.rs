@@ -250,6 +250,13 @@ pub(crate) mod testing {
         _machine: Machine,
     }
 
+    impl Faked {
+        /// Every call so far, each as one line (`docker compose ps`).
+        pub(crate) fn lines(&self) -> Vec<String> {
+            self.fake.calls().iter().map(isothrum_runner::ProcessSpec::line).collect()
+        }
+    }
+
     impl std::ops::Deref for Faked {
         type Target = FakeProcesses;
         fn deref(&self) -> &FakeProcesses {

@@ -157,25 +157,35 @@ fn a_missing_sdn_directive_is_reported_with_its_fix() {
 
 #[tokio::test]
 async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
-    use crate::testing::tools::{Tools, fail, ok};
+    use crate::runtime::providers::testing::fake;
+    use crate::runtime::test_support::node_over_ssh;
+    use isothrum_runner::fake::{CallView as _, Reply};
     let app = crate::testing::test_app::TestApp::new();
     let key = app.data().join("ssh").join("id_ed25519");
     std::fs::create_dir_all(key.parent().unwrap()).unwrap();
     // A token setup: the launcher's key, as the token's user.
     let token = HostProfile { username: "root@pam!cyberctf-0a1b2c3d".into(), ..host("10.0.0.50", None) };
-    let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
+    let interfaces = |reply: Reply| fake(node_over_ssh(vec![("/etc/network/interfaces", reply)]));
+    let tools = interfaces(Reply::fail(1, ""));
     assert_eq!(sdn_problem(&token, "secret", &key).await.as_deref(), Some(SDN_MISSING));
     let call = tools.calls().pop().unwrap();
-    assert!(call.starts_with("ssh -i ") && call.contains(" root@10.0.0.50 ") && call.ends_with("/etc/network/interfaces"), "{call}");
+    assert!(
+        call.args.first().map(String::as_str) == Some("-i")
+            && call.has("root@10.0.0.50")
+            && call.args.last().is_some_and(|c| c.ends_with("/etc/network/interfaces")),
+        "{}",
+        call.line()
+    );
     drop(tools);
-    let tools = Tools::strict_rules(&[("/etc/network/interfaces", ok(""))]);
+    let tools = interfaces(Reply::ok(""));
     assert_eq!(sdn_problem(&token, "secret", &key).await, None);
     drop(tools);
     // A password setup: the password, through the askpass helper.
-    let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
+    let tools = interfaces(Reply::fail(1, ""));
     assert_eq!(sdn_problem(&host("10.0.0.50", None), "pw", &key).await.as_deref(), Some(SDN_MISSING));
-    assert_eq!(tools.env_of("/etc/network/interfaces", "ISOTHRUM_SSH_PASSWORD").as_deref(), Some("pw"));
-    assert!(tools.calls().pop().unwrap().contains("PreferredAuthentications=password"));
+    let call = tools.calls().pop().unwrap();
+    assert_eq!(call.env("ISOTHRUM_SSH_PASSWORD"), Some("pw"));
+    assert!(call.args.iter().any(|a| a.starts_with("PreferredAuthentications=password")), "{}", call.line());
 }
 
 /// Regression: the launcher's key path was process-wide, pinned by whichever test made a key
@@ -184,9 +194,9 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
 /// beside the key of the app it is given, and nowhere else.
 #[tokio::test]
 async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
-    use crate::testing::tools::{Tools, fail};
+    use isothrum_runner::fake::Reply;
     let (first, second) = (crate::testing::test_app::TestApp::new(), crate::testing::test_app::TestApp::new());
-    let _tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
+    let _tools = crate::runtime::providers::testing::fake(crate::runtime::test_support::node_over_ssh(vec![("/etc/network/interfaces", Reply::fail(1, ""))]));
     for app in [&first, &second] {
         let key = app.data().join("ssh").join("id_ed25519");
         std::fs::create_dir_all(key.parent().unwrap()).unwrap();

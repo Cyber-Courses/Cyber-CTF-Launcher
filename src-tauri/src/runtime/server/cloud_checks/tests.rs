@@ -2,7 +2,9 @@ use super::*;
 use crate::runtime::providers::Provider;
 use crate::runtime::server::checks::CheckState;
 use crate::runtime::server::profile::tests::profile;
-use crate::testing::tools::{Reply, Tools, fail, ok};
+use isothrum_runner::fake::{Call, FakeProcesses, Reply};
+
+use crate::runtime::providers::testing::{Faked, fake};
 
 /// `program` refusing, saying `said`, its refusal read by `read` (the CLI's reader in
 /// isothrum-machine).
@@ -109,14 +111,26 @@ fn each_answer_of_the_dry_run_says_what_it_says_of_the_permission() {
     assert_eq!(launch_permission(&aws::LaunchPermission::NoAnswer, "arn:x").state, CheckState::Warn);
 }
 
+/// The AWS CLI's own arguments in a call: the stored keys' CLI runs in a container
+/// (`docker run … amazon/aws-cli:<version> sts …`), the host's directly (`aws sts …`).
+fn aws_args(call: &Call) -> Vec<&str> {
+    let args = call.args.iter().map(String::as_str);
+    match call.program.as_str() {
+        "aws" => args.collect(),
+        "docker" => args.skip_while(|a| !a.starts_with("amazon/aws-cli:")).skip(1).collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// The AWS checklist on scripted tools: `dry` answers the dry run, `latest` the SSM lookup.
-async fn aws_checklist(latest: Option<Reply>, dry: Option<Reply>) -> (Tools, TestResult) {
-    let tools = Tools::strict_rules(&[
-        ("sts get-caller-identity", ok("arn:aws:iam::1:user/me\n")),
-        ("ssm get-parameter", latest),
-        ("ec2 run-instances", dry),
-        ("terraform version", ok("Terraform v1.9")),
-    ]);
+async fn aws_checklist(latest: Reply, dry: Reply) -> (Faked, TestResult) {
+    let tools = fake(FakeProcesses::model(move |call| match (call.program.as_str(), aws_args(call).as_slice()) {
+        (_, ["sts", "get-caller-identity", ..]) => Reply::ok("arn:aws:iam::1:user/me\n"),
+        (_, ["ssm", "get-parameter", ..]) => latest.clone(),
+        (_, ["ec2", "run-instances", ..]) => dry.clone(),
+        ("terraform", _) if call.args == ["version"] => Reply::ok("Terraform v1.9"),
+        _ => panic!("unscripted call `{}`", call.line()),
+    }));
     let result = test_aws(&profile(Provider::Aws), "s3cret").await;
     (tools, result)
 }
@@ -150,33 +164,40 @@ async fn the_real_aws_account_test_confirms_the_launch_permission() {
 
 #[tokio::test]
 async fn the_launch_probe_dry_runs_the_latest_amazon_linux_image_of_the_region() {
-    let dry = fail("An error occurred (DryRunOperation) when calling the RunInstances operation: Request would have succeeded, but DryRun flag is set.");
-    let (tools, result) = aws_checklist(ok("ami-07dcdf1066ae9dad3\n"), dry).await;
+    let dry =
+        Reply::fail(1, "An error occurred (DryRunOperation) when calling the RunInstances operation: Request would have succeeded, but DryRun flag is set.");
+    let (tools, result) = aws_checklist(Reply::ok("ami-07dcdf1066ae9dad3\n"), dry).await;
     assert!(result.ok, "{:?}", result.checks);
     assert_eq!((launch_check(&result).state, launch_check(&result).detail.as_str()), (CheckState::Ok, "Able to launch EC2 instances."));
-    assert!(tools.called(&format!("ssm get-parameter --name {} --query Parameter.Value --output text", aws::LATEST_AMAZON_LINUX)), "{:?}", tools.calls());
-    assert!(tools.called("ec2 run-instances --dry-run --instance-type t3.micro --image-id ami-07dcdf1066ae9dad3 --output text"), "{:?}", tools.calls());
+    let asked = |args: &[&str]| tools.calls().into_iter().rev().find(|c| aws_args(c) == args);
+    let lookup = asked(&["ssm", "get-parameter", "--name", aws::LATEST_AMAZON_LINUX, "--query", "Parameter.Value", "--output", "text"]);
+    let dry_run = asked(&["ec2", "run-instances", "--dry-run", "--instance-type", "t3.micro", "--image-id", "ami-07dcdf1066ae9dad3", "--output", "text"]);
+    assert!(lookup.is_some() && dry_run.is_some(), "{:?}", tools.lines());
     // The probe runs with the account's own keys and region, like every other call.
-    assert_eq!(tools.env_of("ec2 run-instances", "AWS_REGION").as_deref(), Some("10.0.0.5"));
-    assert_eq!(tools.env_of("ssm get-parameter", "AWS_SECRET_ACCESS_KEY").as_deref(), Some("s3cret"));
+    assert_eq!(dry_run.as_ref().and_then(|c| c.env("AWS_REGION")), Some("10.0.0.5"));
+    assert_eq!(lookup.as_ref().and_then(|c| c.env("AWS_SECRET_ACCESS_KEY")), Some("s3cret"));
 }
 
 #[tokio::test]
 async fn the_launch_probe_falls_back_to_an_unknown_image_when_the_parameter_cant_be_read() {
-    let denied = fail(
+    let denied = Reply::fail(
+        1,
         "An error occurred (AccessDeniedException) when calling the GetParameter operation: User: arn:aws:iam::1:user/me is not authorized to perform: ssm:GetParameter",
     );
-    let not_found = fail("An error occurred (InvalidAMIID.NotFound) when calling the RunInstances operation: The image id '[ami-12345678]' does not exist");
+    let not_found =
+        Reply::fail(1, "An error occurred (InvalidAMIID.NotFound) when calling the RunInstances operation: The image id '[ami-12345678]' does not exist");
     let (tools, result) = aws_checklist(denied, not_found).await;
     assert!(result.ok, "{:?}", result.checks);
     assert_eq!(launch_check(&result).state, CheckState::Ok);
-    assert!(tools.called(&format!("--image-id {} ", aws::UNKNOWN_IMAGE)), "{:?}", tools.calls());
+    let images: Vec<String> = tools.calls().iter().filter_map(|c| aws_args(c).windows(2).find(|w| w[0] == "--image-id").map(|w| w[1].to_owned())).collect();
+    assert_eq!(images, [aws::UNKNOWN_IMAGE], "{:?}", tools.lines());
 }
 
 #[tokio::test]
 async fn a_denied_dry_run_fails_the_checklist_with_the_identity() {
-    let denied = fail("An error occurred (UnauthorizedOperation) when calling the RunInstances operation: You are not authorized to perform this operation.");
-    let (_tools, result) = aws_checklist(ok("ami-07dcdf1066ae9dad3\n"), denied).await;
+    let denied =
+        Reply::fail(1, "An error occurred (UnauthorizedOperation) when calling the RunInstances operation: You are not authorized to perform this operation.");
+    let (_tools, result) = aws_checklist(Reply::ok("ami-07dcdf1066ae9dad3\n"), denied).await;
     assert!(!result.ok);
     let c = launch_check(&result);
     assert_eq!(c.state, CheckState::Fail);
@@ -185,8 +206,8 @@ async fn a_denied_dry_run_fails_the_checklist_with_the_identity() {
 
 #[tokio::test]
 async fn a_throttled_dry_run_leaves_the_checklist_passing_with_a_warning() {
-    let throttled = fail("An error occurred (RequestLimitExceeded) when calling the RunInstances operation: Request limit exceeded.");
-    let (_tools, result) = aws_checklist(ok("ami-07dcdf1066ae9dad3\n"), throttled).await;
+    let throttled = Reply::fail(1, "An error occurred (RequestLimitExceeded) when calling the RunInstances operation: Request limit exceeded.");
+    let (_tools, result) = aws_checklist(Reply::ok("ami-07dcdf1066ae9dad3\n"), throttled).await;
     assert_eq!(launch_check(&result).state, CheckState::Warn);
     assert!(launch_check(&result).detail.ends_with("Request limit exceeded."), "{}", launch_check(&result).detail);
 }
@@ -218,21 +239,28 @@ fn azure_sign_in_outcomes() {
 async fn the_gcp_test_asks_for_the_sign_in_a_launch_needs_first() {
     // Regression: Test passed on the CLI's own sign-in while every launch was refused because
     // the application-default sign-in Terraform uses had run out.
-    let tools = Tools::strict_rules(&[
-        ("auth application-default print-access-token", fail("ERROR: (gcloud.auth.application-default.print-access-token) Reauthentication failed.")),
-        ("billing accounts describe", ok("Main\n")),
-        ("terraform version", ok("Terraform v1.9")),
-    ]);
+    let tools = fake(
+        FakeProcesses::script()
+            .expect(
+                "gcloud auth application-default print-access-token",
+                Reply::fail(1, "ERROR: (gcloud.auth.application-default.print-access-token) Reauthentication failed."),
+            )
+            .allow("gcloud billing accounts describe", Reply::ok("Main\n"))
+            .allow("terraform version", Reply::ok("Terraform v1.9"))
+            .build(),
+    );
     let result = test_gcp(&profile(Provider::Gcp)).await;
     assert!(!result.ok);
     assert_eq!(result.checks.iter().map(|c| (c.name.as_str(), c.state)).collect::<Vec<_>>(), [("Sign-in", CheckState::Fail)]);
     assert!(result.checks[0].detail.contains("Reauthentication failed."), "{}", result.checks[0].detail);
-    assert!(!tools.called("billing"), "{:?}", tools.calls());
-    let _tools = Tools::strict_rules(&[
-        ("auth application-default print-access-token", ok("ya29.token\n")),
-        ("billing accounts describe", ok("Main\n")),
-        ("terraform version", ok("Terraform v1.9")),
-    ]);
+    assert!(tools.made("gcloud billing").is_empty(), "{:?}", tools.lines());
+    let _tools = fake(
+        FakeProcesses::script()
+            .expect("gcloud auth application-default print-access-token", Reply::ok("ya29.token\n"))
+            .expect("gcloud billing accounts describe", Reply::ok("Main\n"))
+            .expect("terraform version", Reply::ok("Terraform v1.9"))
+            .build(),
+    );
     let result = test_gcp(&profile(Provider::Gcp)).await;
     assert!(result.ok, "{:?}", result.checks);
     assert_eq!(result.checks.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Sign-in", "Billing account", "Terraform"]);

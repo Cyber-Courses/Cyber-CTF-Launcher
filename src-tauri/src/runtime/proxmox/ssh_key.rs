@@ -112,7 +112,10 @@ pub async fn bootstrap(host: &str, key: &SshKeySignIn, known_hosts: &Path, publi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::tools::{Tools, fail, ok};
+    use isothrum_runner::fake::{CallView as _, Reply};
+
+    use crate::runtime::providers::testing::fake;
+    use crate::runtime::test_support::node_over_ssh;
 
     const PUBLIC: &str = "ssh-ed25519 AAAAC3launcher cyberctf-launcher";
 
@@ -146,22 +149,30 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_authorizes_the_launcher_key_then_makes_the_token() {
-        let tools = Tools::strict_rules(&[("authorized_keys", ok("added\n")), ("pveum user token", ok(ANSWER))]);
+        let tools = fake(node_over_ssh(vec![("authorized_keys", Reply::ok("added\n")), ("pveum user token", Reply::ok(ANSWER))]));
         let made = bootstrap("10.0.0.50", &sign_in(), Path::new("/data/ssh/nodes_known_hosts"), PUBLIC).await.unwrap();
         assert_eq!(made, Made { token_id: "root@pam!cyberctf-0a1b2c3d".into(), secret: "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab".into(), key_added: true });
-        let calls = tools.calls();
-        assert_eq!(calls.len(), 2, "only the two node commands run: {calls:?}");
-        assert!(calls.iter().all(|c| c.starts_with("ssh -i /Users/me/.ssh/id_ed25519 -p 22 ") && c.contains(" root@10.0.0.50 ")), "{calls:?}");
+        let (calls, lines) = (tools.calls(), tools.lines());
+        assert_eq!(calls.len(), 2, "only the two node commands run: {lines:?}");
         assert!(
-            calls[0].contains("authorized_keys") && calls[1].contains(&format!("pveum user token add 'root@pam' '{}' --privsep 0", token_name(PUBLIC))),
-            "{calls:?}"
+            calls
+                .iter()
+                .all(|c| c.args.starts_with(&["-i".to_owned(), "/Users/me/.ssh/id_ed25519".to_owned(), "-p".to_owned(), "22".to_owned()])
+                    && c.has("root@10.0.0.50")),
+            "{lines:?}"
         );
-        assert!(calls.iter().all(|c| c.contains("BatchMode=yes")), "never prompts");
+        let command = |c: &isothrum_runner::fake::Call| c.args.last().cloned().unwrap_or_default();
+        assert!(
+            command(&calls[0]).contains("authorized_keys")
+                && command(&calls[1]).contains(&format!("pveum user token add 'root@pam' '{}' --privsep 0", token_name(PUBLIC))),
+            "{lines:?}"
+        );
+        assert!(calls.iter().all(|c| c.has("BatchMode=yes")), "never prompts");
     }
 
     #[tokio::test]
     async fn a_key_already_authorized_is_not_added_twice() {
-        let _tools = Tools::strict_rules(&[("authorized_keys", ok("present\n")), ("pveum user token", ok(ANSWER))]);
+        let _tools = fake(node_over_ssh(vec![("authorized_keys", Reply::ok("present\n")), ("pveum user token", Reply::ok(ANSWER))]));
         let made = bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap();
         assert!(!made.key_added);
     }
@@ -169,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn each_failure_names_its_part() {
         async fn authorize_failing(stderr: &str) -> Failure {
-            let _tools = Tools::strict_rules(&[("authorized_keys", fail(stderr))]);
+            let _tools = fake(node_over_ssh(vec![("authorized_keys", Reply::fail(1, stderr))]));
             bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap_err()
         }
         let refused = authorize_failing("root@10.0.0.50: Permission denied (publickey,password).").await;
@@ -177,7 +188,8 @@ mod tests {
         assert!(refused.to_string().starts_with("Couldn't sign in to the node over SSH with your key: root@10.0.0.50: Permission denied"));
         assert_eq!(authorize_failing("bash: /root/.ssh/authorized_keys: Read-only file system").await.part, Part::Key);
 
-        let _tools = Tools::strict_rules(&[("authorized_keys", ok("present")), ("pveum user token", fail("user 'root@pam' does not exist"))]);
+        let _tools =
+            fake(node_over_ssh(vec![("authorized_keys", Reply::ok("present")), ("pveum user token", Reply::fail(1, "user 'root@pam' does not exist"))]));
         let token = bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap_err();
         assert_eq!(token, Failure { part: Part::Token, detail: "user 'root@pam' does not exist".into() });
     }

@@ -111,12 +111,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_host_is_tested_by_its_provider_and_an_unsaved_one_is_an_error() {
-        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let az = t.host("az1", "azure", serde_json::json!({}));
-        let tools = Tools::strict_rules(&crate::testing::tools::azure_signed_in());
+        let tools = crate::runtime::providers::testing::fake(crate::runtime::test_support::azure_signed_in());
         let result = test_connection(&t.dirs(), &az).await.unwrap();
-        assert!(tools.called("az account show"), "{:?}", tools.calls());
+        assert!(!tools.made("az account show").is_empty(), "{:?}", tools.lines());
         assert!(!result.checks.is_empty());
         assert!(test_connection(&t.dirs(), "nope").await.is_err());
     }
@@ -125,26 +124,27 @@ mod tests {
     async fn a_gcp_account_whose_labs_project_cant_be_had_says_that_not_its_sign_in() {
         // Regression: the result failed (a red cross in the setup's Connection test) while its
         // message was the sign-in's pass, "Signed in; billing account …".
-        use crate::testing::tools::{Tools, fail, ok};
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        /// A GCP account signed in, its labs project answering `describe`.
+        fn gcp(describe: Reply) -> crate::runtime::providers::testing::Faked {
+            crate::runtime::providers::testing::fake(
+                FakeProcesses::script()
+                    .expect("gcloud auth application-default print-access-token", Reply::ok("ya29.token\n"))
+                    .expect("gcloud billing accounts describe", Reply::ok("Main\n"))
+                    .expect("terraform version", Reply::ok("Terraform v1.9"))
+                    .expect("gcloud projects describe", describe)
+                    .build(),
+            )
+        }
         let t = crate::testing::test_app::TestApp::new();
         let id = t.host("gcp1", "gcp", serde_json::json!({ "username": "0X0X0X-0X0X0X-0X0X0X", "gcpProject": "cyberctf-labs-aaaaaa" }));
-        let _tools = Tools::strict_rules(&[
-            ("auth application-default print-access-token", ok("ya29.token\n")),
-            ("billing accounts describe", ok("Main\n")),
-            ("terraform version", ok("Terraform v1.9")),
-            ("projects describe", fail("ERROR: (gcloud.projects.describe) network unreachable")),
-        ]);
+        let _tools = gcp(Reply::fail(1, "ERROR: (gcloud.projects.describe) network unreachable"));
         let result = test_connection(&t.dirs(), &id).await.unwrap();
         assert!(!result.ok);
         assert_eq!(result.checks.last().map(|c| c.name.as_str()), Some("Labs project"));
         assert!(result.message.starts_with("couldn't check the Cyber CTF labs project"), "{}", result.message);
         // Every check passing, it says so, and passes.
-        let _tools = Tools::strict_rules(&[
-            ("auth application-default print-access-token", ok("ya29.token\n")),
-            ("billing accounts describe", ok("Main\n")),
-            ("terraform version", ok("Terraform v1.9")),
-            ("projects describe", ok("ACTIVE\n")),
-        ]);
+        let _tools = gcp(Reply::ok("ACTIVE\n"));
         let result = test_connection(&t.dirs(), &id).await.unwrap();
         assert!(result.ok, "{:?}", result.checks);
         assert!(!result.message.is_empty() && !result.message.contains("labs project"), "{}", result.message);
@@ -152,7 +152,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_ssh_key_setup_is_checked_again_part_by_part() {
-        use crate::testing::tools::{Tools, ok};
+        use isothrum_runner::fake::Reply;
         let t = crate::testing::test_app::TestApp::new();
         let ssh = t.data().join("ssh");
         std::fs::create_dir_all(&ssh).unwrap();
@@ -165,7 +165,7 @@ mod tests {
         );
         let host = load_host(&t.dirs(), &id).unwrap();
         // The key already there: only the authorization is run, and every part passes.
-        let tools = Tools::strict_rules(&[("authorized_keys", ok("present"))]);
+        let tools = crate::runtime::providers::testing::fake(crate::runtime::test_support::node_over_ssh(vec![("authorized_keys", Reply::ok("present"))]));
         let checks = ssh_key_checks(&t.dirs(), &host, host.ssh_key.as_ref().unwrap()).await;
         let names: Vec<&str> = checks.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["SSH with your key", "API token", "Launcher key"]);
