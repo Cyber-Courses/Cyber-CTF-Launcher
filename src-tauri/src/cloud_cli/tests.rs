@@ -20,11 +20,12 @@ async fn the_cloud_commands_read_their_clis() {
         ("aws" | "az" | "gcloud", [..]) => ok("signed in\n"),
         _ => None,
     });
-    assert!(aws_cli_identity(Some("labs".into())).await.is_some());
-    assert!(tools.called("--profile labs"));
+    assert_eq!(aws_cli_identity(Some("labs".into())).await.as_deref(), Some("arn:aws:iam::123456789012:user/ada"));
+    assert_eq!(tools.env_of("sts get-caller-identity", "AWS_PROFILE").as_deref(), Some("labs"));
     assert_eq!(aws_profiles().await, ["default", "labs"]);
     assert_eq!(aws_month_to_date_cost(None).await, Some(12.5));
-    assert_eq!(azure_subscriptions().await.len(), 1);
+    let subs = azure_subscriptions().await;
+    assert_eq!((subs.len(), subs[0].name.as_str(), subs[0].is_default), (1, "Pay-As-You-Go", true));
     assert_eq!(gcp_account().await.as_deref(), Some("ada@example.com"));
     let billing = gcp_billing_accounts().await;
     assert_eq!((billing.len(), billing[0].id.as_str(), billing[0].name.as_str(), billing[0].open), (1, "AAAAAA-BBBBBB-CCCCCC", "Main", true));
@@ -36,6 +37,10 @@ async fn the_cloud_commands_read_their_clis() {
     let (channel, seen) = sink();
     aws_login(Some("labs".into()), channel).await.unwrap();
     assert_eq!(seen.lock().unwrap()[0], "$ aws login --profile labs");
+    let (channel, seen) = sink();
+    cloud_login(Cloud::Gcp, channel).await.unwrap();
+    // gcloud's login also writes the credentials Terraform reads.
+    assert_eq!(seen.lock().unwrap()[0], "$ gcloud auth login --update-adc");
     // Nothing to cancel any more: a no-op.
     cloud_login_cancel();
 }
@@ -110,15 +115,7 @@ fn each_cloud_signs_in_with_its_own_cli() {
     // AWS isn't one: `aws_login` signs in with `aws login` (the old `aws sso login` path was
     // never called).
     assert!(serde_json::from_str::<Cloud>(r#""aws""#).is_err());
-    assert_eq!(login_command(&Cloud::Azure), ("az", &["login"][..]));
-    // gcloud's login also writes the credentials Terraform reads.
-    assert_eq!(login_command(&Cloud::Gcp), ("gcloud", &["auth", "login", "--update-adc"][..]));
-}
-
-#[test]
-fn a_profile_is_passed_only_when_chosen() {
-    assert_eq!(with_profile(vec!["login"], None), ["login"]);
-    assert_eq!(with_profile(vec!["login"], Some("work")), ["login", "--profile", "work"]);
+    assert!(serde_json::from_str::<Cloud>(r#""azure""#).is_ok() && serde_json::from_str::<Cloud>(r#""gcp""#).is_ok());
 }
 
 #[tokio::test]
@@ -135,7 +132,7 @@ async fn a_sign_in_can_be_cancelled_and_never_waits_forever() {
     // sign-in nobody finished kept the setup busy for good.
     // Its own cancel, so tests running at the same time can't end it.
     let (cancel, cancelled) = oneshot::channel();
-    let waiting = tokio::spawn(sign_in_within(Duration::from_secs(30), crate::platform::exec::stream("sh", &["-c", "sleep 30"], None, &[], |_| {}), cancelled));
+    let waiting = tokio::spawn(sign_in_within(Duration::from_secs(30), std::future::pending(), cancelled));
     tokio::time::sleep(Duration::from_millis(100)).await;
     cancel.send(()).unwrap();
     let err = tokio::time::timeout(Duration::from_secs(5), waiting).await.expect("ended at once").unwrap().unwrap_err();
@@ -152,39 +149,18 @@ async fn a_sign_in_can_be_cancelled_and_never_waits_forever() {
 }
 
 #[test]
-fn cli_answers_are_trimmed_lines() {
-    assert_eq!(non_empty(" arn:aws:iam::1:user/a \n").as_deref(), Some("arn:aws:iam::1:user/a"));
-    assert_eq!(non_empty("  \n"), None);
-    assert_eq!(lines("default\n  work \n\n"), ["default", "work"]);
-    assert_eq!(lines(""), [] as [&str; 0]);
+fn a_cli_failure_reads_as_the_launchers_error_a_missing_cli_as_missing_and_a_stuck_one_as_timed_out() {
+    let missing = tool_error(&Failure::Missing { program: "gcloud".into() });
+    assert!(matches!(missing, Error::ToolMissing { tool: "gcloud" }), "{missing:?}");
+    let stuck = tool_error(&Failure::TimedOut { program: "az".into(), limit: Duration::from_secs(60) });
+    assert!(crate::platform::exec::timed_out(&stuck), "{stuck:?}");
+    assert!(stuck.to_string().contains("timed out after 60s"), "{stuck}");
+    let refused = tool_error(&Failure::Refused { program: "aws".into(), refusal: isothrum_machine::Refusal::Other, said: "Rate exceeded".into() });
+    assert!(matches!(&refused, Error::CommandFailed { stderr, .. } if stderr == "Rate exceeded"), "{refused:?}");
 }
 
 #[test]
-fn azure_subscriptions_parse_or_are_none() {
-    let subs = subscriptions(r#"[{"name": "Pay-As-You-Go", "id": "0000", "isDefault": true}, {"name": "Dev", "id": "1111"}]"#);
-    assert_eq!(subs.len(), 2);
-    assert_eq!((subs[0].name.as_str(), subs[0].id.as_str(), subs[0].is_default), ("Pay-As-You-Go", "0000", true));
-    assert!(!subs[1].is_default);
-    assert!(subscriptions("Please run 'az login'").is_empty());
-}
-
-#[test]
-fn gcp_lists_drop_prefixes_and_nameless_entries() {
-    let accounts = billing_accounts(
-        r#"[{"name": "billingAccounts/0X0X0X-0X0X0X-0X0X0X", "displayName": "Main", "open": true}, {"displayName": "No id"}, {"name": "billingAccounts/AAAAAA-BBBBBB-CCCCCC"}]"#,
-    );
-    assert_eq!(accounts.len(), 2);
-    assert_eq!((accounts[0].id.as_str(), accounts[0].name.as_str(), accounts[0].open), ("0X0X0X-0X0X0X-0X0X0X", "Main", true));
-    assert!(!accounts[1].open && accounts[1].name.is_empty());
-    let orgs = organizations(r#"[{"name": "organizations/1234567890", "displayName": "example.com"}, {}]"#);
-    assert_eq!(orgs.len(), 1);
-    assert_eq!((orgs[0].id.as_str(), orgs[0].name.as_str()), ("1234567890", "example.com"));
-    assert!(billing_accounts("not json").is_empty());
-    assert!(organizations("").is_empty());
-}
-
-#[tokio::test]
-async fn the_oci_config_command_reads_its_file_or_reports_none() {
+fn the_oci_config_command_reads_its_file_or_reports_none() {
     // The command reads the file the CLI would (tests don't touch the environment).
     assert_eq!(oci_config(), read_oci_config(oci_config_path().as_deref()));
     assert!(oci_config_path().is_some_and(|p| p.ends_with("config")));
@@ -196,60 +172,19 @@ async fn the_oci_config_command_reads_its_file_or_reports_none() {
     std::fs::write(&file, "[DEFAULT]\ntenancy=ocid1.tenancy.oc1..t\nregion=eu-paris-1\n").unwrap();
     let read = read_oci_config(Some(&file));
     assert_eq!(read, OciConfig { configured: true, tenancy: "ocid1.tenancy.oc1..t".into(), region: "eu-paris-1".into() });
+    // A file without a DEFAULT profile is still a config, with nothing to prefill.
+    std::fs::write(&file, "[PROD]\nregion=x\n").unwrap();
+    assert_eq!(read_oci_config(Some(&file)), OciConfig { configured: true, ..OciConfig::default() });
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-#[test]
-fn the_oci_config_is_read_from_its_default_profile() {
-    let text = "[OTHER]\ntenancy=ocid1.tenancy.oc1..other\n\n[DEFAULT]\nuser=ocid1.user.oc1..u\n tenancy = ocid1.tenancy.oc1..main \nregion=eu-frankfurt-1\nnot a pair\n[LATER]\nregion=us-ashburn-1\n";
-    let c = parse_oci_config(text);
-    assert!(c.configured);
-    assert_eq!(c.tenancy, "ocid1.tenancy.oc1..main");
-    assert_eq!(c.region, "eu-frankfurt-1");
-    // The profile name is matched case-insensitively.
-    assert_eq!(parse_oci_config("[default]\nregion=x\n").region, "x");
-    // A file without a DEFAULT profile is still a config, with nothing to prefill.
-    let c = parse_oci_config("[PROD]\nregion=x\n");
-    assert!(c.configured && c.region.is_empty() && c.tenancy.is_empty());
-}
-
-#[test]
-fn cli_json_that_is_not_a_list_of_objects_reads_as_nothing() {
-    // An object, null, nothing, a warning printed before the JSON, and list entries that
-    // aren't objects: none of them is a subscription or an account, and none panics.
-    for out in ["{}", "null", "", "WARNING: update available\n[]", "[1, \"x\", null]"] {
-        assert!(subscriptions(out).is_empty(), "{out:?}");
-        assert!(billing_accounts(out).is_empty(), "{out:?}");
-        assert!(organizations(out).is_empty(), "{out:?}");
-    }
-    // Fields of the wrong type fall back rather than dropping the entry.
-    let accounts = billing_accounts(r#"[{"name": "billingAccounts/A", "displayName": 7, "open": "true"}]"#);
-    assert_eq!((accounts[0].id.as_str(), accounts[0].name.as_str(), accounts[0].open), ("A", "", false));
-    // An id that is only the prefix is empty, so it is dropped.
-    assert!(billing_accounts(r#"[{"name": "billingAccounts/"}]"#).is_empty());
-}
-
 #[tokio::test]
-async fn a_profile_reaches_the_cli_as_one_argument_however_it_is_spelled() {
-    // No shell in between: a profile with a space is one argument, not two.
+async fn a_profile_reaches_the_cli_however_it_is_spelled() {
+    // No shell in between: a profile with a space is one value, not two.
     let tools = Tools::new(|_, args| match args {
-        [.., "--profile", _] => ok("arn:aws:iam::1:user/a\n"),
+        ["sts", ..] => ok("arn:aws:iam::1:user/a\n"),
         _ => fail("Unable to locate credentials"),
     });
     assert!(aws_cli_identity(Some("my profile".into())).await.is_some());
-    assert!(tools.calls().last().unwrap().ends_with(" --profile my profile"), "{:?}", tools.calls());
-    assert_eq!(aws_cli_identity(None).await, None, "no profile: none passed");
-    assert!(!tools.calls().last().unwrap().contains("--profile"));
-}
-
-#[test]
-fn oci_config_lines_at_the_edges() {
-    // CRLF endings, a later DEFAULT section overriding, a value holding `=`, a key with
-    // spaces around it, and an empty value.
-    let text = "[DEFAULT]\r\nregion=eu-paris-1\r\ntenancy = ocid1.tenancy.oc1..a=b \r\n[OTHER]\r\nregion=x\r\n[DEFAULT]\r\nregion=\r\n";
-    let c = parse_oci_config(text);
-    assert_eq!((c.tenancy.as_str(), c.region.as_str()), ("ocid1.tenancy.oc1..a=b", ""));
-    // A section header with trailing text is another section.
-    assert_eq!(parse_oci_config("[DEFAULT] ; main\nregion=x\n").region, "");
-    assert!(parse_oci_config("").configured && parse_oci_config("").region.is_empty());
+    assert_eq!(tools.env_of("sts get-caller-identity", "AWS_PROFILE").as_deref(), Some("my profile"));
 }

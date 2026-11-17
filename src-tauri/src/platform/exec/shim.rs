@@ -130,7 +130,8 @@ mod tests {
                 checked += 1;
             }
         }
-        assert!(checked >= 10, "only {checked} calls found: the scan lost them");
+        // Few are left: isothrum-machine runs the cloud CLIs' account questions (its `cloud`).
+        assert!(checked >= 2, "only {checked} calls found: the scan lost them");
     }
 
     #[test]

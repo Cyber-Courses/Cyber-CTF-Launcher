@@ -3132,8 +3132,7 @@ areas:
           - aws_login
         tests:
           unit:
-            - src-tauri/src/cloud_cli/tests.rs > a_profile_is_passed_only_when_chosen
-            - src-tauri/src/cloud_cli/tests.rs > a_profile_reaches_the_cli_as_one_argument_however_it_is_spelled
+            - src-tauri/src/cloud_cli/tests.rs > a_profile_reaches_the_cli_however_it_is_spelled
             - src-tauri/src/cloud_cli/tests.rs > the_cloud_commands_read_their_clis
             - src/features/servers/host-setup/cloud-setup.test.tsx > keeps the identity of the profile picked last when reads answer out of order
             - src/features/servers/host-setup/cloud-setup.test.tsx > signs in with the browser and logs who it signed in as
@@ -3188,7 +3187,7 @@ areas:
           - azure_subscriptions
         tests:
           unit:
-            - src-tauri/src/cloud_cli/tests.rs > azure_subscriptions_parse_or_are_none
+            - src-tauri/src/cloud_cli/tests.rs > the_cloud_commands_read_their_clis
             - src-tauri/src/runtime/server/input/tests.rs > azure_location_and_subscription
             - src-tauri/src/runtime/server/azure_size/tests.rs > a_size_refused_to_the_subscription_says_so_and_where_it_isnt
             - src-tauri/src/runtime/server/azure_size/tests.rs > the_quota_says_how_many_cores_are_free_and_never_names_another_region
@@ -3208,7 +3207,7 @@ areas:
           - gcp_organizations
         tests:
           unit:
-            - src-tauri/src/cloud_cli/tests.rs > gcp_lists_drop_prefixes_and_nameless_entries
+            - src-tauri/src/cloud_cli/tests.rs > a_cli_list_that_fails_or_doesnt_parse_is_logged_and_a_missing_cli_is_not
             - src-tauri/src/cloud_cli/tests.rs > an_expired_application_default_sign_in_reads_as_signed_out
             - src-tauri/src/runtime/server/gcp.rs > the_labs_project_is_created_under_the_organization_when_set
             - src-tauri/src/runtime/server/gcp.rs > a_project_whose_setup_failed_is_deleted_never_saved_half_set_up
@@ -3226,8 +3225,7 @@ areas:
           - oci_config
         tests:
           unit:
-            - src-tauri/src/cloud_cli/tests.rs > the_oci_config_is_read_from_its_default_profile
-            - src-tauri/src/cloud_cli/tests.rs > oci_config_lines_at_the_edges
+            - src-tauri/src/cloud_cli/tests.rs > the_oci_config_command_reads_its_file_or_reports_none
             - src-tauri/src/runtime/server/input/tests.rs > oci_region_and_ocid
             - src-tauri/src/runtime/server/cloud_checks/tests.rs > oci_outcomes_and_a_missing_cli_only_warns
             - src/features/servers/host-setup/cloud-setup.test.tsx > prefills Oracle Cloud from ~/.oci/config

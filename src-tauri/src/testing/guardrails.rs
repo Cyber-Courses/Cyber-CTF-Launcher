@@ -131,9 +131,9 @@ fn no_shell_script_is_spliced_by_hand() {
     assert!(wrong.is_empty(), "`sh -c` given a script built by hand (use a literal, RootScript or sh_quote):\n{}", wrong.join("\n"));
 }
 
-/// The modules that drive a tool, where its output is read: the cloud CLIs, the process layer
-/// and its tool wrappers, Docker's CLI, the runner, Proxmox's API and Terraform's state.
-const ADAPTERS: &[&str] = &["cloud_cli.rs", "platform/exec", "runtime/docker/", "runtime/isothrum", "runtime/proxmox/", "runtime/terraform/"];
+/// The modules that drive a tool, where its output is read: the process layer and its tool
+/// wrappers, Docker's CLI, the runner, Proxmox's API and Terraform's state.
+const ADAPTERS: &[&str] = &["platform/exec", "runtime/docker/", "runtime/isothrum", "runtime/proxmox/", "runtime/terraform/"];
 
 /// Shipped JSON parsing outside the adapters, each with what it reads. A tool's output among them
 /// is marked so; the rest read the app's own files or answers that are no tool's.
