@@ -93,8 +93,8 @@ impl Placement {
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
 ///
-/// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on. A start
-/// with nowhere to run, or that the administrator's policy turns off, is refused before anything
+/// One start of a lab at a time is the run service's to hold (`run_service::LocalRunService`),
+/// the runner service refusing a second operation on its run. A start with nowhere to run, or that the administrator's policy turns off, is refused before anything
 /// changes ([`destination`], then [`privileged_allowed`]).
 pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
@@ -162,10 +162,9 @@ fn on_cloud(dirs: &AppDirs, runtime: Runtime, host: Option<&str>) -> Result<bool
     Ok(runtime == Runtime::Cloud || host_is_cloud)
 }
 
-/// [`start_locked`] under the lab lock, for tests that start an installed lab directly.
+/// [`start_locked`], for tests that start an installed lab directly.
 #[cfg(test)]
 pub(crate) async fn start(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], log: impl FnMut(String)) -> Result<()> {
-    let _lock = super::inflight::lock_lab(dirs, lab.id).await?;
     start_locked(dirs, lab, to, env, log).await
 }
 

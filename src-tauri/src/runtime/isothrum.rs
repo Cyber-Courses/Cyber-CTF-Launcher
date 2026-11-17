@@ -82,6 +82,14 @@ pub(crate) async fn end_operations(dirs: &crate::platform::AppDirs, id: &str) {
     remote::cancel_under_way(&home, &name).await;
 }
 
+/// Whether lab `id`'s run has an operation queued or running in the home's runner service (one
+/// another process asked for: this process's own it knows); false when no service runs or it
+/// can't say, the service refusing the run's next operation itself then.
+pub(crate) async fn run_busy(dirs: &crate::platform::AppDirs, id: &str) -> bool {
+    let (Ok(home), Ok(name)) = (paths::runner_home(dirs), run_name(id)) else { return false };
+    remote::run_busy(&home, &name).await
+}
+
 /// The labs whose run has an operation queued or running in the home's runner service: what an
 /// update install waits for besides this process's own.
 ///

@@ -201,8 +201,6 @@ const SLEEP_ALLOWED: &[(&str, &str, &str)] = &[
     ("account/auth/tests.rs", "tokio::time::sleep(std::time::Duration::from_millis(10)).await;", "a poll under a 5 s timeout for the refresh to be saved"),
     ("cloud_cli/tests.rs", "tokio::time::sleep(Duration::from_millis(100)).await;", "wall clock: the sign-in under way before it is cancelled"),
     ("run_service/tests.rs", "tokio::time::sleep(Duration::from_millis(10)).await;", "polls for an operation's end and its first statuses, bounded"),
-    ("runtime/inflight/lock.rs", "std::thread::sleep(Duration::from_millis(25));", "eventually's poll, bounded to 40 looks"),
-    ("runtime/inflight/lock.rs", "std::thread::sleep(Duration::from_millis(20));", "a lock held a moment, so the threads overlap"),
     ("runtime/server/store.rs", "std::thread::sleep(std::time::Duration::from_millis(5));", "an update held a moment, so the threads overlap"),
     ("screen.rs", "tokio::time::sleep(std::time::Duration::from_millis(50)).await;", "a poll, bounded, for a viewer's pid to be reaped"),
     (

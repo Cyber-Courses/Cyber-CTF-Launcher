@@ -31,8 +31,7 @@ pub const LEVEL_VAR: &str = "CYBERCTF_LOG";
 /// level `CYBERCTF_LOG` sets (info without it), each line redacted.
 ///
 /// One file per writer: Windows can't rename a file another process holds open, so two processes
-/// rotating the same file would fail. The app has one instance; a lab has at most one worker
-/// (the per-lab lock), so each worker gets its lab's file.
+/// rotating the same file would fail. The app has one instance, so it gets its own file.
 pub fn plugin<R: Runtime>(file_name: &str) -> TauriPlugin<R> {
     let mut builder = tauri_plugin_log::Builder::new()
         .clear_targets()

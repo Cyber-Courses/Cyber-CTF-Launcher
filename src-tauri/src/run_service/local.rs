@@ -25,6 +25,61 @@ struct Running {
     lab_id: String,
     /// What it is.
     op: Operation,
+    /// When it was admitted, among this process's operations: the order a stop waits in.
+    turn: u64,
+    /// Whether this process runs it (else another process's, told as the runner service runs it).
+    here: bool,
+}
+
+/// This process's operations under way, by id, and a signal each time one ends. They are the one
+/// account of what the launcher itself does to a lab: what refuses a second operation on a lab
+/// ([`LocalRunService::admit`]) and what a stop waits for ([`Under::earlier_ended`]). The lab's
+/// run takes no lock of the launcher's: the runner service runs one operation per run and refuses
+/// another (`locked`, the launcher's `AlreadyInProgress`).
+#[derive(Default)]
+struct Under {
+    ops: Mutex<HashMap<OperationId, Running>>,
+    ended: tokio::sync::Notify,
+}
+
+impl Under {
+    fn ops(&self) -> std::sync::MutexGuard<'_, HashMap<OperationId, Running>> {
+        self.ops.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Records `operation`, `op` on `lab_id`, as under way, run `here` or not.
+    fn insert(ops: &mut HashMap<OperationId, Running>, operation: &OperationId, lab_id: &str, op: Operation, here: bool) {
+        static TURNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let turn = TURNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        ops.insert(operation.clone(), Running { lab_id: lab_id.to_owned(), op, turn, here });
+    }
+
+    /// Takes operation `id` out, once it ended: what waited for it goes on.
+    fn remove(&self, id: &OperationId) -> Option<Running> {
+        let removed = self.ops().remove(id);
+        self.ended.notify_waiters();
+        removed
+    }
+
+    /// Returns once no operation of this process admitted before `operation` acts on its lab:
+    /// a stop runs after what the player asked before it, never alongside (a launch still
+    /// downloading would otherwise start the lab once the stop is done).
+    async fn earlier_ended(&self, operation: &OperationId) {
+        loop {
+            let ended = self.ended.notified();
+            tokio::pin!(ended);
+            ended.as_mut().enable();
+            let busy = {
+                let ops = self.ops();
+                let Some(mine) = ops.get(operation) else { return };
+                ops.values().any(|r| r.here && r.lab_id == mine.lab_id && r.turn < mine.turn)
+            };
+            if !busy {
+                return;
+            }
+            ended.await;
+        }
+    }
 }
 
 /// The launcher's own run service (see the module).
@@ -33,8 +88,8 @@ pub(crate) struct LocalRunService {
     dirs: AppDirs,
     /// Every operation's events.
     events: Arc<EventLog>,
-    /// The operations under way, by id.
-    running: Arc<Mutex<HashMap<OperationId, Running>>>,
+    /// The operations under way.
+    running: Arc<Under>,
     /// What is watched, and what was told of it.
     watch: Arc<Mutex<Watch>>,
 }
@@ -50,12 +105,7 @@ impl LocalRunService {
     /// The service of the app whose folders are `dirs`: no window or app handle needed, so the
     /// command line runs it as the app does.
     pub(crate) fn new(dirs: AppDirs) -> LocalRunService {
-        LocalRunService {
-            dirs,
-            events: Arc::new(EventLog::default()),
-            running: Arc::new(Mutex::new(HashMap::new())),
-            watch: Arc::new(Mutex::new(Watch::default())),
-        }
+        LocalRunService { dirs, events: Arc::new(EventLog::default()), running: Arc::new(Under::default()), watch: Arc::new(Mutex::new(Watch::default())) }
     }
 
     /// This process's service for the data folder of `dirs`, made on first use.
@@ -70,15 +120,15 @@ impl LocalRunService {
     }
 
     /// Whether an operation acts on lab `id` now.
-    pub(super) fn is_busy(&self, id: &str) -> bool {
-        self.running.lock().unwrap_or_else(PoisonError::into_inner).values().any(|r| r.lab_id == id)
+    pub(crate) fn is_busy(&self, id: &str) -> bool {
+        self.running.ops().values().any(|r| r.lab_id == id)
     }
 
     /// The labs with an operation of any kind under way in this process (a start, a resume, a
     /// provisioning run, a stop, a park, the attack box), each once: what a quit would cut off
     /// (the launcher's own steps; the run's operations go on in the runner service).
     pub(crate) fn busy_labs(&self) -> Vec<String> {
-        let running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
+        let running = self.running.ops();
         let mut labs: Vec<String> = running.values().map(|r| r.lab_id.clone()).collect();
         labs.sort();
         labs.dedup();
@@ -88,32 +138,34 @@ impl LocalRunService {
     /// Marks lab `id` as under operation `op` until the hold drops (a test's stand-in for an
     /// operation under way).
     #[cfg(test)]
-    pub(crate) fn hold(self: &Arc<Self>, id: &str, op: Operation) -> impl Drop {
-        struct Hold(Arc<LocalRunService>, OperationId);
-        impl Drop for Hold {
-            fn drop(&mut self) {
-                self.0.running.lock().unwrap_or_else(PoisonError::into_inner).remove(&self.1);
-            }
-        }
+    pub(crate) fn hold(self: &Arc<Self>, id: &str, op: Operation) -> Hold {
         let operation = OperationId::new();
-        self.running.lock().unwrap_or_else(PoisonError::into_inner).insert(operation.clone(), Running { lab_id: id.to_owned(), op });
+        Under::insert(&mut self.running.ops(), &operation, id, op, true);
         Hold(Arc::clone(self), operation)
     }
 
-    /// Whether lab `id` is being stopped in this process now.
-    pub(crate) fn stopping(&self, id: &str) -> bool {
-        self.running.lock().unwrap_or_else(PoisonError::into_inner).values().any(|r| r.lab_id == id && r.op == Operation::Stop)
+    /// Holds lab `id` for a step of the launcher's own that is told as no operation (a removal),
+    /// as a stop would, until the hold drops: an operation asked meanwhile is refused, a stop or
+    /// the agent's waits.
+    ///
+    /// # Errors
+    ///
+    /// [`Code::AlreadyInProgress`] while an operation acts on the lab.
+    pub(crate) fn claim(self: &Arc<Self>, id: &str) -> Result<Hold> {
+        let operation = OperationId::new();
+        self.admit(&operation, id, Operation::Stop, true)?;
+        Ok(Hold(Arc::clone(self), operation))
     }
 
     /// Admits operation `operation`, `op` on `lab_id`, as under way: refused when `exclusive`
     /// and another acts on the lab. Checked and recorded as one step: two starts racing each
     /// other (a double click) never both pass.
     fn admit(&self, operation: &OperationId, lab_id: &str, op: Operation, exclusive: bool) -> Result<()> {
-        let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut running = self.running.ops();
         if exclusive && running.values().any(|r| r.lab_id == lab_id) {
             return Err(Error::coded(Code::AlreadyInProgress));
         }
-        running.insert(operation.clone(), Running { lab_id: lab_id.to_owned(), op });
+        Under::insert(&mut running, operation, lab_id, op, true);
         Ok(())
     }
 
@@ -143,7 +195,8 @@ impl LocalRunService {
 
     /// Runs `work`, operation `op` on lab `id` started outside a request (the website agent's
     /// launch and teardown), here and now, told as an operation like the others: its start, its
-    /// log lines, its end. Never refused: what it does takes the lab's lock itself.
+    /// log lines, its end. Never refused: it waits for this process's operations on the lab
+    /// admitted before it to end first, as a stop does.
     ///
     /// # Errors
     ///
@@ -157,9 +210,19 @@ impl LocalRunService {
         log::info!("operation {operation}: {op:?} of lab {id} started");
         let deploying = !matches!(op, Operation::Stop | Operation::Pause | Operation::Shutdown);
         self.events.emit(RunEvent::Started { operation: operation.clone(), lab_id: id.to_owned(), op, machine: None, runtime, deploying, at: now_ms() });
+        self.running.earlier_ended(&operation).await;
         let out = unpanicked(work(self.log_of(&operation, id))).await;
         end(&self.events, &self.running, &operation, out.as_ref().err().map(Error::to_wire));
         out
+    }
+}
+
+/// A lab held by [`LocalRunService::claim`] (or a test's hold), until dropped.
+pub(crate) struct Hold(Arc<LocalRunService>, OperationId);
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        self.0.running.remove(&self.1);
     }
 }
 
@@ -185,8 +248,8 @@ async fn tell_status(dirs: &AppDirs, events: &EventLog, watched: &Mutex<Watch>, 
 }
 
 /// Tells operation `id`'s end (failed with `error`, or done), once.
-fn end(events: &EventLog, running: &Mutex<HashMap<OperationId, Running>>, id: &OperationId, error: Option<Wire>) {
-    let Some(r) = running.lock().unwrap_or_else(PoisonError::into_inner).remove(id) else { return };
+fn end(events: &EventLog, running: &Under, id: &OperationId, error: Option<Wire>) {
+    let Some(r) = running.remove(id) else { return };
     match &error {
         None => log::info!("operation {id}: {:?} of lab {} done", r.op, r.lab_id),
         Some(e) => log::warn!("operation {id}: {:?} of lab {} failed: {}", r.op, r.lab_id, e.message),
@@ -213,10 +276,12 @@ impl RunService for LocalRunService {
             deploying: request.deploying(),
             at: now_ms(),
         };
-        // A stop is never refused: it ends what runs on the lab first.
+        // A stop is never refused: it ends what runs on the lab first, then waits for this
+        // process's operations on it asked before.
         let exclusive = !matches!(request, Request::Stop { .. });
-        let dirs = self.dirs.clone();
-        self.begin(started, exclusive, move |log| Box::pin(async move { execute(&dirs, request, log).await }))?;
+        let (dirs, running, id) = (self.dirs.clone(), Arc::clone(&self.running), operation.clone());
+        let earlier_ended = async move { running.earlier_ended(&id).await };
+        self.begin(started, exclusive, move |log| Box::pin(async move { execute(&dirs, request, earlier_ended, log).await }))?;
         Ok(operation)
     }
 
@@ -272,13 +337,13 @@ impl RunService for LocalRunService {
 /// Tells what the runner service did that this process didn't ask for (`seen`), as run events:
 /// another process's operation (`told`: those begun, by the service's id), and a run that left
 /// its standing state, whose lab's screens end.
-fn tell(events: &EventLog, running: &Mutex<HashMap<OperationId, Running>>, told: &mut HashMap<i64, (OperationId, String)>, seen: Others) {
+fn tell(events: &EventLog, running: &Under, told: &mut HashMap<i64, (OperationId, String)>, seen: Others) {
     let lab_of = |run: &str| crate::runtime::lab_of_project(run).unwrap_or(run).to_owned();
     match seen {
         Others::Began { operation, run, op } => {
             let Some(op) = ui_op(op) else { return };
             let (id, lab_id) = (OperationId(format!("runner-{operation}")), lab_of(&run));
-            running.lock().unwrap_or_else(PoisonError::into_inner).insert(id.clone(), Running { lab_id: lab_id.clone(), op });
+            Under::insert(&mut running.ops(), &id, &lab_id, op, false);
             let deploying = !matches!(op, Operation::Stop | Operation::Pause | Operation::Shutdown);
             events.emit(RunEvent::Started { operation: id.clone(), lab_id: lab_id.clone(), op, machine: None, runtime: None, deploying, at: now_ms() });
             told.insert(operation, (id, lab_id));
@@ -313,8 +378,16 @@ fn ui_op(op: isothrum_runner::Op) -> Option<Operation> {
     })
 }
 
-/// Runs `request` in the app whose folders are `dirs`, its log lines to `log`.
-async fn execute(dirs: &AppDirs, request: Request, log: Log) -> Result<()> {
+/// Runs `request` in the app whose folders are `dirs`, its log lines to `log`; a stop once what
+/// runs on its lab was ended: the run's operations cancelled in the runner service, then
+/// `earlier_ended`, this process's own operations on it.
+async fn execute(dirs: &AppDirs, request: Request, earlier_ended: impl Future<Output = ()>, log: Log) -> Result<()> {
+    // Another process's operation on the lab's run (the command line, the app beside it):
+    // refused before the launcher's own steps (a download, the attack box's spec), as the
+    // runner service would refuse the run's.
+    if !matches!(request, Request::Stop { .. }) && crate::runtime::isothrum::run_busy(dirs, request.lab_id()).await {
+        return Err(Error::coded(Code::AlreadyInProgress));
+    }
     match request {
         Request::Launch(launch) => {
             let line = |l: String| log(l);
@@ -328,7 +401,10 @@ async fn execute(dirs: &AppDirs, request: Request, log: Log) -> Result<()> {
             Box::pin(crate::runtime::provision_lab(dirs, &lab_id, runtime, machine.as_deref(), move |l| log(l))).await
         }
         Request::Stop { lab_id, runtime } => {
-            let ended = crate::runtime::isothrum::end_operations(dirs, &lab_id);
+            let ended = async {
+                crate::runtime::isothrum::end_operations(dirs, &lab_id).await;
+                earlier_ended.await;
+            };
             crate::labs::stop_lab_retiring_colocation(dirs, &lab_id, runtime, ended, move |l| log(l)).await
         }
         Request::AttachBox { lab_id, runtime, pick } => Box::pin(attach_box(dirs, &lab_id, runtime, pick, log)).await,
@@ -347,9 +423,6 @@ async fn attach_box(dirs: &AppDirs, id: &str, runtime: Runtime, pick: AttachPick
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }
-    // Held for the whole attach, like every lab operation: a pause or a stop from another window
-    // or the agent waits, rather than halting the VMs the attach is working in.
-    let _lock = crate::runtime::lock_lab(dirs, id).await?;
     let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime).await?;
     let mut line = move |l: String| log(l);
     let image = image.unwrap_or_else(|| attack_box::default_image().to_owned());
@@ -360,7 +433,6 @@ async fn attach_box(dirs: &AppDirs, id: &str, runtime: Runtime, pick: AttachPick
 /// Takes the attack box back out of running lab `id`, leaving the rest of the lab up.
 async fn detach_box(dirs: &AppDirs, id: &str, runtime: Runtime, log: Log) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
-    let _lock = crate::runtime::lock_lab(dirs, id).await?;
     let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime).await?;
     let mut line = move |l: String| log(l);
     Box::pin(run.remove(dirs, &mut line)).await

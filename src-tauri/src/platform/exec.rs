@@ -44,8 +44,8 @@ pub fn tools_in_use() -> ToolSet {
 
 /// The bound on `run`/`run_env` when the caller named none. A read probe or a cloud CLI sets its
 /// own shorter limit, but teardown (`docker compose down`, `docker rm -f`) runs through the plain
-/// path while holding the lab lock, and a wedged daemon there must fail rather than hang the lab
-/// for good. Generous, since a real teardown can be slow; the runner returns a finished run whose
+/// path while its operation holds the lab, and a wedged daemon there must fail rather than hang
+/// the lab for good. Generous, since a real teardown can be slow; the runner returns a finished run whose
 /// leftovers hold its output open far sooner.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -90,7 +90,7 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
     spec.env = env.to_vec();
     let runner = runner();
     // The plain `run`/`run_env` path names no timeout, but it is what teardown runs through while
-    // holding the lab lock: a generous default ([`DEFAULT_TIMEOUT`]) bounds a wedged daemon so it
+    // its operation holds the lab: a generous default ([`DEFAULT_TIMEOUT`]) bounds a wedged daemon so it
     // can't hang the lab for good. A read/CLI caller's own, shorter, limit is used as given. Given
     // up on, the call's future is dropped, and the runner ends the tool's whole tree.
     let limit = timeout.unwrap_or(DEFAULT_TIMEOUT);

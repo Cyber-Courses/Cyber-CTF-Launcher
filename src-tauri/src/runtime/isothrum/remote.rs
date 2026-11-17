@@ -1,6 +1,7 @@
 //! The one door to the runner: its home's runner service (`isothrum-client`), the one process that
-//! runs a home's operations, queued per run, so they outlive the window (and the app) that asked
-//! for them, and that alone opens the home's store. The launcher hosts the service itself
+//! runs a home's operations, one per run at a time (a second is refused: `locked`, the launcher's
+//! `AlreadyInProgress`), so they outlive the window (and the app) that asked for them, and that
+//! alone opens the home's store. The launcher hosts the service itself
 //! (`run_service::host`), started on first use by [`Client::connect_exact`] as this executable, of
 //! this release. An operation is a command on the wire (the run's folder, format and name, its
 //! values and secrets), its events read back as the deploy log's lines; a run's record, its
@@ -396,6 +397,13 @@ pub(super) async fn cancel_under_way(home: &Path, name: &RunName) {
             log::warn!("{name}: the runner service's operation {operation:?} couldn't be cancelled: {e}");
         }
     }
+}
+
+/// Whether run `name` has an operation queued or running in `home`'s service; false when none
+/// runs.
+pub(super) async fn run_busy(home: &Path, name: &RunName) -> bool {
+    let Some(client) = running_service(home).await else { return false };
+    !under_way(&client, name).await.is_empty()
 }
 
 /// The runs of `home`'s service with an operation queued or running; none when no service runs.

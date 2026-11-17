@@ -30,7 +30,7 @@ pub async fn labs_project(dirs: &AppDirs, id: &str) -> Result<String> {
     // processes, and each may launch a lab on the account or test it.
     static CREATING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let one_at_a_time = CREATING.lock().await;
-    let one_process_at_a_time = crate::runtime::inflight::lock::acquire(&creating_lock(dirs)?).await.map_err(crate::runtime::inflight::lock::unavailable)?;
+    let one_process_at_a_time = ProjectLock::acquire(&creating_lock(dirs)?).await.map_err(Error::LockUnavailable)?;
     // Read fresh under the lock, and only this host's field is written back (the rest of the
     // store may have been edited meanwhile).
     let host = find(&load(dirs)?, id)?;
@@ -52,6 +52,34 @@ pub async fn labs_project(dirs: &AppDirs, id: &str) -> Result<String> {
 
 /// The OS lock held across processes while the labs project is checked and, when needed,
 /// created and saved (see [`labs_project`]).
+/// The project's creation held across processes: an OS lock on its file, waited for, released
+/// when dropped, and by the OS when its process exits (a crashed process leaves no lock behind).
+struct ProjectLock(std::fs::File);
+
+impl ProjectLock {
+    /// Takes the lock at `path`, waiting while another process holds it.
+    async fn acquire(path: &std::path::Path) -> std::io::Result<ProjectLock> {
+        let file = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(path)?;
+        loop {
+            match file.try_lock() {
+                Ok(()) => return Ok(ProjectLock(file)),
+                Err(std::fs::TryLockError::WouldBlock) => tokio::time::sleep(std::time::Duration::from_millis(250)).await,
+                Err(std::fs::TryLockError::Error(e)) => return Err(e),
+            }
+        }
+    }
+}
+
+impl Drop for ProjectLock {
+    fn drop(&mut self) {
+        // Unlocked before it closes: a process spawned meanwhile shares the handle until it runs
+        // its program, and would hold the lock that long.
+        if let Err(e) = self.0.unlock() {
+            log::warn!("the labs project's lock wasn't unlocked; it is freed when closed: {e}");
+        }
+    }
+}
+
 fn creating_lock(dirs: &AppDirs) -> Result<std::path::PathBuf> {
     let dir = dirs.data()?;
     std::fs::create_dir_all(dir)?;

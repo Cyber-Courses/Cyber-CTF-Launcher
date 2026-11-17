@@ -322,7 +322,6 @@ areas:
           unit:
             - src-tauri/src/labs.rs > an_archive_download_is_limited_and_says_why_it_failed
             - src-tauri/src/labs.rs > staging_carries_the_lab_its_commit_and_its_instance
-            - src-tauri/src/labs.rs > a_launch_waits_for_the_lab_lock_before_installing_anything
             - src-tauri/src/labs/archive/tests.rs
             - src-tauri/src/labs/archive/proptests.rs
           desktop:
@@ -833,14 +832,15 @@ areas:
           desktop: reimport-running accepts either a refusal or a restart in place; it only checks no second copy runs
 
       - id: lab-run.one-operation-at-a-time
-        what: One operation per lab at a time (per-lab lock across the app and its processes, and the runner service refusing a second operation on a busy run); a second one is refused or waits.
+        what: One operation per lab at a time (the runner service refusing a second operation on a busy run, the app's run service one per lab for its own steps, a stop waiting for those asked before it); a second one is refused or waits, and a crash leaves nothing holding the lab.
         host: false
         tests:
           unit:
-            - src-tauri/src/runtime/inflight.rs > a_lab_held_by_another_process_is_waited_for_or_skipped
-            - src-tauri/src/runtime/inflight/lock.rs > a_lock_held_elsewhere_keeps_the_lab_busy_until_released
             - src-tauri/src/run_service/tests.rs > a_second_operation_on_a_busy_lab_is_refused_and_a_panicking_one_still_ends
-            - src-tauri/src/labs.rs > a_launch_waits_for_the_lab_lock_before_installing_anything
+            - src-tauri/src/run_service/tests.rs > two_starts_of_a_lab_one_is_refused_and_a_start_during_a_stop_is_refused_too
+            - src-tauri/src/run_service/tests.rs > a_stop_waits_for_the_operation_asked_before_it_then_runs
+            - src-tauri/src/run_service/tests.rs > an_operation_cut_off_with_its_process_leaves_nothing_holding_the_lab
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_refusal_or_the_runners_own_words_keep_the_sentence_the_player_reads
             - src/features/labs/lab-failures.test.tsx > says another operation is still running, as a refusal and not a failed start
             - src/features/frontend-races.test.tsx > disables Stop & remove while the backend reports an operation in flight
           web:

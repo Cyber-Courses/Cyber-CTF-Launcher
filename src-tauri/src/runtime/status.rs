@@ -146,7 +146,7 @@ pub(crate) async fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Resu
 /// re-import, a removal or a start elsewhere goes ahead instead of being refused as still running
 /// while the lab's page says it isn't (#276). Nothing for a run recorded on a server or a cloud
 /// (read from files only, as [`still_up`] is), a parked one, one with anything left, or one that
-/// can't be read now (Docker stopped): the refusal stands. The caller holds the lab lock.
+/// can't be read now (Docker stopped): the refusal stands. The caller's operation holds the lab.
 pub(crate) async fn forget_gone(dirs: &AppDirs, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
     forget_gone_with(dirs, id, |dir| async move { isothrum::recorded_here(dirs, &dir, id).await }, log).await
 }

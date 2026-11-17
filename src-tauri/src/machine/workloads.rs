@@ -101,9 +101,8 @@ async fn memory(home: &Path, name: &RunName) -> u64 {
     }
 }
 
-/// Stops a workload from the Machine page: the lab's own Stop (the lab page's: under its lock,
-/// with its volumes, pinned ports, networks and attack box or VM). The lab can be started again
-/// from its page.
+/// Stops a workload from the Machine page: the lab's own Stop (the lab page's: with its volumes,
+/// pinned ports, networks and attack box or VM). The lab can be started again from its page.
 ///
 /// # Errors
 ///
