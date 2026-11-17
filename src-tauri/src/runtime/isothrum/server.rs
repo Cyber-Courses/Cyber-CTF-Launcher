@@ -209,6 +209,7 @@ mod tests {
         use crate::runtime::isothrum::Site;
         use crate::runtime::isothrum::test_lab::prelude::*;
         use crate::runtime::{Runtime, lab};
+        use crate::testing::https::{Request, Server};
 
         const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.32.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n  db:\n    os: debian@12\n    networks: { lab: 11 }\n";
 
@@ -221,32 +222,37 @@ mod tests {
             Refuses,
         }
 
-        fn answer(api: &Mutex<Api>, call: &Call) -> Reply {
-            if call.program == "terraform" {
-                return terraform(call);
+        /// The tools a run here runs: only Terraform is asked.
+        fn answer(_: &Mutex<Api>, call: &Call) -> Reply {
+            if call.program == "terraform" { terraform(call) } else { Reply::ok("") }
+        }
+
+        /// The fake Proxmox API's answer to `request` (the runner's own HTTPS client's), by
+        /// what it says of VM 104.
+        fn proxmox(api: &Mutex<Api>, request: &Request) -> (u16, String) {
+            assert_eq!(request.header("authorization"), Some("PVEAPIToken=root@pam!cyberctf=sec"), "signed in with the saved token");
+            assert_eq!(request.method, "GET", "only read");
+            if *locked(api) == Api::Refuses {
+                return (401, "{\"data\":null}".to_owned());
             }
-            if call.program != "curl" {
-                return Reply::ok("");
-            }
-            // The runner's request (its curl config on stdin), answered with the body, then the
-            // status code on a line of its own.
-            let config = call.stdin.as_ref().map(|p| std::fs::read_to_string(p).unwrap()).unwrap_or_default();
-            assert!(config.contains("PVEAPIToken=root@pam!cyberctf=sec"), "signed in with the saved token: {config}");
-            assert!(config.contains("https://10.0.0.5:8006/"), "of the saved server: {config}");
-            let api = *locked(api);
-            if api == Api::Refuses {
-                return Reply::ok("{\"data\":null}\n401");
-            }
-            if config.contains("cluster/nextid") {
+            if request.target.contains("cluster/nextid") {
                 // A VM missing from the listing whose id is still taken: one the token may not see.
-                return Reply::ok("{\"data\":null,\"errors\":{\"vmid\":\"VM 104 already exists\"}}\n400");
+                return (400, "{\"data\":null,\"errors\":{\"vmid\":\"VM 104 already exists\"}}".to_owned());
             }
-            match api {
-                Api::Removed => Reply::ok("{\"data\":[{\"vmid\":105,\"node\":\"pve\",\"status\":\"running\",\"type\":\"qemu\"}]}\n200"),
-                _ => Reply::ok(
-                    "{\"data\":[{\"vmid\":104,\"node\":\"pve\",\"status\":\"running\",\"type\":\"qemu\"},{\"vmid\":105,\"node\":\"pve\",\"status\":\"running\",\"type\":\"qemu\"}]}\n200",
-                ),
-            }
+            let listing = match *locked(api) {
+                Api::Removed => r#"{"data":[{"vmid":105,"node":"pve","status":"running","type":"qemu"}]}"#,
+                _ => r#"{"data":[{"vmid":104,"node":"pve","status":"running","type":"qemu"},{"vmid":105,"node":"pve","status":"running","type":"qemu"}]}"#,
+            };
+            (200, listing.to_owned())
+        }
+
+        /// The lab's fake tools answered by `answer`, and the saved server: the fake Proxmox API
+        /// on the loopback, its self-signed certificate pinned as a player confirmed it.
+        fn served(home: &str, spec: &str, answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, ServerPlace) {
+            let f = Scripted::answered_by(Home::new(home, spec, &[], lab::Target::Proxmox), answer);
+            let model = f.shared_model();
+            let server = Server::start(move |request| proxmox(&model, request));
+            (f, place(&server))
         }
 
         /// The fake Terraform's reads of the run's state: its two VMs (104 and 105) and their ids
@@ -273,8 +279,8 @@ mod tests {
 
         /// [`up`], its tools answered by `answer`.
         fn up_answered_by(answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, Deployment) {
-            let f = Scripted::answered_by(Home::new("-pve", SPEC, &[], lab::Target::Proxmox), answer);
-            let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm, place()).unwrap();
+            let (f, place) = served("-pve", SPEC, answer);
+            let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm, place).unwrap();
             let state = f.home.runner().join("runs").join("cyberctf-web");
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(
@@ -290,12 +296,16 @@ mod tests {
             (f, run)
         }
 
-        fn place() -> ServerPlace {
-            let vars = [("proxmox_endpoint", "https://10.0.0.5:8006/"), ("proxmox_api_token", "root@pam!cyberctf=sec")];
+        fn place(server: &Server) -> ServerPlace {
+            let vars = [
+                ("proxmox_endpoint", format!("{}/", server.endpoint)),
+                ("proxmox_api_token", "root@pam!cyberctf=sec".to_owned()),
+                (lab::TLS_PIN, server.fingerprint.clone()),
+            ];
             ServerPlace {
                 label: "pve-1".into(),
                 name: "Home lab".into(),
-                vars: vars.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
+                vars: vars.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
                 ..ServerPlace::default()
             }
         }
@@ -319,7 +329,8 @@ mod tests {
         async fn on_a_bridge_internal_to_the_node_terraform_goes_through_a_tunnel_to_it() {
             let (f, run) = up();
             let tools = tunnel_tools();
-            let jumped = ServerPlace { jump: Some("root@node.lab".into()), ..place() };
+            let Site::Server(place) = run.site() else { unreachable!("a server's run") };
+            let jumped = ServerPlace { jump: Some("root@node.lab".into()), ..place.clone() };
             let _ = run.at(Site::Server(jumped)).update(&mut |_| {}).await;
             let tunnels = tools.made("ssh -N -D");
             assert_eq!(tunnels.len(), 1, "one tunnel for the operation");
@@ -348,13 +359,11 @@ mod tests {
         /// 192.0.2.10:8080, its run up on fake tools.
         fn published_lab(home: &str) -> (Scripted<Api>, Deployment) {
             const WEB: &str = "version: 1\nname: t\nnetworks:\n  app: { cidr: 10.80.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { app: 10 }\n    ports: { site: { port: 80, protocol: http, publish: 8080 } }\n";
-            let f = Scripted::answered_by(Home::new(home, WEB, &[], lab::Target::Proxmox), |api, call| {
-                match (call.program.as_str(), call.args.first().map(String::as_str)) {
-                    ("terraform", Some("output")) => Reply::ok(r#"{"vm_id_web":{"value":104},"published":{"value":{"web/site":"192.0.2.10:8080"}}}"#),
-                    _ => answer(api, call),
-                }
+            let (f, place) = served(home, WEB, |api, call| match (call.program.as_str(), call.args.first().map(String::as_str)) {
+                ("terraform", Some("output")) => Reply::ok(r#"{"vm_id_web":{"value":104},"published":{"value":{"web/site":"192.0.2.10:8080"}}}"#),
+                _ => answer(api, call),
             });
-            let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm, place()).unwrap();
+            let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm, place).unwrap();
             let state = f.home.runner().join("runs").join(format!("cyberctf-{home}"));
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"vm_id_web":{"value":104}},"resources":[{"instances":[{}]}]}"#).unwrap();

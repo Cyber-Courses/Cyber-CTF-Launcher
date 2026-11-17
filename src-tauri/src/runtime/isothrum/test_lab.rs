@@ -87,6 +87,11 @@ impl<S: Default + Send + 'static> Scripted<S> {
     pub(super) fn model(&self) -> MutexGuard<'_, S> {
         locked(&self.model)
     }
+
+    /// The model itself, for what else answers from it (a test's HTTPS server).
+    pub(super) fn shared_model(&self) -> Arc<Mutex<S>> {
+        Arc::clone(&self.model)
+    }
 }
 
 impl<S> Drop for Scripted<S> {
