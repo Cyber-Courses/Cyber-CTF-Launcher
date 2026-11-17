@@ -320,6 +320,7 @@ const NO_OPTIONS: LabRunOptions = {
   cloudServices: [],
   refused: [],
   emulated: false,
+  portsFixed: false,
 };
 
 /** Where the sample's labs run, as the backend reads it from their spec: a container lab on

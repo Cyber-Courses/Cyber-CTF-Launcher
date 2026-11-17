@@ -57,6 +57,7 @@ const runOptions = (paths: Partial<LabRunOptions>): LabRunOptions => ({
   cloudVm: [],
   cloudServices: [],
   emulated: false,
+  portsFixed: false,
   refused: [],
   ...paths,
 });

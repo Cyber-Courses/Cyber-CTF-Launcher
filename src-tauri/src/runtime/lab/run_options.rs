@@ -99,6 +99,9 @@ pub struct RunOptions {
     /// The lab's VMs are built for another CPU than this machine's (`emulated_arches`): here
     /// they run only emulated, so `vms` holds the emulators alone (QEMU).
     pub emulated: bool,
+    /// No host port of the lab's is picked at its start: every port it publishes is `fixed` (or it
+    /// publishes none), so the ports question (its own ports or free ones) has nothing to decide.
+    pub ports_fixed: bool,
 }
 
 /// Every way lab `lab`, declared `runtime`, can start ([`RunOptions`]), as Isoloom generates it
@@ -121,7 +124,8 @@ fn generated(lab: &Lab, runtime: Runtime, host: Arch) -> RunOptions {
     // The lab's own VMs here: on an emulator only, when they are built for another CPU.
     let vm_local: Vec<Provider> = local.iter().copied().filter(|p| !emulated || p.is_emulator()).collect();
     let mut paths = Paths { lab, targets: lab.possible(), refused: Vec::new() };
-    let mut out = RunOptions { emulated, ..RunOptions::default() };
+    let ports_fixed = spec.machines.values().flat_map(|m| m.ports.iter()).filter(|p| p.publish.is_some()).all(|p| p.fixed);
+    let mut out = RunOptions { emulated, ports_fixed, ..RunOptions::default() };
     match runtime {
         Runtime::Docker => {
             out.docker = paths.docker();

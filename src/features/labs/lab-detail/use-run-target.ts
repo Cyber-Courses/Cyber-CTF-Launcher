@@ -76,10 +76,13 @@ export function useRunTarget(
   // What the form step offers: the cloud account's forms when one is picked, else this machine's.
   const formTargets = runOn.kind === "host" ? cloudFormsFor(runOn.id) : vmForms;
   const hypervisorsFor = (form: RunTarget): Provider[] => (form.kind === "local-vms" ? perMachineVms : []);
-  const steps = usePickerSteps({ runOn, setRunOn, setPickedEngine, pickProvider, vmForms, cloudFormsFor, hypervisorsFor, engines });
+  // Every port the lab publishes fixed: no ports step, and none sent or saved.
+  const portsFixed = options?.portsFixed ?? false;
+  const steps = usePickerSteps({ runOn, setRunOn, setPickedEngine, pickProvider, vmForms, cloudFormsFor, hypervisorsFor, engines, portsFixed });
   // Start, with "don't ask again" checked, saves what the path chose so the steps are skipped next time.
   const commitChoice = () => {
-    if (remember) saveLaunchChoice(runOn, { ports, engine, engineCount: engines.length, hypervisorCount: hypervisorsFor(runOn).length });
+    const asked = portsFixed ? null : ports;
+    if (remember) saveLaunchChoice(runOn, { ports: asked, engine, engineCount: engines.length, hypervisorCount: hypervisorsFor(runOn).length });
   };
 
   return {
@@ -123,7 +126,8 @@ export function useRunTarget(
      *  Start asks first; otherwise it runs here at once (carrying any saved engine). */
     hasChoice: isCloud || hosts.length > 0 || perMachine !== null || (engines.length > 1 && getDockerEngine() === null),
     /** The target picked, with the host ports and chosen engine for a container lab here. */
-    chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports, engine: chosenEngine ?? undefined } : runOn),
+    chosen: (): RunTarget =>
+      runOn.kind === "local" && isDocker ? { kind: "local", ports: portsFixed ? undefined : ports, engine: chosenEngine ?? undefined } : runOn,
   };
 }
 
@@ -158,14 +162,14 @@ function useEngineChoice(isDocker: boolean, current: DockerEngine | null, runnin
 }
 
 /** What the path chose, and how many engines and hypervisors it had to choose from. */
-type LaunchChoice = { ports: PortMode; engine: DockerEngine | null; engineCount: number; hypervisorCount: number };
+type LaunchChoice = { ports: PortMode | null; engine: DockerEngine | null; engineCount: number; hypervisorCount: number };
 
 /** Saves the path's choices for next time: the engine (when there was one to choose) and the ports
- *  for the container path; the VM form and its hypervisor (when there was one to choose, as
+ *  (when they were asked) for the container path; the VM form and its hypervisor (when there was one to choose, as
  *  Settings' choice) for the VM path. Nothing else saves them: browsing the steps changes nothing. */
 function saveLaunchChoice(runOn: RunTarget, { ports, engine, engineCount, hypervisorCount }: LaunchChoice) {
   if (runOn.kind === "local") {
-    setPortMode(ports);
+    if (ports) setPortMode(ports);
     if (engineCount > 1) setDockerEngine(engine);
   } else if (isLocalVmForm(runOn)) {
     setLocalVmForm("vms");
@@ -214,6 +218,8 @@ type StepsDeps = {
   cloudFormsFor: (id: string) => RunTarget[];
   hypervisorsFor: (form: RunTarget) => Provider[];
   engines: DockerEngine[];
+  /** Every port the lab publishes is fixed: the ports step has nothing to ask. */
+  portsFixed: boolean;
 };
 
 /**
@@ -227,7 +233,8 @@ function usePickerSteps(d: StepsDeps) {
   const [step, setStep] = useState<PickerStep>("platform");
   const { runOn, vmForms, hypervisorsFor, engines } = d;
   const savedEngine = () => runningOf(getDockerEngine(), engines);
-  const savedPorts = () => getPortMode() !== null;
+  // No ports step: Settings remember them, or every port the lab publishes is fixed.
+  const savedPorts = () => d.portsFixed || getPortMode() !== null;
   const hasEngineStep = engines.length > 1 && !savedEngine();
   const hasFormStep = vmForms.length >= 2 && !savedFormTarget(vmForms);
   const curHyps = hypervisorsFor(runOn);

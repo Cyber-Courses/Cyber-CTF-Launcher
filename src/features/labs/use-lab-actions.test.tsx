@@ -19,6 +19,7 @@ import { must, startInAct } from "@/components/test-support";
 import { labStatus, rejectWith } from "@/features/labs/labs-test-kit";
 import { CALLED_OFF } from "@/features/labs/lab-operations";
 import type { LabPlacement } from "@/lib/tauri";
+import { runOptions } from "@/lib/dev-mock/labs";
 
 const notified = vi.hoisted(() => vi.fn<(title: string, body?: string) => Promise<void>>(() => Promise.resolve()));
 vi.mock("@/lib/notify", () => ({ notify: notified }));
@@ -59,6 +60,8 @@ function flatLaunch(c: Call | undefined) {
     perMachineVm: p.kind === "vms" || (p.kind === "cloud" && p.perMachine),
   };
 }
+/** A container lab's run options here (the dev mock's), over which a test sets what it reads. */
+const runOptionsOf = () => runOptions("DOCKER");
 const rawLaunchArgs = (calls: Call[]) => flatLaunch(calls.find((x) => x.cmd === "lab_launch"));
 const launchArgs = (calls: Call[]) => {
   const flat = rawLaunchArgs(calls);
@@ -425,6 +428,16 @@ describe("useLabActions: launch", () => {
       expect(choiceSent(calls)).toMatchObject({ here: true, host: null });
       expect(getLastPlace("act-again-pick")).toEqual({ kind: "vms", provider: "virtualbox" });
     });
+  });
+
+  it("doesn't ask the ports of a lab whose every published port is fixed: nothing to decide", async () => {
+    const fixedLab: Lab = { ...dockerLab, id: "act-fixed", runtime: { ...must(dockerLab.runtime), repository: "CyberCTF/ctfd", commit: SHA } };
+    const { calls, hook } = setup({ lab_run_options: () => ({ ...runOptionsOf(), portsFixed: true }) });
+    render(<PortModePrompt />);
+    await act(() => hook.result.current.launch(fixedLab, null, undefined));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(choiceSent(calls)).toMatchObject({ here: true, defaultPorts: null });
+    expect(commands(calls)).toContain("lab_launch");
   });
 
   it("asks the rule for a lab with no source known, which then reads the catalogue's", async () => {

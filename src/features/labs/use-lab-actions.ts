@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import type { ActiveOperation, DockerEngine, Park } from "@/lib/tauri";
+import { labRunOptions, type ActiveOperation, type DockerEngine, type Park } from "@/lib/tauri";
 import { getPortMode, type PortMode } from "@/lib/settings";
 import { askPortMode } from "@/features/labs/port-mode-prompt";
 import type { Lab } from "@/features/labs/use-labs";
@@ -28,6 +28,29 @@ import {
  * UI reads each lab's run from `runs[labId]`. The operations themselves are in lab-operations.
  * A launch's "ready" notice names where it runs from its placement (a server, a cloud account).
  */
+/** The player said no to the ports question: no start. */
+const CANCELLED = Symbol("cancelled");
+
+/** The host ports a container lab here starts on: `picked`, else Settings' choice, else asked;
+ *  none (the rule's) when every port the lab publishes is fixed, so there is nothing to ask. */
+async function portsHere(lab: Lab, picked: PortMode | undefined): Promise<PortMode | null | typeof CANCELLED> {
+  const known = picked ?? getPortMode();
+  if (known) return known;
+  if (await portsFixed(lab)) return null;
+  return (await askPortMode(lab.title)) ?? CANCELLED;
+}
+
+/** Whether no host port of `lab`'s is picked at its start (`portsFixed`, from its spec); false
+ *  when that can't be read (no source known, the spec unreadable): then the player is asked. */
+async function portsFixed(lab: Lab): Promise<boolean> {
+  const rt = lab.runtime;
+  if (!rt?.repository || !rt.commit) return false;
+  return labRunOptions(lab.id, rt.runtime, rt.repository, rt.commit).then(
+    (o) => o.portsFixed,
+    () => false,
+  );
+}
+
 export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void) {
   // By lab id: none for a lab not run since the app started.
   const { runs }: { runs: Partial<Record<string, DeployRun>> } = useDeploy();
@@ -68,10 +91,11 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
         return;
       }
       // A container lab on this machine publishes its services here: on random free ports or
-      // on the lab's own, the player's call (asked unless Settings remember it). Cancel = no start.
+      // on the lab's own, the player's call (asked unless Settings remember it, or every port it
+      // publishes is fixed: nothing to decide). Cancel = no start.
       const containersHere = lab.runtime.runtime !== "VM" && host == null && !vm;
-      const ports = containersHere ? (here?.ports ?? getPortMode() ?? (await askPortMode(lab.title))) : null;
-      if (containersHere && !ports) return;
+      const ports = containersHere ? await portsHere(lab, here?.ports) : null;
+      if (ports === CANCELLED) return;
       await operate(lab, "launch", localLaunch(lab, { host, vmProvider: vm?.provider, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine }));
     },
     [operate],

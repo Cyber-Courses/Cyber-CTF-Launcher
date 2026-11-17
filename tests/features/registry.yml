@@ -853,7 +853,7 @@ areas:
           integration: no scenario races two operations on one real lab
 
       - id: lab-run.ports
-        what: Pick the lab's own ports or random ones (ports step, remembered mode), and on a port clash see who holds it and retry on random ports; a fixed port already taken (a container's, or a VM's forward here) is said with its holder before the start.
+        what: Pick the lab's own ports or random ones (ports step, remembered mode; not asked when every port the lab publishes is fixed), and on a port clash see who holds it and retry on random ports; a fixed port already taken (a container's, or a VM's forward here) is said with its holder before the start.
         host: true
         tests:
           unit:
@@ -862,6 +862,9 @@ areas:
             - src-tauri/src/runtime/preflight/tests.rs > a_taken_fixed_port_names_what_holds_it
             - src-tauri/src/runtime/preflight/tests.rs > a_vm_labs_fixed_forward_already_taken_is_said_too
             - src/features/labs/use-lab-actions.test.tsx > asks for the ports, remembers them, and starts on the lab
+            - "src/features/labs/use-lab-actions.test.tsx > doesn't ask the ports of a lab whose every published port is fixed: nothing to decide"
+            - src/features/labs/lab-detail/use-run-target.test.tsx
+            - src-tauri/src/runtime/lab/run_options/tests.rs > the_ports_question_is_left_out_when_every_published_port_is_fixed
             - src/features/failure-states.test.tsx > reads Failed to start, offers Retry and, for a port clash, Retry on random ports with a hint
             - src/features/failure-states.test.tsx > offers no random-ports retry when the clash was a VM here
           web:
