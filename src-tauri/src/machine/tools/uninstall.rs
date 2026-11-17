@@ -191,7 +191,7 @@ mod tests {
         let dirs = t.dirs();
         record_outcome(&dirs, Dependency::Vagrant, Outcome::Installed);
         let _policy = Override::with(&[Key::DisableToolInstalls]);
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let tools = crate::testing::tools::Tools::rules(&[]);
         let mut lines = Vec::new();
         let err = uninstall_dependency(dirs.clone(), Dependency::Vagrant, |l| lines.push(l)).await.unwrap_err();
         assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableToolInstalls".into() });

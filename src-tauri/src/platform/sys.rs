@@ -11,20 +11,14 @@ mod windows;
 
 use std::ffi::OsStr;
 
-#[cfg(all(unix, test))]
-pub use unix::process_exists;
-#[cfg(target_os = "macos")]
-pub use unix::{boot_session, process_start};
 #[cfg(unix)]
-pub use unix::{is_root, login_name, signal_group};
+pub use unix::{is_root, login_name};
 #[cfg(all(windows, test))]
 pub use windows::registry_value_exists;
-#[cfg(all(windows, test))]
-pub use windows::terminate;
 #[cfg(windows)]
 pub use windows::{
-    Created, ElevatedProcess, Hive, Job, create_in_job, decode_code_page, delete_user_registry_value, exit_code, is_elevated, keep_std_handles,
-    launch_elevated, process_created, registry_string, registry_values, send_ctrl_c, set_path, set_user_registry_string, terminate_process,
+    ElevatedProcess, Hive, delete_user_registry_value, is_elevated, keep_std_handles, launch_elevated, registry_string, registry_values, send_ctrl_c, set_path,
+    set_user_registry_string,
 };
 
 /// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.

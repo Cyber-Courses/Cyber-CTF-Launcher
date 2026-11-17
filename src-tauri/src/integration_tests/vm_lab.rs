@@ -242,7 +242,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_listing_that_fails_or_a_server_is_an_error_not_nothing_left() {
-        use crate::platform::exec::fake::{Tools, fail, ok};
+        use crate::testing::tools::{Tools, fail, ok};
         let _tools = Tools::strict_rules(&[("VBoxManage list vms", ok("\"web-k3y9ab - srv\" {1}\n\"other-k3y9ab - a\" {2}\n")), ("virsh", fail("not found"))]);
         let dir = Path::new("/data/labs/web");
         assert_eq!(left_on(Provider::Virtualbox, "web-k3y9ab", dir).await.unwrap(), ["\"web-k3y9ab - srv\" {1}"]);

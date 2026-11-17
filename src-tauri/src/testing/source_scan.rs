@@ -41,7 +41,7 @@ fn walk(dir: &Path, out: &mut Vec<Source>) {
 }
 
 /// Whether the file at `path` is test code whole: a module declared for tests only (`#[cfg(test)]`
-/// over its `mod` line in its parent, as `runtime::fake_clis` is), or one inside such a module
+/// over its `mod` line in its parent, as `runtime::isothrum::test_lab` is), or one inside such a module
 /// (everything under `testing/` and `integration_tests/`), whatever its name.
 fn declared_for_tests(path: &Path) -> bool {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -114,8 +114,8 @@ mod tests {
 
     #[test]
     fn a_module_declared_for_tests_is_test_code_whatever_its_name() {
-        let fake_clis = crate_sources().into_iter().find(|s| s.path.ends_with("runtime/fake_clis.rs")).expect("runtime/fake_clis.rs");
-        assert!(fake_clis.code.is_empty() && fake_clis.tests.contains("struct FakeBin"));
+        let test_lab = crate_sources().into_iter().find(|s| s.path.ends_with("runtime/isothrum/test_lab.rs")).expect("runtime/isothrum/test_lab.rs");
+        assert!(test_lab.code.is_empty() && test_lab.tests.contains("struct Home"));
         let lifecycle = crate_sources().into_iter().find(|s| s.path.ends_with("runtime/lifecycle.rs")).expect("runtime/lifecycle.rs");
         assert!(lifecycle.code.contains("fn stop_lab"));
     }
@@ -134,7 +134,7 @@ mod tests {
     fn the_crate_is_read_whole() {
         let sources = crate_sources();
         assert!(sources.len() > 100, "{}", sources.len());
-        assert!(sources.iter().any(|s| s.path.ends_with("exec/shim.rs") && s.code.contains("fn check_args") && s.tests.contains("mod tests")));
+        assert!(sources.iter().any(|s| s.path.ends_with("exec/docker.rs") && s.code.contains("fn valid_image") && s.tests.contains("mod tests")));
     }
 }
 

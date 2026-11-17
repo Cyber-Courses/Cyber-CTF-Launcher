@@ -1,40 +1,7 @@
-//! The Docker CLI's quirks: which engine it talks to, and a refused socket in the player's words.
+//! The Docker CLI's image references, and a refused socket in the player's words.
 
 use crate::error::{Code, Error};
 use isothrum_machine::HostOs;
-
-/// Environment variables that would redirect the Docker CLI to a different engine than the one
-/// the user configured as current (`docker context use`, which Docker Desktop's UI reflects).
-/// A process that launches the app (an IDE, a terminal integration, another tool) can carry a
-/// stale `DOCKER_HOST` or `DOCKER_CONTEXT` — e.g. pointing at OrbStack's `/var/run/docker.sock`
-/// while the user works in Docker Desktop. Every lab would then deploy to, and be looked for in,
-/// an engine the user never sees: status reads "not running" and a launch looks like it reset.
-/// Stripping these makes the launcher follow the configured current context, so it always agrees
-/// with `docker context show` and the Desktop UI.
-pub(super) const ENGINE_OVERRIDES: [&str; 2] = ["DOCKER_HOST", "DOCKER_CONTEXT"];
-
-/// Whether `program` talks to the Docker engine (`docker`, including `docker compose`, a CLI
-/// plugin of the same binary), and so must not inherit an engine override.
-pub(super) fn uses_engine(program: &str) -> bool {
-    program == "docker"
-}
-
-/// Whether the inherited engine overrides go: only when the user picked a context of their own
-/// (`docker context use`, recorded as `currentContext` in the CLI config). Without one, an
-/// inherited `DOCKER_HOST` is how the user reaches their engine (rootless Docker on Linux sets
-/// it to `$XDG_RUNTIME_DIR/docker.sock`), and stripping it pointed the CLI at the root daemon.
-pub(super) fn strips_engine_overrides(cli_config: Option<&str>) -> bool {
-    cli_config
-        .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok())
-        .and_then(|v| v.get("currentContext").and_then(|c| c.as_str()).map(|c| !c.is_empty() && c != "default"))
-        .unwrap_or(false)
-}
-
-/// The Docker CLI's config file (`$DOCKER_CONFIG/config.json`, else `~/.docker/config.json`).
-pub(super) fn cli_config() -> Option<String> {
-    let dir = std::env::var_os("DOCKER_CONFIG").map(std::path::PathBuf::from).or_else(|| crate::platform::home_dir().map(|h| h.join(".docker")))?;
-    std::fs::read_to_string(dir.join("config.json")).ok()
-}
 
 /// An image reference safe to pass to the Docker CLI, as a pattern: a normal
 /// `registry/name:tag@digest` of plain ASCII name characters, 1 to 200 of them, not starting with
@@ -153,27 +120,6 @@ mod tests {
         assert!(!docker_denied(&failed("error during connect: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.")));
         assert!(!docker_denied(&failed("Access is denied.")), "an unrelated refusal");
         assert!(!docker_denied(&Error::ToolMissing { tool: "docker" }));
-    }
-
-    #[test]
-    fn only_docker_drops_inherited_engine_overrides() {
-        // Regression: an inherited DOCKER_HOST pointed the app at OrbStack while the user worked
-        // in Docker Desktop, so labs were deployed to and looked for in the wrong engine.
-        assert!(uses_engine("docker"));
-        assert!(!uses_engine("vagrant"));
-        assert!(!uses_engine("terraform"));
-        assert_eq!(ENGINE_OVERRIDES, ["DOCKER_HOST", "DOCKER_CONTEXT"]);
-    }
-
-    #[test]
-    fn engine_overrides_go_only_when_the_user_picked_a_context() {
-        use super::strips_engine_overrides as strips;
-        assert!(strips(Some(r#"{"currentContext":"desktop-linux"}"#)));
-        // No context of their own: an inherited DOCKER_HOST (rootless Docker) is how they reach it.
-        assert!(!strips(Some(r#"{"currentContext":"default"}"#)));
-        assert!(!strips(Some(r#"{"auths":{}}"#)));
-        assert!(!strips(None));
-        assert!(!strips(Some("not json")));
     }
 
     #[test]

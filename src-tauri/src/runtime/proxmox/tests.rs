@@ -261,7 +261,7 @@ fn a_missing_sdn_directive_is_reported_with_its_fix() {
 
 #[tokio::test]
 async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
-    use crate::platform::exec::fake::{Tools, fail, ok};
+    use crate::testing::tools::{Tools, fail, ok};
     let app = crate::testing::test_app::TestApp::new();
     let key = app.data().join("ssh").join("id_ed25519");
     std::fs::create_dir_all(key.parent().unwrap()).unwrap();
@@ -288,7 +288,7 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
 /// beside the key of the app it is given, and nowhere else.
 #[tokio::test]
 async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
-    use crate::platform::exec::fake::{Tools, fail};
+    use crate::testing::tools::{Tools, fail};
     let (first, second) = (crate::testing::test_app::TestApp::new(), crate::testing::test_app::TestApp::new());
     let _tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     for app in [&first, &second] {

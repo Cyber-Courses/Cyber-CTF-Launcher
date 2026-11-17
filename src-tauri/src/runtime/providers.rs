@@ -237,8 +237,8 @@ pub(crate) mod testing {
         }
         let (runner, host) = set.unwrap_or_else(|| {
             // A test scripting the launcher's tools answers isothrum-machine's calls too.
-            let nothing: Arc<dyn ProcessRunner> = if crate::platform::exec::fake::scripted() {
-                Arc::new(crate::platform::exec::fake::AsRunner)
+            let nothing: Arc<dyn ProcessRunner> = if crate::testing::tools::scripted() {
+                Arc::new(crate::testing::tools::AsRunner)
             } else {
                 Arc::new(FakeProcesses::model(|_| Reply::missing()))
             };

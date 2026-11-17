@@ -7,8 +7,8 @@ use isothrum_runner::{EventKind, Format, Status, StepState, WarningCode};
 use super::test_lab::prelude::*;
 use super::*;
 use crate::error::Error;
-use crate::platform::exec::fake::Tools;
 use crate::runtime::{Park, Place, Runtime, lab};
+use crate::testing::tools::Tools;
 use isothrum_runner::HostPort;
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: { CTF_LAUNCH_TOKEN: { default: dev-launch-token } }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";

@@ -11,7 +11,7 @@ use crate::runtime::providers::testing::{Machine, host};
 #[tokio::test]
 async fn the_check_says_where_the_ovf_tool_was_found() {
     use crate::machine::tools::ovftool::{Source, managed_dir};
-    use crate::platform::exec::fake::{Tools, ok};
+    use crate::testing::tools::{Tools, ok};
     let t = crate::testing::test_app::TestApp::new();
     let _tools = Tools::new(|program, _| if program == "ovftool" { ok("VMware ovftool 5.1.0 (build-24936374)\n") } else { None });
     let report = super::system_check(t.dirs()).await;

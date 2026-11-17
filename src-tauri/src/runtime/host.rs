@@ -161,9 +161,9 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::exec::fake::Tools;
     use crate::runtime::test_support::record_run;
     use crate::testing::test_app::TestApp;
+    use crate::testing::tools::Tools;
 
     /// A lab with both forms: a container per machine, and a VM recipe for it.
     const SPEC: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, vm: { box: debian/bookworm64 }, networks: { lab: 10 } }\n";

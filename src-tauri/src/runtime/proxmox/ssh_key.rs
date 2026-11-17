@@ -208,7 +208,7 @@ pub async fn bootstrap(host: &str, key: &SshKeySignIn, known_hosts: &Path, publi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::exec::fake::{Tools, fail, ok};
+    use crate::testing::tools::{Tools, fail, ok};
 
     const PUBLIC: &str = "ssh-ed25519 AAAAC3launcher cyberctf-launcher";
 

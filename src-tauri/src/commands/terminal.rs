@@ -73,7 +73,7 @@ mod tests {
     async fn a_shell_for_a_lab_that_is_not_installed_starts_nothing() {
         let t = TestApp::new();
         let window = window::builder(t.handle(), "shell-lab-gone", "").unwrap().build().unwrap();
-        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+        let tools = crate::testing::tools::Tools::strict_rules(&[]);
         let events = Sink::default();
         let err = terminal_open(window, "gone".into(), Runtime::Docker, 80, 24, events.channel()).await.unwrap_err();
         assert_eq!(err.to_string(), "lab `gone` is not installed");

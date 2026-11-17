@@ -62,7 +62,7 @@ async fn placement_choices_need_a_proxmox_server_and_its_secret() {
 #[cfg(debug_assertions)]
 #[tokio::test]
 async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
-    use crate::platform::exec::fake::{Tools, fail, ok};
+    use crate::testing::tools::{Tools, fail, ok};
     let t = crate::testing::test_app::TestApp::new();
     crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
     // The launcher's key, already made; the player's own key (never read, only its path used).

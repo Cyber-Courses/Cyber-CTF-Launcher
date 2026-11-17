@@ -1,8 +1,8 @@
 use super::*;
-use crate::platform::exec::fake::{Reply, Tools, fail, ok};
 use crate::runtime::providers::Provider;
 use crate::runtime::server::checks::CheckState;
 use crate::runtime::server::profile::tests::profile;
+use crate::testing::tools::{Reply, Tools, fail, ok};
 
 /// `program` refusing, saying `said`, its refusal read by `read` (the CLI's reader in
 /// isothrum-machine).

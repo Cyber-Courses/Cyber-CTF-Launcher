@@ -10,8 +10,8 @@ fn a_wsl_check_is_logged_at_info_only_when_its_outcome_changes() {
 use std::sync::atomic::{AtomicBool, AtomicU32};
 
 use super::*;
-use crate::platform::exec::fake::{Tools, fail, ok};
 use crate::testing::test_app::TestApp;
+use crate::testing::tools::{Tools, fail, ok};
 use WslState::*;
 
 #[test]
@@ -303,4 +303,13 @@ fn run_once_is_written_and_removed() {
     assert!(windows::reopen_command().is_some());
     // Nothing to write: nothing written.
     assert!(!Reopen::register(&windows::UserRunOnce(None)));
+}
+
+#[test]
+fn the_win32_error_is_read_whatever_the_language() {
+    assert_eq!(super::win32_error("A system shutdown has already been scheduled.(1190)\r\n"), Some(super::ERROR_SHUTDOWN_IS_SCHEDULED));
+    assert_eq!(super::win32_error("Un arrêt du système a déjà été planifié.(1190)"), Some(1190));
+    assert_eq!(super::win32_error("Access is denied.(5)"), Some(5));
+    assert_eq!(super::win32_error("listening on port 1190"), None, "a number that isn't the error's");
+    assert_eq!(super::win32_error(""), None);
 }

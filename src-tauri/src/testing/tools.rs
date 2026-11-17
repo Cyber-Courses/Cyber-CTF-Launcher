@@ -1,6 +1,7 @@
-//! Unit tests' stand-in for the tools: while a test holds a [`Tools`] guard, every `run*` and
-//! `stream*` on its thread answers from the test's script instead of starting a process, so code
-//! that drives docker, vagrant or terraform runs without them (and never touches real ones). The
+//! Unit tests' stand-in for the tools: while a test holds a [`Tools`] guard, the test's machine
+//! runs them through [`AsRunner`], a runner answering every call on its thread from the test's
+//! script instead of starting a process, so code that drives docker, vagrant or terraform runs
+//! without them (and never touches real ones). The
 //! install and removal steps (`platform::steps`) answer from it too: an install test never runs
 //! a package manager.
 //! Async tests run on one thread (`#[tokio::test]`), so the script is per thread: parallel tests
@@ -17,13 +18,6 @@ use crate::error::{Error, Result};
 pub enum Reply {
     Out(String),
     Fail(String),
-    Hang,
-}
-
-/// What the exec layer should do for a scripted call: answer now, or pend forever (a wedged
-/// tool), so a timeout wrapper around it is given something to give up on.
-pub(super) enum FakeOutcome<T> {
-    Done(Result<T>),
     Hang,
 }
 
@@ -324,7 +318,7 @@ impl Drop for Tools {
 }
 
 /// The tool set of the script on this thread, when a test scripts the tools.
-pub(super) fn set() -> Option<u64> {
+pub fn set() -> Option<u64> {
     SET.with(std::cell::Cell::get)
 }
 
@@ -333,17 +327,7 @@ pub fn scripted() -> bool {
     STATE.with(|s| s.borrow().is_some())
 }
 
-/// The scripted answer to `program args`, when a test scripts the tools on this thread.
-pub(super) fn answer(program: &'static str, args: &[&str], env: &[(String, String)]) -> Option<FakeOutcome<String>> {
-    Some(match reply(program, args, env)? {
-        Scripted::Reply(Reply::Out(out)) => FakeOutcome::Done(Ok(out)),
-        Scripted::Reply(Reply::Fail(stderr)) => FakeOutcome::Done(Err(super::failed(program, args, stderr))),
-        Scripted::Reply(Reply::Hang) => FakeOutcome::Hang,
-        Scripted::Missing => FakeOutcome::Done(Err(Error::ToolMissing { tool: program })),
-    })
-}
-
-/// [`answer`] for an install or removal step, its lines to `on_line` (`platform::steps`), whose program is any
+/// A scripted answer for an install or removal step, its lines to `on_line` (`platform::steps`), whose program is any
 /// path: a missing tool and a failure say what `run_step` says for them.
 pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(String)) -> Option<Result<()>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -353,6 +337,12 @@ pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(Stri
         |_| Error::Invalid(format!("`{program}` exited with exit status: 1")),
         || Error::Invalid(format!("{program} is not available on this machine.")),
     ))
+}
+
+/// The runner `platform::exec` starts a test's tools through: the test's machine's
+/// (`runtime::providers::testing`), scripted, never the real tools.
+pub fn runner() -> std::sync::Arc<dyn isothrum_runner::ProcessRunner> {
+    crate::runtime::providers::machine().runner
 }
 
 /// This thread's scripted tools ([`Tools`]) as an isothrum runner, for isothrum-machine's calls
@@ -418,20 +408,6 @@ fn reply(program: &str, args: &[&str], env: &[(String, String)]) -> Option<Scrip
     st.calls.push(std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" "));
     st.envs.push(env.to_vec());
     Some((st.script)(program, args).map_or(Scripted::Missing, Scripted::Reply))
-}
-
-/// Whether process `pid` is gone (or a zombie) within a few seconds.
-pub async fn gone(pid: u32) -> bool {
-    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
-    for _ in 0..60 {
-        let mut sys = System::new();
-        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true, ProcessRefreshKind::nothing());
-        if sys.process(Pid::from_u32(pid)).is_none_or(|p| matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead)) {
-            return true;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-    false
 }
 
 #[cfg(test)]

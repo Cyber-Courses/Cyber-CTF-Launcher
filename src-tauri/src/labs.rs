@@ -675,7 +675,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_new_lab_version_is_installed_unless_the_old_one_still_runs() {
-        use crate::platform::exec::fake::Tools;
+        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
         let tools = Tools::rules(&[]);
@@ -722,7 +722,7 @@ mod tests {
     async fn a_new_lab_version_is_refused_while_a_parked_copy_couldnt_be_taken_down() {
         let t = crate::testing::test_app::TestApp::new();
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
-        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let _tools = crate::testing::tools::Tools::rules(&[]);
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
         crate::runtime::test_support::record_parked(t.data(), "invoice", "docker", "shutdown");
         let compose = runtime::lab::compose_file(&dir);
@@ -740,7 +740,7 @@ mod tests {
     async fn a_launch_waits_for_the_lab_lock_before_installing_anything() {
         // Regression: the install (download, staging, swap) ran before the lock was taken, so
         // two installs of one lab shared its staging folder and a stop could run mid-swap.
-        use crate::platform::exec::fake::Tools;
+        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (runtime::lab::COMMIT_MARKER, SHA)]);
         let tools = Tools::rules(&[]);
@@ -820,8 +820,8 @@ mod tests {
         // Regression: the import asked this machine's Docker, the lab folder's Vagrant record and
         // `deployments/`, where the runner keeps nothing: a copy the runner ran as VMs here, in a
         // local VM or on a server was swapped out from under it.
-        use crate::platform::exec::fake::Tools;
         use crate::runtime::test_support::record_run;
+        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         // Removed when the test ends, a failed assertion included (it was left after one).
         let src = crate::testing::temp_dir("import-src");
@@ -904,7 +904,7 @@ mod tests {
 
     #[tokio::test]
     async fn lab_ids_at_the_validation_boundaries_install_or_are_refused() {
-        use crate::platform::exec::fake::Tools;
+        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let _tools = Tools::rules(&[]);
         let log = |_: String| {};

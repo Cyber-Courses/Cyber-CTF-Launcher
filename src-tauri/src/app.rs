@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 
-use crate::platform::{exec, private_fs};
+use crate::platform::private_fs;
 use crate::{AppHandle, AppRuntime, account, commands, platform, runtime, terminal};
 
 type App = tauri::App<AppRuntime>;
@@ -34,15 +34,13 @@ pub fn open_folder(path: &std::path::Path) -> crate::error::Result<()> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| crate::error::Error::Invalid(format!("couldn't open {}: {e}", path.display())))
 }
 
-/// Records this process's tools from now on in the ledgers in the app's data folder, which a later
-/// start reads to end what an app or deploy worker killed outright left running; the folders,
-/// when the OS gave the app's: the exec layer's, then the runner's.
-pub(crate) fn record_tools(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
-    let dirs = platform::AppDirs::from(app);
-    let (exec_dir, runner_dir) = (dirs.data_file(exec::TOOLS_DIR)?, dirs.data_file(platform::processes::LEDGER_DIR)?);
-    exec::record_tools_in(exec_dir.clone());
-    platform::processes::keep_ledger_in(runner_dir.clone());
-    Some((exec_dir, runner_dir))
+/// Records this process's tools from now on in the runner's ledger in the app's data folder,
+/// which a later start reads to end what an app or deploy worker killed outright left running; the
+/// folder, when the OS gave the app's.
+pub(crate) fn record_tools(app: &AppHandle) -> Option<PathBuf> {
+    let dir = platform::AppDirs::from(app).data_file(platform::processes::LEDGER_DIR)?;
+    platform::processes::keep_ledger_in(dir.clone());
+    Some(dir)
 }
 
 /// How often expired cloud labs are looked for and torn down.
@@ -295,10 +293,9 @@ fn setup(app: &mut App) {
     logging::log_startup(app.handle(), "app");
     // Before any tool starts: this app's tools are recorded, and those an app or deploy worker
     // killed outright left running are ended (Vagrant's lock and Terraform's state free again).
-    if let Some((exec_dir, runner_dir)) = record_tools(app.handle()) {
+    if let Some(dir) = record_tools(app.handle()) {
         tauri::async_runtime::spawn(async move {
-            exec::end_orphaned_tools(&exec_dir).await;
-            platform::processes::end_left_behind(&runner_dir).await;
+            platform::processes::end_left_behind(&dir).await;
         });
     }
     // Once the log is up, so what is wrong with the policy is in it.
@@ -316,7 +313,7 @@ fn setup(app: &mut App) {
     if let Some(w) = app.get_webview_window("main")
         && let Ok(hwnd) = w.hwnd()
     {
-        exec::set_owner_window(hwnd.0 as isize);
+        platform::exec::set_owner_window(hwnd.0 as isize);
     }
     // The app's data (deploy jobs, Terraform state, keys) is this user's alone.
     if let Ok(dir) = app.path().app_data_dir() {
@@ -453,7 +450,6 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
         api.prevent_exit();
     }
     if let RunEvent::Exit = event {
-        exec::kill_live_tools();
         platform::processes::end_all_now();
         app.state::<terminal::Terminals>().close_all();
         crate::screen::close_all();

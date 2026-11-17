@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::platform::exec::fake::Tools;
 use crate::runtime::paths::runner_home_in;
 use crate::runtime::test_support::record_run;
 use crate::testing::runner::is_recorded;
 use crate::testing::test_app::TestApp;
+use crate::testing::tools::Tools;
 
 const SPEC: &str =
     "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";

@@ -179,8 +179,19 @@ trait Reopen {
 /// `shutdown.exe` refusing because one is already scheduled (`ERROR_SHUTDOWN_IS_SCHEDULED`: its
 /// message ends with the code in every language).
 fn already_scheduled(e: &Error) -> bool {
-    use crate::platform::tool_output::win32;
-    matches!(e, Error::CommandFailed { stderr, .. } if win32::error_code(stderr) == Some(win32::ERROR_SHUTDOWN_IS_SCHEDULED))
+    matches!(e, Error::CommandFailed { stderr, .. } if win32_error(stderr) == Some(ERROR_SHUTDOWN_IS_SCHEDULED))
+}
+
+/// `shutdown.exe`'s refusal because a shutdown is already scheduled.
+const ERROR_SHUTDOWN_IS_SCHEDULED: u32 = 1190;
+
+/// The Win32 error `text` ends with (its last `(<number>)`), if it ends with one: Windows' own
+/// tools end their message with it in every display language (`A system shutdown has already
+/// been scheduled.(1190)`), so the number, not the words, says which error it was.
+fn win32_error(text: &str) -> Option<u32> {
+    let text = text.trim_end().trim_end_matches('.');
+    let (_, number) = text.strip_suffix(')')?.rsplit_once('(')?;
+    number.trim().parse().ok()
 }
 
 /// Asks Windows to restart in a few seconds, once per run of the app: a second ask while it
@@ -229,7 +240,7 @@ pub async fn machine_restart(dirs: AppDirs, reason: String, feature: WindowsFeat
     {
         // A unit test must never restart the machine it runs on: only scripted tools here.
         #[cfg(test)]
-        if !crate::platform::exec::fake::scripted() {
+        if !crate::testing::tools::scripted() {
             return Err(Error::Invalid("a test restarted without scripting shutdown".into()));
         }
         let machines = crate::platform::exec::tools_in_use().are_the_machines();

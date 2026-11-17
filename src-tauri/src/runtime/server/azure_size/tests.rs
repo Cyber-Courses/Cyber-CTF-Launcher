@@ -1,11 +1,11 @@
 use serde_json::json;
 
 use super::*;
-use crate::platform::exec::fake::{Tools, fail, ok};
 use crate::runtime::{
     providers::Provider,
     server::{checks::CheckState, profile::tests::profile},
 };
+use crate::testing::tools::{Tools, fail, ok};
 
 const SIZE: &str = "Standard_D2als_v6";
 

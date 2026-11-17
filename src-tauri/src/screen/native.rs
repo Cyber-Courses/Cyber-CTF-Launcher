@@ -111,7 +111,7 @@ const FAILS_WITHIN: Duration = Duration::from_secs(5);
 /// background).
 pub(crate) async fn run(program: &Path, args: &[String]) -> Result<()> {
     #[cfg(test)]
-    if let Some(scripted) = crate::platform::exec::fake::answer_step(&program.to_string_lossy(), args, &mut |_| {}) {
+    if let Some(scripted) = crate::testing::tools::answer_step(&program.to_string_lossy(), args, &mut |_| {}) {
         return scripted;
     }
     run_within(program, args, FAILS_WITHIN).await
@@ -228,15 +228,15 @@ mod tests {
 
     #[tokio::test]
     async fn a_program_that_fails_at_once_says_why_and_one_that_stays_open_is_left_running() {
-        let tools = crate::platform::exec::fake::Tools::strict_rules(&[(
+        let tools = crate::testing::tools::Tools::strict_rules(&[(
             "startvm",
-            crate::platform::exec::fake::fail("VBoxManage: error: The machine is already locked for a session"),
+            crate::testing::tools::fail("VBoxManage: error: The machine is already locked for a session"),
         )]);
         let err = run(Path::new("/bin/VBoxManage"), &["startvm".into(), "web".into(), "--type".into(), "separate".into()]).await.unwrap_err();
         assert!(err.to_string().contains("VBoxManage"), "{err}");
         assert_eq!(tools.calls(), ["/bin/VBoxManage startvm web --type separate"]);
         drop(tools);
-        let _ok = crate::platform::exec::fake::Tools::strict_rules(&[("virt-viewer lab_web", crate::platform::exec::fake::ok(""))]);
+        let _ok = crate::testing::tools::Tools::strict_rules(&[("virt-viewer lab_web", crate::testing::tools::ok(""))]);
         run(Path::new("/bin/virt-viewer"), &["lab_web".into()]).await.unwrap();
     }
     /// Regression: a viewer left running had its error output's pipe closed under it, so the

@@ -274,11 +274,16 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_terminal_that_fails_to_open_says_why() {
-        let denied =
-            run_to_end("sh", &["-c", "echo 'execution error: Not authorized to send Apple events to Terminal. (-1743)' >&2; exit 1"]).await.unwrap_err();
-        let said = denied.to_string();
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        let refused = FakeProcesses::script()
+            .expect("osascript -e denied", Reply::fail(1, "execution error: Not authorized to send Apple events to Terminal. (-1743)"))
+            .expect("osascript -e opened", Reply::ok(""))
+            .build();
+        let root = tempfile::tempdir().unwrap();
+        let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::new(refused), crate::runtime::providers::testing::host(root.path()));
+        let said = run_to_end("osascript", &["-e", "denied"]).await.unwrap_err().to_string();
         assert!(said.contains("Not authorized to send Apple events to Terminal") && said.contains("Privacy & Security > Automation"), "{said}");
-        assert!(run_to_end("sh", &["-c", "exit 0"]).await.is_ok());
+        assert!(run_to_end("osascript", &["-e", "opened"]).await.is_ok());
     }
 
     #[test]

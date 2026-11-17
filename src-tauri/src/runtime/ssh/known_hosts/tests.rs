@@ -1,5 +1,5 @@
 use super::*;
-use crate::platform::exec::fake::{Tools, fail, ok};
+use crate::testing::tools::{Tools, fail, ok};
 
 /// Two public host keys (made for these tests), with the fingerprints `ssh-keygen -lf` gives them.
 const KEY_1: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIMV/X9GBl8lRmDMg/hSFR41QZH/fgA5PLNatzgxigSSL";
