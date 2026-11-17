@@ -1,8 +1,10 @@
 //! The values a launch hands the lab: of what CyberBackend's `startLab` / `claimLaunch` answer
 //! carries (`env`), only the evidence claim's two variables and the player's per-objective flags.
-//! The Isothrum runner passes them on as the lab's inputs: it delivers a value only to a slot the
-//! lab's manifest declares, and Isoloom turns a sensitive input into a file in the machine (a
-//! Compose secret, the VM's guest delivery), never into its environment.
+//! The Isothrum runner hands every one of them to the lab's tool, in its environment (Terraform's
+//! as `TF_VAR_` too), checking no names: a value reaches the lab only where its generated files
+//! read it, and Isoloom generates them reading the inputs the lab's spec declares, nothing else.
+//! Isoloom turns a sensitive input into a file in the machine (a Compose secret, the VM's guest
+//! delivery), never into its environment.
 
 use serde::{Deserialize, Serialize};
 
