@@ -58,36 +58,44 @@ async fn the_cli_is_pointed_at_the_context_of_the_engine_asked_for() {
     assert_eq!(docker_use_engine("podman".into()).await.unwrap_err().to_string(), "no Docker context for podman");
 }
 
-/// Docker with colima installed: `colima start` brings its daemon up, which then answers `info` as
-/// `daemon` does, and its context shows up.
-fn colima(daemon: Reply) -> (Faked, Switch) {
+/// An engine a setup starts on this computer: its id, the program its start runs, and the Docker
+/// context it shows once up. Colima's CLI on macOS and Linux; on Windows, where colima doesn't
+/// run, Docker Desktop's program (opened by PowerShell).
+const ENGINE: (&str, &str, &str) = if cfg!(windows) { ("docker-desktop", "powershell", "desktop-linux") } else { ("colima", "colima", "colima") };
+
+/// Docker with [`ENGINE`] installed: its start brings its daemon up, which then answers `info`
+/// as `daemon` does, and its context shows up.
+fn startable(daemon: Reply) -> (Faked, Switch) {
+    let (_, program, context) = ENGINE;
     let up = Switch::default();
     let running = up.clone();
     let tools = fake(FakeProcesses::model(move |call| {
         let up = running.is_on();
         match (call.program.as_str(), call.args.first().map(String::as_str)) {
-            ("colima", Some("start")) => {
+            (p, _) if p == program => {
                 running.turn_on();
                 Reply::ok("")
             }
             (_, Some("info")) if !up => Reply::fail(1, DOWN),
             (_, Some("info")) => daemon.clone(),
-            (_, Some("context")) if call.args.get(1).map(String::as_str) == Some("ls") => Reply::ok(if up { "default *\ncolima\n" } else { "default *\n" }),
+            (_, Some("context")) if call.args.get(1).map(String::as_str) == Some("ls") => {
+                Reply::ok(&if up { format!("default *\n{context}\n") } else { "default *\n".to_owned() })
+            }
             _ => Reply::ok(""),
         }
     }));
     (tools, up)
 }
 
-/// Whether `tools` ran `colima start`.
+/// Whether `tools` ran [`ENGINE`]'s start.
 fn started(tools: &FakeProcesses) -> bool {
-    tools.calls().iter().any(|c| c.program == "colima" && c.args.first().map(String::as_str) == Some("start"))
+    tools.calls().iter().any(|c| c.program == ENGINE.1)
 }
 
 #[tokio::test]
 async fn an_engine_is_started_docker_pointed_at_it_and_its_daemon_waited_for() {
-    let (tools, up) = colima(Reply::ok("Ubuntu 24.04 LTS"));
-    docker_start_engine("colima".into()).await.unwrap();
+    let (tools, up) = startable(Reply::ok("Ubuntu 24.04 LTS"));
+    docker_start_engine(ENGINE.0.into()).await.unwrap();
     assert!(up.is_on() && started(&tools));
 }
 
@@ -98,12 +106,12 @@ async fn a_daemon_this_account_cannot_use_is_reported_without_waiting() {
         Some("info") => Reply::fail(1, DENIED),
         _ => Reply::ok(""),
     }));
-    let err = docker_start_engine("colima".into()).await.unwrap_err();
+    let err = docker_start_engine(ENGINE.0.into()).await.unwrap_err();
     assert!(matches!(err.code(), crate::error::Code::DockerDenied { .. } | crate::error::Code::DockerDeniedWindows { .. }), "{err}");
     assert!(!started(&tools));
     // Up once started, but denied: said at once, not after 3 minutes.
-    let (tools, up) = colima(Reply::fail(1, DENIED));
-    let err = docker_start_engine("colima".into()).await.unwrap_err();
+    let (tools, up) = startable(Reply::fail(1, DENIED));
+    let err = docker_start_engine(ENGINE.0.into()).await.unwrap_err();
     assert!(up.is_on() && started(&tools));
     assert!(matches!(err.code(), crate::error::Code::DockerDenied { .. } | crate::error::Code::DockerDeniedWindows { .. }), "{err}");
 }
