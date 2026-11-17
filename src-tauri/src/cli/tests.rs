@@ -1,14 +1,14 @@
-//! The command line driven in-process, on the app's own test app and scripted tools
-//! (`testing::tools`): every command's JSON shape and exit code, the confirmations, and the
+//! The command line driven in-process, on the app's own test app and scripted tools (Isothrum's
+//! `FakeProcesses` on the test's machine): every command's JSON shape and exit code, the confirmations, and the
 //! guided setup run for real through its steps (installs answered by the fakes, none run).
 
 use serde_json::{Value, json};
 
 use super::Exit;
+use isothrum_runner::fake::{FakeProcesses, Reply};
+
+use crate::runtime::providers::testing::{fake, no_tools};
 use crate::testing::test_app::TestApp;
-use crate::testing::tools::Tools;
-#[cfg(target_os = "linux")]
-use crate::testing::tools::{Reply, fail, ok};
 
 /// A container lab's spec.
 const SPEC: &str = "version: 1\nname: web\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
@@ -95,7 +95,7 @@ async fn a_wrong_command_line_is_a_usage_error_said_in_json_too() {
 #[tokio::test]
 async fn the_installed_labs_are_listed_with_how_each_runs() {
     let t = TestApp::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = no_tools();
     let ran = cyberctf(&t, &["labs", "list", "--json"]).await;
     assert_eq!((ran.exit, &ran.last()["data"], &ran.last()["command"]), (Exit::Ok, &json!([]), &json!("labs.list")));
     t.lab("web", &[("isoloom.yml", SPEC)]);
@@ -112,7 +112,7 @@ async fn the_installed_labs_are_listed_with_how_each_runs() {
 async fn a_labs_details_mask_its_passwords_unless_asked() {
     use crate::runtime::attack_box::{self, Cpu, Kind};
     let t = TestApp::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = no_tools();
     let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
     attack_box::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
     let password = crate::commands::labs::sign_in_in(&t.dirs(), "web").unwrap().unwrap().password;
@@ -130,7 +130,7 @@ async fn a_labs_details_mask_its_passwords_unless_asked() {
 #[tokio::test]
 async fn an_operation_on_a_lab_that_isnt_installed_is_not_ready_and_a_bad_id_is_a_usage_error() {
     let t = TestApp::new();
-    let tools = Tools::rules(&[]);
+    let tools = no_tools();
     let not_installed: [&[&str]; 3] = [
         &["labs", "stop", "gone", "--yes", "--json"],
         &["labs", "resume", "gone", "--runtime", "vm", "--json"],
@@ -147,13 +147,13 @@ async fn an_operation_on_a_lab_that_isnt_installed_is_not_ready_and_a_bad_id_is_
     t.lab("web", &[("isoloom.yml", SPEC)]);
     let ran = cyberctf(&t, &["attack-box", "start", "web", "--image", "x;y", "--json"]).await;
     assert_eq!((ran.exit, &ran.last()["error"]["message"]), (Exit::Usage, &json!("invalid attack-box image `x;y`")));
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
 }
 
 #[tokio::test]
 async fn a_destructive_command_needs_yes_off_a_terminal() {
     let t = TestApp::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = no_tools();
     let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
     for args in [&["labs", "remove", "web", "--json"][..], &["labs", "stop", "web", "--json"], &["storage", "clean", "--json"]] {
         let ran = cyberctf(&t, args).await;
@@ -208,17 +208,16 @@ async fn a_saved_server_is_removed_with_yes_the_default_cleared_and_the_launcher
     std::fs::create_dir_all(&ssh).unwrap();
     std::fs::write(ssh.join("id_ed25519"), "private").unwrap();
     std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     let key = cyberctf(&t, &["servers", "public-key"]).await;
     assert_eq!((key.exit, key.text.trim()), (Exit::Ok, "ssh-ed25519 AAAA cyberctf-launcher"));
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
 }
 
 #[tokio::test]
 async fn what_is_stored_is_shown_and_a_clean_frees_nothing_when_nothing_is_stored() {
-    use crate::testing::tools::ok;
     let t = TestApp::new();
-    let _tools = Tools::strict_rules(&[("docker image ls -q --no-trunc", ok("")), ("vagrant box list", ok(""))]);
+    let _tools = fake(FakeProcesses::script().allow("docker image ls -q --no-trunc", Reply::ok("")).allow("vagrant box list", Reply::ok("")).build());
     let shown = cyberctf(&t, &["storage", "show", "--json"]).await;
     assert_eq!((shown.exit, &shown.last()["data"]), (Exit::Ok, &json!({ "images": [], "boxes": [] })));
     assert_eq!(cyberctf(&t, &["storage", "show"]).await.text.trim(), "Cyber CTF stores nothing here.");
@@ -229,7 +228,7 @@ async fn what_is_stored_is_shown_and_a_clean_frees_nothing_when_nothing_is_store
 #[tokio::test]
 async fn the_cloud_clis_status_names_every_cloud_even_with_no_cli_answering() {
     let t = TestApp::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = fake(FakeProcesses::script().allow("aws", Reply::ok("")).allow("az", Reply::ok("")).allow("gcloud", Reply::ok("")).build());
     let ran = cyberctf(&t, &["cloud", "status", "--json"]).await;
     assert_eq!(ran.exit, Exit::Ok, "{:?}", ran.lines);
     let data = &ran.last()["data"];
@@ -241,7 +240,7 @@ async fn the_cloud_clis_status_names_every_cloud_even_with_no_cli_answering() {
 #[tokio::test]
 async fn an_installed_lab_that_never_ran_reads_as_not_running() {
     let t = TestApp::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = no_tools();
     t.lab("web", &[("isoloom.yml", SPEC)]);
     let ran = cyberctf(&t, &["labs", "status", "web", "--runtime", "docker", "--json"]).await;
     assert_eq!(ran.exit, Exit::Ok, "{:?}", ran.lines);
@@ -254,49 +253,62 @@ async fn an_installed_lab_that_never_ran_reads_as_not_running() {
 #[tokio::test]
 async fn an_unknown_tool_is_a_usage_error_and_a_plugin_isnt_removed_alone() {
     let t = TestApp::new();
-    let tools = Tools::rules(&[]);
+    let tools = no_tools();
     assert_eq!(cyberctf(&t, &["machine", "tools", "install", "nmap", "--yes", "--json"]).await.exit, Exit::Usage);
     assert_eq!(cyberctf(&t, &["machine", "tools", "remove", "plugin:vagrant-qemu", "--yes", "--json"]).await.exit, Exit::Usage);
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(tools.lines().is_empty(), "{:?}", tools.lines());
 }
 
 /// A bare Linux machine for the setup's tests: apt, nothing else, until a root step installs
 /// Docker (it then answers as installed and running), or fails it when `install_fails`.
 #[cfg(target_os = "linux")]
-fn bare_linux(install_fails: bool) -> (Tools, std::rc::Rc<std::cell::Cell<bool>>) {
-    let installed = std::rc::Rc::new(std::cell::Cell::new(false));
+fn bare_linux(install_fails: bool) -> (crate::runtime::providers::testing::Faked, Installed) {
+    use std::sync::atomic::Ordering;
+    let installed = Installed::default();
     let docker = installed.clone();
-    let tools = Tools::new(move |program, args| {
-        let line = args.join(" ");
-        match program {
-            "apt" | "apt-get" | "dnf" => ok("apt 2.9.8 (amd64)\n"),
-            "pkexec" | "sudo" if line.starts_with("-n true") => fail("sudo: a password is required"),
+    let tools = fake(FakeProcesses::model(move |call| {
+        let line = call.args.join(" ");
+        match call.program.as_str() {
+            "apt" | "apt-get" | "dnf" => Reply::ok("apt 2.9.8 (amd64)\n"),
+            "pkexec" | "sudo" if line.starts_with("-n true") => Reply::fail(1, "sudo: a password is required"),
             "pkexec" | "sudo" | "env" if line.contains("docker") => {
                 if install_fails {
-                    return fail("E: Unable to locate package docker-ce");
+                    return Reply::fail(1, "E: Unable to locate package docker-ce");
                 }
-                docker.set(true);
-                ok("Setting up docker-ce (5:29.1.0) ...\n")
+                docker.0.store(true, Ordering::Relaxed);
+                Reply::ok("Setting up docker-ce (5:29.1.0) ...\n")
             }
             "docker" if docker.get() => docker_answer(&line),
-            "id" | "getent" => ok("player : player docker\n"),
-            _ => None,
+            "id" | "getent" => Reply::ok("player : player docker\n"),
+            _ => Reply::missing(),
         }
-    });
+    }));
     (tools, installed)
+}
+
+/// Whether [`bare_linux`]'s Docker was installed.
+#[cfg(target_os = "linux")]
+#[derive(Clone, Default)]
+struct Installed(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+#[cfg(target_os = "linux")]
+impl Installed {
+    fn get(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 /// What an installed, running Docker Engine answers to `docker <line>`.
 #[cfg(target_os = "linux")]
-fn docker_answer(line: &str) -> Option<Reply> {
+fn docker_answer(line: &str) -> Reply {
     if line.starts_with("--version") || line.starts_with("version") {
-        ok("Docker version 29.1.0, build 1\n")
+        Reply::ok("Docker version 29.1.0, build 1\n")
     } else if line.starts_with("compose") {
-        ok("Docker Compose version v2.40.0\n")
+        Reply::ok("Docker Compose version v2.40.0\n")
     } else if line.starts_with("context") {
-        ok("{\"Name\":\"default\",\"Current\":true,\"DockerEndpoint\":\"unix:///var/run/docker.sock\"}\n")
+        Reply::ok("{\"Name\":\"default\",\"Current\":true,\"DockerEndpoint\":\"unix:///var/run/docker.sock\"}\n")
     } else {
-        ok("{\"ServerVersion\":\"29.1.0\",\"OperatingSystem\":\"Debian GNU/Linux 13 (trixie)\",\"Name\":\"host\"}\n")
+        Reply::ok("{\"ServerVersion\":\"29.1.0\",\"OperatingSystem\":\"Debian GNU/Linux 13 (trixie)\",\"Name\":\"host\"}\n")
     }
 }
 
@@ -312,7 +324,7 @@ async fn the_setups_plan_is_printed_and_nothing_runs_in_a_dry_run() {
     let steps = data["plan"]["steps"].as_array().unwrap();
     assert_eq!((&steps[0]["item"], &steps[0]["kind"]), (&json!("docker"), &json!("install")), "{steps:?}");
     assert!(steps[0]["does"].as_str().unwrap().starts_with("would install "), "{steps:?}");
-    assert!(!installed.get() && !tools.called("pkexec"), "{:?}", tools.calls());
+    assert!(!installed.get() && tools.last("pkexec").is_none(), "{:?}", tools.lines());
 }
 
 #[cfg(target_os = "linux")]
@@ -350,8 +362,8 @@ async fn an_unattended_setup_that_cant_elevate_is_not_ready_before_anything_runs
     let ran = cyberctf(&t, &["machine", "setup", "--for", "docker", "--yes", "--json"]).await;
     assert_eq!(ran.exit, Exit::NotReady, "{:?}", ran.lines);
     assert!(ran.last()["error"]["message"].as_str().unwrap().starts_with("Nothing can be installed unattended here"), "{:?}", ran.last());
-    assert!(tools.called("sudo -n true"), "{:?}", tools.calls());
-    assert!(!installed.get() && !tools.called("pkexec"), "no install ran: {:?}", tools.calls());
+    assert!(tools.last("sudo -n true").is_some(), "{:?}", tools.lines());
+    assert!(!installed.get() && tools.last("pkexec").is_none(), "no install ran: {:?}", tools.lines());
 }
 
 #[cfg(target_os = "linux")]
@@ -360,7 +372,7 @@ async fn the_setup_installs_through_its_steps_and_a_rerun_finds_nothing_to_do() 
     let t = TestApp::new();
     let (tools, installed) = bare_linux(false);
     let Ran { exit, lines, .. } = on_a_terminal(&t, &["machine", "setup", "--for", "docker", "--yes", "--json"]).await;
-    assert!(installed.get(), "the install step ran: {:?}", tools.calls());
+    assert!(installed.get(), "the install step ran: {:?}", tools.lines());
     let ended: Vec<&Value> = lines.iter().filter(|l| l["event"]["event"] == "ended").map(|l| &l["event"]).collect();
     assert_eq!((&ended[0]["item"], &ended[0]["outcome"]), (&json!("docker"), &json!("done")), "{lines:?}");
     // Done, or stopped before a new login the docker group needs: either way, nothing failed.

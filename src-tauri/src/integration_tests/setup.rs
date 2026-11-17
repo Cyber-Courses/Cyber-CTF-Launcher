@@ -683,7 +683,7 @@ mod tests {
             check_only: true,
         };
         // Every tool, installer and command runner answers from here, and says it was called.
-        let tools = crate::testing::tools::Tools::new(|_, _| None);
+        let tools = crate::runtime::providers::testing::fake(isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::missing()));
         let mut out = Out::new(&knobs);
         let first = plan(report, &report.setup, &knobs.wanted);
         report_hypervisors(&mut out, &first, &knobs.wanted);
@@ -692,7 +692,7 @@ mod tests {
         let lines = std::fs::read_to_string(dir.join("setup.report")).unwrap();
         assert_eq!(lines.lines().count(), std::fs::read_to_string(dir.join("setup.jsonl")).unwrap().lines().count(), "the @@setup lines say the same items");
         std::fs::remove_dir_all(&dir).ok();
-        (records, tools.calls())
+        (records, tools.lines())
     }
 
     #[test]
