@@ -60,7 +60,7 @@ mod tests {
     /// No terminal on a Linux desktop: the command to run by hand is said.
     #[tokio::test]
     async fn no_terminal_says_the_command_to_run_by_hand() {
-        let _machine = Machine::set(Arc::new(FakeProcesses::model(|_| Reply::missing())), host_on(HostOs::Linux, Arch::X86_64, None));
+        let _machine = Machine::set(Arc::new(FakeProcesses::model(|_| Reply::missing())), host_on(HostOs::Linux, Arch::Amd64, None));
         let said = open_terminal_async(shell()).await.unwrap_err().to_string();
         assert!(said.starts_with("couldn't open a terminal; run this yourself: ") && said.contains("docker compose exec kali bash"), "{said}");
     }
