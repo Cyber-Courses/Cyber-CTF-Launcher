@@ -2,8 +2,6 @@
 //! (`server_selftest`) alike, so both share one frontend type: one [`Event`] per step, `running`,
 //! then `ok`, `fail` or `skip`, sent through a [`Reporter`].
 
-use std::future::Future;
-
 use serde::Serialize;
 
 use crate::error::Result;
@@ -101,19 +99,6 @@ impl Reporter {
         self.send(step, label, StepState::Fail, Some((self.explain)(raw)));
     }
 
-    /// Runs one step, reporting it: `running`, then `ok` with the future's detail or `fail` with
-    /// its error; a failure stops the test with that step's error.
-    pub(crate) async fn step<T>(&self, step: &'static str, label: &'static str, fut: impl Future<Output = Result<(T, Option<String>)>>) -> Result<T> {
-        self.send(step, label, StepState::Running, None);
-        let outcome = fut.await;
-        let (state, detail) = match &outcome {
-            Ok((_, detail)) => (StepState::Ok, detail.clone()),
-            Err(e) => (StepState::Fail, Some((self.explain)(&e.to_string()))),
-        };
-        self.send(step, label, state, detail);
-        outcome.map(|(v, _)| v)
-    }
-
     /// The closing clean-up step, reported only when the test itself passed (a failed test
     /// already says what went wrong).
     pub(crate) fn cleanup<T>(&self, label: &'static str, test: &Result<()>, done: Result<T>, ok_detail: Option<String>) {
@@ -144,17 +129,12 @@ mod tests {
         seen.lock().unwrap().iter().map(|e| format!("{}:{}", e.step, e.state)).collect()
     }
 
-    #[tokio::test]
-    async fn a_step_reports_running_then_ok_or_fail_said_through_its_explanation() {
+    #[test]
+    fn a_failed_step_is_said_through_its_explanation() {
         let (r, seen) = reporter(|raw| format!("hint: {raw}"));
-        let v = r.step("one", "First", async { Ok((7, Some("fine".into()))) }).await.unwrap();
-        assert_eq!(v, 7);
-        let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("broke".into())) }).await.unwrap_err();
-        assert_eq!(err.to_string(), "broke", "the step's own error is returned unexplained");
-        assert_eq!(states(&seen), ["one:running", "one:ok", "two:running", "two:fail"]);
-        let events = seen.lock().unwrap();
-        assert_eq!(events[1].detail.as_deref(), Some("fine"));
-        assert_eq!(events[3].detail.as_deref(), Some("hint: broke"));
+        r.failed("two", "Second", "broke");
+        assert_eq!(states(&seen), ["two:fail"]);
+        assert_eq!(seen.lock().unwrap()[0].detail.as_deref(), Some("hint: broke"));
     }
 
     #[test]

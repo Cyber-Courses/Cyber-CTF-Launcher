@@ -147,7 +147,6 @@ pub async fn machine_selftest(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::Error;
     use crate::testing::test_app::Sink;
 
     fn states(seen: &Sink) -> Vec<String> {
@@ -160,12 +159,11 @@ mod tests {
         (Reporter::explaining(events, explain), sink)
     }
 
-    #[tokio::test]
-    async fn a_failed_step_says_the_hint_for_a_failure_people_hit() {
+    #[test]
+    fn a_failed_step_says_the_hint_for_a_failure_people_hit() {
         let (r, seen) = reporter();
-        let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("Cannot connect to the Docker daemon".into())) }).await.unwrap_err();
-        assert!(err.to_string().contains("Docker daemon"));
-        assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
+        r.failed("two", "Second", "Cannot connect to the Docker daemon");
+        assert!(seen.messages()[0]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
     }
 
     #[test]

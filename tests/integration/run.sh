@@ -151,6 +151,7 @@ CORPUS=integration_tests::corpus_docker::corpus_docker_labs_run_end_to_end_on_th
 REPLACE=integration_tests::replace::a_running_lab_is_not_replaced_under_it
 PROXMOX_CONNECTION=integration_tests::server_lab::a_proxmox_host_passes_the_connection_test
 PROXMOX=integration_tests::server_lab::a_vm_lab_runs_on_proxmox_through_the_runner
+PROXMOX_VM_TEST=integration_tests::server_lab::the_vm_test_passes_on_proxmox
 ESXI=integration_tests::server_lab::a_vm_lab_runs_on_esxi_through_the_runner
 SETUP=integration_tests::setup::the_guided_setup_readies_this_machine
 RES=integration_tests::resilience
@@ -415,6 +416,9 @@ cap_of() {
     # 480 s before its stop (runner 47b9852). UTM has no complete run yet (its checks hung, F17).
     vm-lab@libvirt | vm-lab@qemu | vm-lab@utm) echo 1000 ;;
     attack-box-*) echo "$BOX_CAP" ;;
+    # The VM test on the nested Proxmox test server (2026-11-17): its build, the image, the VM up
+    # with its address and SSH took past 480 s under load, cut before its command and teardown.
+    server-vm-test-proxmox@proxmox) echo 1200 ;;
     *) echo "$CAP" ;;
   esac
 }
@@ -580,6 +584,8 @@ if in_tier server; then
   NOT_HERE=""
   [ -z "$needs" ] || NOT_HERE="not set: $needs"
   scenario server-lab-proxmox vm proxmox "$PROXMOX" CYBERCTF_TEST_PVE_LAB="$SOLO"
+  # The Servers page's VM test, on the same knobs (no lab).
+  scenario server-vm-test-proxmox "" proxmox "$PROXMOX_VM_TEST"
   needs=$(unset_of CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD)
   NOT_HERE=""
   [ -z "$needs" ] || NOT_HERE="not set: $needs"

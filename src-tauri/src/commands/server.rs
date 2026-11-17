@@ -296,15 +296,13 @@ mod tests {
         assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "ok")]);
         assert_eq!(events.messages()[1]["detail"], "Host az1");
 
-        // AWS is billed: never a test. A folder a previous run left is cleared first.
+        // AWS is billed: never a test, nothing run for it.
         t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
-        let work = t.data().join("selftest").join("server").join("aws1");
-        std::fs::create_dir_all(&work).unwrap();
         let events = crate::testing::test_app::Sink::default();
         let err = server_selftest(app(), "aws1".into(), events.channel()).await.unwrap_err();
         assert!(err.to_string().contains("AWS labs are billed"), "{err}");
-        assert!(steps(&events).contains(&pair("prepare", "ok")), "{:?}", steps(&events));
-        assert!(!work.exists());
+        assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "ok")]);
+        assert!(!t.data().join("selftest").join("server").join("aws1").exists(), "no test folder made");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     }
 

@@ -99,7 +99,8 @@ signed out (a failure under `STRICT=1`).
 
 A Proxmox or an ESXi host you provide, named by its knobs: `pnpm test:servers` (or
 `tests/integration/run.sh --tiers server`) runs the host's connection test, then a lab on it
-through the runner, as the launcher drives it, after which nothing of it is left. Without every
+through the runner, as the launcher drives it, and on Proxmox its VM test, after which nothing of
+it is left. Without every
 setting a scenario needs, it is skipped, naming those not set:
 
 - `server-lab-proxmox-connection`: `CYBERCTF_TEST_PVE_HOST` and `_PASSWORD`; with `_TOKEN_ID`,
@@ -110,6 +111,7 @@ setting a scenario needs, it is skipped, naming those not set:
   `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus `_JUMP` when the lab bridge is internal to the node;
   `_STORAGE` (VM disks, images and snippets; `local-lvm` by default) and `_FINGERPRINT` as for the
   connection test.
+- `server-vm-test-proxmox`: the same knobs as `server-lab-proxmox`.
 - `server-lab-esxi`: `CYBERCTF_TEST_ESXI_HOST` and `_PASSWORD`, plus `_DATASTORE` and `_NETWORK`.
 
 `--results <file>` records each scenario with its verdict and log, as every tier does.
@@ -118,6 +120,7 @@ setting a scenario needs, it is skipped, naming those not set:
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `server-lab-proxmox-connection` | the Servers page's Test on Proxmox: root's password, a wrong one, a missing bridge; the API token and a wrong secret |
 | `server-lab-proxmox`            | a VM lab on Proxmox: up, status, checks over SSH through the node, down                                              |
+| `server-vm-test-proxmox`        | the Servers page's VM test on Proxmox: every step of its plan passes in order, nothing of it left                    |
 | `server-lab-esxi`               | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down                                             |
 
 ## Bare-machine tier (a fresh machine, or check-only anywhere)
