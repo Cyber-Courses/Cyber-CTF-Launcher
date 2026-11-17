@@ -420,7 +420,7 @@ cap_of() {
     attack-box-*) echo "$BOX_CAP" ;;
     # The VM test on the nested Proxmox test server (2026-11-17): its build, the image, the VM up
     # with its address and SSH took past 480 s under load, cut before its command and teardown.
-    server-vm-test-proxmox@proxmox) echo 1200 ;;
+    server-lab-vm-test-proxmox@proxmox) echo 1200 ;;
     *) echo "$CAP" ;;
   esac
 }
@@ -593,7 +593,7 @@ if in_tier server; then
   [ -z "$needs" ] || NOT_HERE="not set: $needs"
   scenario server-lab-proxmox vm proxmox "$PROXMOX" CYBERCTF_TEST_PVE_LAB="$SOLO"
   # The Servers page's VM test, on the same knobs (no lab).
-  scenario server-vm-test-proxmox "" proxmox "$PROXMOX_VM_TEST"
+  scenario server-lab-vm-test-proxmox "" proxmox "$PROXMOX_VM_TEST"
   needs=$(unset_of CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD)
   NOT_HERE=""
   [ -z "$needs" ] || NOT_HERE="not set: $needs"
