@@ -12,15 +12,21 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
 use isothrum_client::proto::{Command, OpOptions, Target};
-use isothrum_client::{Client, ClientError, HeldConsole};
+use isothrum_client::{Client, ClientError, HeldConsole, Pool};
 use isothrum_runner::{ErrorReport, EventKind, Format, NativeConsole, RunName, RunOptions, RunRecord, ServiceEndpoint, ShellCommand, Status};
-use tokio::sync::Mutex as AsyncMutex;
 
 use super::{errors, progress};
 use crate::error::{Code, Error, Result};
 
-/// The connected services, by home: one connection per home in this process.
-static CLIENTS: LazyLock<AsyncMutex<HashMap<PathBuf, Arc<Client>>>> = LazyLock::new(|| AsyncMutex::new(HashMap::new()));
+/// The connected services, by home: one connection per home in this process, made again once
+/// when it breaks. The service started when none runs is this executable's (a test serves the home
+/// in its own process instead, `testing::service`).
+static POOL: LazyLock<Pool> = LazyLock::new(|| {
+    #[cfg(test)]
+    return Pool::with(|home| Box::pin(async move { crate::testing::service::client(&home).await }));
+    #[cfg(not(test))]
+    Pool::new(std::env::current_exe().ok())
+});
 
 /// The runner service of `home`, connected (started first when none runs: this executable, as
 /// `serve --home <home> --detach`).
@@ -29,34 +35,16 @@ static CLIENTS: LazyLock<AsyncMutex<HashMap<PathBuf, Arc<Client>>>> = LazyLock::
 ///
 /// [`Code::RunnerUnreachable`] when none answers and none could be started.
 pub(crate) async fn client(home: &Path) -> Result<Arc<Client>> {
-    let mut clients = CLIENTS.lock().await;
     // A test's home goes with its temporary folder: its connection would hold its socket, and
     // the test's ended runtime, open for the rest of the run.
     #[cfg(test)]
-    clients.retain(|home, _| crate::testing::service::kept(home));
-    if let Some(client) = clients.get(home) {
-        return Ok(client.clone());
-    }
-    let client = connect(home).await?;
-    clients.insert(home.to_path_buf(), client.clone());
-    Ok(client)
-}
-
-/// A new connection to `home`'s service, started when none runs: this executable's (a test
-/// serves the home in its own process instead, `testing::service`).
-async fn connect(home: &Path) -> Result<Arc<Client>> {
-    #[cfg(test)]
-    return crate::testing::service::client(home).await;
-    #[cfg(not(test))]
-    {
-        let exe = std::env::current_exe().ok();
-        Client::connect_exact(home, exe.as_deref()).await.map(Arc::new).map_err(|e| unreachable(home, &e))
-    }
+    POOL.retain(crate::testing::service::kept).await;
+    POOL.client(home).await.map_err(|e| unreachable(home, &e))
 }
 
 /// The error of `home`'s service that can't be reached (`e`): the app hosts it, so restarting
 /// the app starts it again.
-pub(crate) fn unreachable(home: &Path, e: &ClientError) -> Error {
+fn unreachable(home: &Path, e: &ClientError) -> Error {
     log::warn!("the runner service of {} can't be reached: {e}", home.display());
     Error::coded(Code::RunnerUnreachable { detail: e.to_string() })
 }
@@ -69,33 +57,22 @@ fn ours(id: isothrum_client::v1::OperationId) -> bool {
     OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).contains(&id.0)
 }
 
-/// Forgets `home`'s connection, broken: the next request connects again.
-async fn forget(home: &Path) {
-    CLIENTS.lock().await.remove(home);
-}
-
 /// Stops `home`'s service and forgets its connection, for a test that changes the home under it
 /// (a store damaged): the next call starts a service again. Returns once the service has ended,
 /// not once it stopped answering: it still writes its store, and the mirror the store is
 /// repaired from, as it lets the home go, which would undo what the test changes.
 #[cfg(test)]
 pub(crate) async fn stop_service(home: &Path) {
-    forget(home).await;
+    POOL.forget(home).await;
     if let Ok(running) = Client::connect_running(home).await {
         drop(running.shutdown().await);
     }
     crate::testing::service::until_ended(home).await;
 }
 
-/// Whether `e` says the connection is gone (the service was killed or restarted, the connection
-/// broke), rather than an answer of the service's.
-fn broken(e: &ClientError) -> bool {
-    matches!(e, ClientError::Io(_) | ClientError::Protocol(_) | ClientError::Unavailable(_))
-}
-
 /// `ask` of `home`'s service. A connection found dead (a service killed or restarted since it
-/// was made: a broken pipe) is dropped and made again, the service started again when none
-/// runs, and `ask` tried once more on it: only a second failure is the caller's.
+/// was made: a broken pipe) is made again, the service started again when none runs, and `ask`
+/// tried once more on it ([`Pool::call`]): only a second failure is the caller's.
 ///
 /// # Errors
 ///
@@ -104,25 +81,13 @@ async fn call<T, F>(home: &Path, ask: impl Fn(Arc<Client>) -> F) -> std::result:
 where
     F: Future<Output = std::result::Result<T, ClientError>>,
 {
-    let first = client(home).await.map_err(Failure::Launcher)?;
-    match ask(first).await {
-        Err(e) if broken(&e) => {
-            log::info!("the runner service's connection of {} broke ({e}): connecting again", home.display());
-            forget(home).await;
-            let again = client(home).await.map_err(Failure::Launcher)?;
-            ask(again).await.map_err(|e| failed_again(home, e))
-        }
-        done => done.map_err(Failure::of_client),
-    }
-}
-
-/// `e`, a call's failure on its second connection: a broken one forgotten, for the next call.
-fn failed_again(home: &Path, e: ClientError) -> Failure {
-    if broken(&e) {
-        let home = home.to_path_buf();
-        tokio::spawn(async move { forget(&home).await });
-    }
-    Failure::of_client(e)
+    // Connected first: no service to reach is the launcher's own error, as is a new connection
+    // that couldn't be made once the first broke.
+    client(home).await.map_err(Failure::Launcher)?;
+    POOL.call(home, ask).await.map_err(|e| match e {
+        ClientError::Unavailable(_) => Failure::Launcher(unreachable(home, &e)),
+        e => Failure::of_client(e),
+    })
 }
 
 /// An operation on a run.

@@ -13,11 +13,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
-use isothrum_client::Client;
+use isothrum_client::{Client, ClientError};
 use isothrum_runner::{Runner, RunnerConfig, SystemProcesses};
 use isothrum_service::{RunnerEngine, ServeOptions, Service, StopSignal};
-
-use crate::error::{Error, Result};
 
 /// How long a service started on demand waits with no client before it stops.
 const IDLE: Duration = Duration::from_secs(10);
@@ -72,28 +70,28 @@ fn register(home: &Path) -> bool {
 /// # Errors
 ///
 /// None answers in time.
-pub async fn client(home: &Path) -> Result<Arc<Client>> {
+pub async fn client(home: &Path) -> Result<Client, ClientError> {
     if let Ok(client) = Client::connect_running(home).await {
-        return Ok(Arc::new(client));
+        return Ok(client);
     }
     if SERVED.lock().unwrap_or_else(PoisonError::into_inner).contains(home) {
-        return answering(home, None).await.map(Arc::new);
+        return answering(home, None).await;
     }
-    std::fs::create_dir_all(home).map_err(|e| Error::Invalid(format!("{}: {e}", home.display())))?;
+    std::fs::create_dir_all(home).map_err(|e| ClientError::Unavailable(format!("{}: {e}", home.display())))?;
     let processes = SystemProcesses::default();
     let serving = start(crate::run_service::host::runner_config(home, &processes), Some(IDLE), None, Here::Services);
-    answering(home, Some(&serving)).await.map(Arc::new)
+    answering(home, Some(&serving)).await
 }
 
 /// A client of `home`'s service once it answers; an error when `serving` ended first (it couldn't
 /// serve: its store can't be opened), or none answers in time.
-async fn answering(home: &Path, serving: Option<&Serving>) -> Result<Client> {
+async fn answering(home: &Path, serving: Option<&Serving>) -> Result<Client, ClientError> {
     let mut looks = 0;
     loop {
         let ended = serving.is_some_and(Serving::is_finished);
         match Client::connect_running(home).await {
             Ok(client) => return Ok(client),
-            Err(e) if ended || looks >= LOOKS => return Err(crate::runtime::isothrum::service_unreachable(home, &e)),
+            Err(e) if ended || looks >= LOOKS => return Err(e),
             Err(_) => {
                 looks += 1;
                 tokio::time::sleep(Duration::from_millis(10)).await;

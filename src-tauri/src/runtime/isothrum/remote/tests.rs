@@ -64,5 +64,5 @@ async fn a_connection_to_a_service_gone_since_is_made_again_once() {
     // The service is gone, and another serves the home: the kept connection is dead.
     let _again = serve(RunnerConfig::new(&home));
     assert_eq!(super::records(&home).await.unwrap(), [], "connected again, and answered");
-    super::forget(&home).await;
+    super::POOL.forget(&home).await;
 }
