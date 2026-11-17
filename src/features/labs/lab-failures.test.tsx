@@ -10,6 +10,7 @@ import { SignInBanner } from "@/features/labs/labs-list";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
 import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
+import { CALLED_OFF } from "@/features/labs/lab-operations";
 import { Toaster } from "@/components/ui/toaster";
 import { must, toastsShown } from "@/components/test-support";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
@@ -131,12 +132,13 @@ describe("a cloud lab started without an account", () => {
   });
 });
 
-describe("Reset after a stop that failed", () => {
-  it("says the reset stopped and doesn't start the lab again", async () => {
+describe("Reset after a stop that failed or was called off", () => {
+  /** Reset pressed on the page of a lab with a machine down, its stop resolving to `stopped` (as
+   *  useLabActions' stop does): the stop ran once and the lab wasn't started again. */
+  async function resetStoppingWith(stopped: unknown) {
     installTauri(idle);
     const user = userEvent.setup();
-    // Resolves to the failure, as useLabActions' stop does when the removal fails.
-    const onStop = vi.fn(() => Promise.resolve("Couldn't remove network lab-sqli_default: has active endpoints"));
+    const onStop = vi.fn(() => Promise.resolve(stopped));
     const h = renderLabPage(blind, { status: upStatus([containerMachine("api"), containerMachine("db", "exited")]), onStop });
     render(<Toaster />);
     await flush(50);
@@ -145,10 +147,21 @@ describe("Reset after a stop that failed", () => {
     await flush(50);
     expect(onStop).toHaveBeenCalledTimes(1);
     expect(h.onStart).not.toHaveBeenCalled();
-    expect(alerts().join("\n")).toContain("Reset stopped: the lab couldn't be removed, so it wasn't started again");
-    expect(alerts().join("\n")).toContain("has active endpoints");
     // The banner is back to its resting state, ready for another try.
     expect(screen.getByRole("button", { name: /Reset lab/ }).hasAttribute("disabled")).toBe(false);
+  }
+
+  it("says the reset stopped and doesn't start the lab again", async () => {
+    // The failure, as useLabActions' stop resolves to when the removal fails.
+    await resetStoppingWith("Couldn't remove network lab-sqli_default: has active endpoints");
+    expect(alerts().join("\n")).toContain("Reset stopped: the lab couldn't be removed, so it wasn't started again");
+    expect(alerts().join("\n")).toContain("has active endpoints");
+  });
+
+  it("starts nothing again, and says no failure, after a stop the player called off when asked", async () => {
+    // As useLabActions' stop resolves when the player declines the node keys' question.
+    await resetStoppingWith(CALLED_OFF);
+    expect(alerts()).toEqual([]);
   });
 });
 

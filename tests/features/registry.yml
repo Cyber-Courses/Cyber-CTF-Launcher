@@ -2890,7 +2890,7 @@ areas:
           desktop: server-lab signs in with an API token, never with an SSH key
 
       - id: servers.identity-confirm
-        what: Before the launcher signs in to a server, it shows the server's TLS certificate and each node's SSH host key fingerprints; it goes on only once the player confirms them, then accepts only those (a changed certificate or key stops it and says so). A server set up before its node's keys were confirmed is asked the same before a lab runs through its node, and at Test connection.
+        what: Before the launcher signs in to a server, it shows the server's TLS certificate and each node's SSH host key fingerprints; it goes on only once the player confirms them, then accepts only those (a changed certificate or key stops it and says so). A server set up before its node's keys were confirmed is asked the same before a lab starts, stops or resumes through its node, before its VM test, and at Test connection; declined, nothing runs and nothing fails.
         providers:
           - proxmox
         host: true
@@ -2920,6 +2920,20 @@ areas:
             - src/features/labs/use-lab-actions.test.tsx > refuses a node offering other keys than the confirmed ones, in the host key words
             - src/features/servers/servers-screen.test.tsx > confirms a node's never-confirmed SSH host keys at a Test the player asks for, never at the page's own
             - src/features/servers/servers-screen.test.tsx > asks nothing at Test when the node offers other keys than the confirmed ones
+            - src/features/labs/use-lab-actions.test.tsx > stops at once when the node's keys are the confirmed ones
+            - src/features/labs/use-lab-actions.test.tsx > asks to confirm keys never confirmed before a stop, as the setup does, then stops
+            - "src/features/labs/use-lab-actions.test.tsx > leaves the lab as it was when the player declines a stop's question: not stopped, not failed"
+            - src/features/labs/use-lab-actions.test.tsx > refuses a stop through a node offering other keys than the confirmed ones, in the host key words
+            - src/features/labs/use-lab-actions.test.tsx > resumes at once when the node's keys are the confirmed ones
+            - src/features/labs/use-lab-actions.test.tsx > asks to confirm keys never confirmed before a resume, as the setup does, then resumes
+            - src/features/labs/use-lab-actions.test.tsx > resumes nothing and fails nothing when the player declines
+            - src/features/labs/use-lab-actions.test.tsx > refuses a resume through a node offering other keys than the confirmed ones, in the host key words
+            - src/features/labs/use-lab-actions.test.tsx > asks nothing of a lab running here or on a cloud account
+            - src/features/labs/lab-failures.test.tsx > starts nothing again, and says no failure, after a stop the player called off when asked
+            - src/features/servers/servers-screen.test.tsx > runs at once when the node's keys are the confirmed ones
+            - src/features/servers/servers-screen.test.tsx > asks to confirm them first, as the setup does, then runs
+            - src/features/servers/servers-screen.test.tsx > runs nothing and fails nothing when the player declines
+            - src/features/servers/servers-screen.test.tsx > runs nothing on a node offering other keys than the confirmed ones, and says so in the host key words
         gaps:
           desktop: server-lab signs in to a server whose certificate the test set confirms beforehand
           integration: no scenario changes a real server's certificate or host key

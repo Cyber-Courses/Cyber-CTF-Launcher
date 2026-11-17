@@ -166,7 +166,7 @@ describe("reset", () => {
       lab_status: () => status(),
     });
     const { result } = renderHook(() => useLabActions(() => {}, []));
-    let failure: string | null = null;
+    let failure: unknown = null;
     await act(async () => {
       failure = await result.current.stop(lab("lab-f"));
     });

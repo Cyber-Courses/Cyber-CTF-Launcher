@@ -12,9 +12,10 @@ import { loadVmTests } from "@/features/servers/vm-tests";
 import { answer } from "@/lib/dev-mock";
 import { PROVIDER_NAMES, SELFTEST_STEPS, SERVER_PROVIDERS, type ServerHost, type ServerList, type ServerTest, type SystemReport } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
-import { answersDialog, commands, dialogsAsked, installTauri, rejects, stream, type Call } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, rejects, stream, type Call, type Handler } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 import { must } from "@/components/test-support";
+import { Toaster } from "@/components/ui/toaster";
 
 const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
 const [pve, esxi] = sample().hosts;
@@ -302,6 +303,79 @@ describe("ServerScreen", () => {
     // The menu now offers to hide it.
     await menu(user, "homelab-pve", /hide vm test/i);
     expect(screen.queryByText("Remove everything the test created")).toBeNull();
+  });
+
+  describe("a VM test on a server whose node's SSH host keys were never confirmed", () => {
+    const fingerprint = "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ";
+    const NODE_KEYS = { pattern: "10.0.0.5", keys: [{ algorithm: "ssh-ed25519", fingerprint }], state: "new" };
+    const passes = (a: Record<string, unknown> | undefined) => {
+      stream(a, ...SELFTEST_PLAN.proxmox.map((p) => ({ step: p.step, state: "ok", detail: null })));
+      return null;
+    };
+
+    /** The page with the node keys' question mounted, the pve row's VM test asked for, its node's
+     *  keys answered by `keys`. */
+    async function vmTestAsked(keys: Handler) {
+      const calls = installTauri({ server_node_host_keys: keys, server_selftest: passes });
+      const user = userEvent.setup();
+      render(
+        <>
+          <NodeKeysPrompt />
+          <Toaster />
+        </>,
+      );
+      await renderScreen();
+      calls.length = 0;
+      await menu(user, "homelab-pve", /^\s*vm test$/i);
+      await flush(30);
+      return { calls, user };
+    }
+
+    it("runs at once when the node's keys are the confirmed ones", async () => {
+      const { calls } = await vmTestAsked(() => null);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(argsOf(calls, "server_node_host_keys")).toEqual([{ id: "pve" }]);
+      expect(argsOf(calls, "server_selftest")[0]).toMatchObject({ id: "pve" });
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+    });
+
+    it("asks to confirm them first, as the setup does, then runs", async () => {
+      const { calls, user } = await vmTestAsked(() => NODE_KEYS);
+      const dialog = screen.getByRole("dialog", { name: "Confirm this server's identity" });
+      expect(dialog.textContent).toContain(fingerprint);
+      expect(commands(calls)).not.toContain("server_selftest");
+      await user.click(screen.getByRole("button", { name: "They match: trust this server" }));
+      await flush(30);
+      expect(argsOf(calls, "server_trust_node_host_keys")).toEqual([{ id: "pve", fingerprints: [fingerprint] }]);
+      expect(commands(calls).indexOf("server_trust_node_host_keys")).toBeLessThan(commands(calls).indexOf("server_selftest"));
+      expect(screen.getAllByText("VM test passed").length).toBeGreaterThan(0);
+    });
+
+    it("runs nothing and fails nothing when the player declines", async () => {
+      const { calls, user } = await vmTestAsked(() => NODE_KEYS);
+      const remembered = loadVmTests().pve;
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await flush(30);
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+      expect(commands(calls)).not.toContain("server_selftest");
+      expect(loadVmTests().pve).toEqual(remembered);
+      expect(screen.queryByText("VM test failed")).toBeNull();
+    });
+
+    it("runs nothing on a node offering other keys than the confirmed ones, and says so in the host key words", async () => {
+      const { calls } = await vmTestAsked(
+        rejects({ code: "sshHostKeyRefused", args: { host: "10.0.0.5" }, message: "The SSH host key of 10.0.0.5 isn't the one confirmed for it." }),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(commands(calls)).not.toContain("server_selftest");
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+      const said = screen
+        .queryAllByRole("alert")
+        .map((a) => a.textContent)
+        .join("\n");
+      expect(said).toContain("This server's identity changed");
+      expect(said).toContain("The SSH host key of 10.0.0.5 isn't the one confirmed for it");
+    });
   });
 
   it("shows the remembered result of an earlier VM test", async () => {

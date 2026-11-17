@@ -177,10 +177,11 @@ proxy through the node (the module's `ssh_proxy_host` and `ssh_proxy_port`), for
 only. Every SSH to the node (that proxy, the shell's and the checks' first hop, a published port's
 forward) checks its host keys against the ones the player confirmed (`<app data>/ssh/nodes_known_hosts`,
 the run's `ssh_jump_known_hosts_file`): a node offering another key is refused, never trusted on
-first use. A server set up before its node's keys were confirmed has none there: before a start
-that goes through the node (and at a Test connection the player asks for), the launcher reads the
-keys the node offers (`server/node_keys.rs`) and the player confirms them in the setup's own
-question (`features/servers/node-keys-prompt.tsx`); declined, nothing starts.
+first use. A server set up before its node's keys were confirmed has none there: before a start,
+a stop or a resume that goes through the node, before the server's VM test, and at a Test
+connection the player asks for, the launcher reads the keys the node offers (`server/node_keys.rs`)
+and the player confirms them in the setup's own question (`features/servers/node-keys-prompt.tsx`);
+declined, nothing runs and nothing fails (a stop called off leaves the lab running).
 
 ## Servers and cloud accounts
 

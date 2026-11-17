@@ -64,7 +64,7 @@ export function useCloudPage() {
   async function stopLab(l: Lab) {
     // Why the stop failed or was refused (another operation on the lab), shown here too.
     const why = await stop(l);
-    if (why) setError(why);
+    if (typeof why === "string") setError(why);
   }
 
   return {
