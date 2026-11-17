@@ -96,7 +96,12 @@ where
         match isothrum::destroy_expired(home, &record, &tf_env).await {
             Err(e) if e.code() == Code::AlreadyInProgress => log::debug!("auto-stop: {name} is busy in the runner service; left for a later sweep"),
             Err(e) => failed.push((name, e)),
-            Ok(()) => {}
+            // Gone: so are the values it was launched with, if any were kept.
+            Ok(()) => {
+                if let Err(e) = super::launch_values::forget(&name) {
+                    log::warn!("auto-stop: {name} is destroyed, but the values it was launched with stay in the keychain: {e}");
+                }
+            }
         }
     }
     Ok(failed)

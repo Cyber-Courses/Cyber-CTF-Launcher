@@ -291,19 +291,50 @@ async fn a_container_lab_pauses_and_resumes_as_it_was() {
     assert_eq!(back.url.as_deref(), Some("http://127.0.0.1:8080/"), "at the same address");
 }
 
-/// A resume has no launch values (they aren't kept), and it starts the containers as they are
-/// (`up --no-recreate`): each keeps the file its input was written to at the start, so the
-/// player's value survives a park, and nothing else is ever written in its place.
+/// The runner service holds a run's secrets for the operation they are given to: a lab parked,
+/// the app restarted, then resumed got none, and Compose refused a lab whose input has no default
+/// ("required variable … is not set"). The values the run was launched with are kept with the
+/// launcher's secrets, given back to the resume as its start gave them (a secret, never in the
+/// run's record or a log line), and forgotten once the run is down.
 #[tokio::test]
-async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
+async fn a_lab_resumed_after_a_restart_gets_the_values_it_was_launched_with_until_it_is_down() {
+    use crate::runtime::launch_values;
     let f = Fixture::new();
     let _tools = no_tools();
     let run = f.up().await;
     assert_eq!(last_compose(&f, "up", None).and_then(|c| c.env("CTF_LAUNCH_TOKEN").map(str::to_owned)).as_deref(), Some("t0k"));
+    let mut log = Vec::new();
+    run.park(Park::Shutdown, &mut |l| log.push(l)).await.unwrap();
+    assert_eq!(last_compose(&f, "stop", None).and_then(|c| c.env("CTF_LAUNCH_TOKEN").map(str::to_owned)).as_deref(), Some("t0k"), "a park too");
+    launch_values::restart();
+    run.resume(&mut |l| log.push(l)).await.unwrap();
+    let start = last_compose(&f, "up", Some("--no-recreate")).expect("a resume starts what exists as it is");
+    assert_eq!(start.env("CTF_LAUNCH_TOKEN"), Some("t0k"), "the value it was launched with, after a restart");
+    let record = run.recorded().await.unwrap().expect("the run's record");
+    assert!(!format!("{record:?}").contains("t0k"), "a sensitive value is never in the run's record");
+    assert!(log.iter().all(|l| !l.contains("t0k")), "nor in a log line: {log:?}");
+    run.down(&mut |_| {}).await.unwrap();
+    assert_eq!(last_compose(&f, "down", None).and_then(|c| c.env("CTF_LAUNCH_TOKEN").map(str::to_owned)).as_deref(), Some("t0k"), "its stop too");
+    launch_values::restart();
+    assert_eq!(launch_values::kept("cyberctf-web"), Vec::new(), "down: none outlives its run");
+    assert_eq!(crate::runtime::server::secrets::get_named("launch-values:cyberctf-web").unwrap(), None);
+}
+
+/// A run none were kept for (started before the launcher kept them, or with none): a resume gets
+/// no launch value, not even an empty one, and each input's file keeps the value it was written
+/// with (`up --no-recreate`): the lab's default.
+#[tokio::test]
+async fn a_lab_with_no_values_kept_resumes_as_it_was_on_its_defaults() {
+    let f = Fixture::new();
+    let _tools = no_tools();
+    let run = f.run();
+    run.up(Inputs::default(), None, &mut |_| {}).await.unwrap();
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
+    crate::runtime::launch_values::restart();
     run.resume(&mut |_| {}).await.unwrap();
     let start = last_compose(&f, "up", Some("--no-recreate")).expect("a resume starts what exists as it is");
-    assert_eq!(start.env("CTF_LAUNCH_TOKEN"), None, "no launch value reaches a resume, not even an empty one");
+    assert_eq!(start.env("CTF_LAUNCH_TOKEN"), None, "no launch value reaches it");
+    assert!(run.status().await.unwrap().running);
 }
 
 /// A lab imported from a folder starts with no launch values: the launcher gives it none, not

@@ -39,6 +39,111 @@ pub fn delete(name: &str) -> Result<()> {
     removed(entry(name)?.delete_credential())
 }
 
+/// The value kept under `name` however long it is: one entry, or on Windows the pieces
+/// [`set_whole`] split it across ([`pieces`]). None when there is none, or when a piece it names
+/// is gone (a save cut short): read as nothing kept, never as part of a value.
+pub fn get_whole(name: &str) -> Result<Option<String>> {
+    let Some(head) = get(name)? else { return Ok(None) };
+    let mut failed = None;
+    let value = pieces::join(head, |i| {
+        get(&pieces::name(name, i)).unwrap_or_else(|e| {
+            failed.get_or_insert(e);
+            None
+        })
+    });
+    failed.map_or(Ok(value), Err)
+}
+
+/// Keeps `value` under `name`, split across `name.1`, `name.2`… where one entry can't hold it
+/// (Windows, [`pieces`]): the pieces first, then the head naming them, so a reader never finds a
+/// head whose pieces aren't there yet; pieces of a longer value before are removed.
+///
+/// # Errors
+///
+/// The keychain refused, or `value` is longer than [`pieces::MAX_CHUNKS`] pieces hold.
+pub fn set_whole(name: &str, value: &str) -> Result<()> {
+    let (head, parts) = pieces::split(value, pieces::UNITS).ok_or_else(|| Error::Invalid(format!("{name} is too large to keep in the system keychain")))?;
+    for (i, part) in parts.iter().enumerate() {
+        set(&pieces::name(name, i + 1), part)?;
+    }
+    set(name, &head)?;
+    delete_pieces(name, parts.len() + 1)
+}
+
+/// Deletes what [`set_whole`] kept under `name`: the head first (without it no piece is read),
+/// then its pieces, where a system splits values. One that isn't there is deleted already.
+pub fn delete_whole(name: &str) -> Result<()> {
+    delete(name)?;
+    delete_pieces(name, 1)
+}
+
+/// Deletes `name`'s pieces from `from` on, up to the first that isn't there (they are written in
+/// order); none where values are never split.
+fn delete_pieces(name: &str, from: usize) -> Result<()> {
+    if pieces::UNITS == usize::MAX {
+        return Ok(());
+    }
+    for i in from..=pieces::MAX_CHUNKS {
+        match entry(&pieces::name(name, i))?.delete_credential() {
+            Err(keyring::Error::NoEntry) => break,
+            answer => removed(answer)?,
+        }
+    }
+    Ok(())
+}
+
+/// A value too long for one keychain entry, split across several. Only Windows caps an entry:
+/// the Credential Manager holds at most 2560 bytes (1280 UTF-16 units) in a credential, and a
+/// longer value (a session's tokens, a launch's) failed to save, so it was never kept. Elsewhere a
+/// value is one entry, so reading it is one keychain access, and one unlock prompt where the
+/// keychain asks (macOS asks once per entry for a build it doesn't know).
+pub mod pieces {
+    /// The most a Windows keychain entry holds here, in UTF-16 units (under the 1280 it takes).
+    pub const WINDOWS_CHUNK_UNITS: usize = 1200;
+    /// The most a keychain entry holds on this system: only Windows caps it.
+    pub const UNITS: usize = if cfg!(windows) { WINDOWS_CHUNK_UNITS } else { usize::MAX };
+    /// At most this many pieces. A longer value is refused at save, never half-saved.
+    pub const MAX_CHUNKS: usize = 32;
+    /// How a head that names its pieces begins: `cyberctf-chunks:<count>`.
+    pub const CHUNKS_PREFIX: &str = "cyberctf-chunks:";
+
+    /// The entry of `name`'s piece `i` (1-based).
+    pub fn name(name: &str, i: usize) -> String {
+        format!("{name}.{i}")
+    }
+
+    /// What goes in the head entry and, for a value longer than `max_units` UTF-16 units, the
+    /// pieces (none when it fits one entry). None when it takes more than [`MAX_CHUNKS`] pieces.
+    /// A character is never cut: a credential holding half a surrogate pair isn't a valid string
+    /// on Windows.
+    pub fn split(raw: &str, max_units: usize) -> Option<(String, Vec<String>)> {
+        if raw.encode_utf16().count() <= max_units {
+            return Some((raw.to_string(), Vec::new()));
+        }
+        let mut parts = vec![String::new()];
+        let mut units = 0;
+        for c in raw.chars() {
+            if units + c.len_utf16() > max_units {
+                parts.push(String::new());
+                units = 0;
+            }
+            units += c.len_utf16();
+            if let Some(p) = parts.last_mut() {
+                p.push(c);
+            }
+        }
+        (parts.len() <= MAX_CHUNKS).then(|| (format!("{CHUNKS_PREFIX}{}", parts.len()), parts))
+    }
+
+    /// The value a head entry holds, reading its pieces with `piece(i)` (1-based) when it was
+    /// split. None when a piece is missing, or the head names a count that isn't one.
+    pub fn join(head: String, mut piece: impl FnMut(usize) -> Option<String>) -> Option<String> {
+        let Some(n) = head.strip_prefix(CHUNKS_PREFIX) else { return Some(head) };
+        let n: usize = n.parse().ok().filter(|n| (1..=MAX_CHUNKS).contains(n))?;
+        (1..=n).map(&mut piece).collect()
+    }
+}
+
 /// What a read found: the value, none for an entry that isn't there, else why the keychain failed.
 fn read(answer: keyring::Result<String>) -> Result<Option<String>> {
     match answer {

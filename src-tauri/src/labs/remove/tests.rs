@@ -228,6 +228,22 @@ async fn the_attack_boxs_password_goes_with_the_lab_and_stays_while_the_removal_
 }
 
 #[tokio::test]
+async fn the_values_its_run_was_launched_with_go_with_the_lab() {
+    use crate::runtime::server::secrets::get_named;
+    let t = TestApp::new();
+    let _file = own_secrets();
+    t.lab("local-values", &[("isoloom.yml", SPEC)]);
+    t.lab("local-kept", &[("isoloom.yml", SPEC)]);
+    let token = [("CTF_LAUNCH_TOKEN".to_owned(), "tok".to_owned())];
+    crate::runtime::launch_values::keep("cyberctf-local-values", &token);
+    crate::runtime::launch_values::keep("cyberctf-local-kept", &token);
+    record_run(t.data(), "local-values", None, "docker", "absent");
+    assert_eq!(remove(&t.dirs(), "local-values").await.unwrap(), Removal::default());
+    assert_eq!(get_named("launch-values:cyberctf-local-values").unwrap(), None);
+    assert!(get_named("launch-values:cyberctf-local-kept").unwrap().is_some(), "another lab's stay");
+}
+
+#[tokio::test]
 async fn a_password_store_that_refuses_leaves_the_password_listed_and_the_lab_removed() {
     let t = TestApp::new();
     let secrets = own_secrets();
@@ -240,9 +256,10 @@ async fn a_password_store_that_refuses_leaves_the_password_listed_and_the_lab_re
     // The lab and its records went all the same.
     assert!(!dir.exists() && worker.iter().all(|f| !f.exists()));
     assert!(!is_recorded(&runner_home_in(t.data()), "cyberctf-local-store"));
-    // The password alone stayed, said with why, for the player to delete.
-    let [left] = removal.left.as_slice() else { panic!("{removal:?}") };
+    // What the store keeps for it alone stayed, said with why, for the player to delete.
+    let [left, values] = removal.left.as_slice() else { panic!("{removal:?}") };
     assert_eq!(left.path, "the attack box's password is still in the keychain (attack-box:local-store)");
-    assert!(left.error.contains("isn't readable"), "{}", left.error);
+    assert_eq!(values.path, "the values its run was launched with are still in the keychain (launch-values:cyberctf-local-store)");
+    assert!(left.error.contains("isn't readable") && values.error.contains("isn't readable"), "{removal:?}");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "{", "the store as it was");
 }

@@ -124,8 +124,7 @@ async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) ->
 
 /// Runs a VM lab's provisioners again on its running machines (one, or all): the repair for a
 /// machine whose provisioning was cut short, without rebuilding the lab. Inputs the lab declared
-/// (`isoloom.yml` `inputs`) were given at launch and aren't kept, so a lab that provisions from
-/// them gets none here; the labs so far declare none.
+/// (`isoloom.yml` `inputs`) get the values the run was launched with (`launch_values`).
 async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     // A container lab run as one VM per machine has VMs to provision, like a VM lab.

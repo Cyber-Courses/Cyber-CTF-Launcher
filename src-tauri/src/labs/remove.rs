@@ -1,7 +1,8 @@
 //! Removing a lab from this computer: the app's copy of it (the folder an import copied, or a
 //! release unpacked) and every record the app keeps for it under its data folder: the deploy
 //! workers' job, logs and verdicts, an update's or an import's leftover copies, a catalogue lab's source kept for an offline start, and the password
-//! kept for its attack box (the OS keychain's `attack-box:<lab id>`). The generated project
+//! kept for its attack box (the OS keychain's `attack-box:<lab id>`) and the values its run was
+//! launched with (`launch-values:cyberctf-<lab id>`). The generated project
 //! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it. Its run is the
 //! runner's: the runner forgets it (its own home is the runner's to keep).
 //!
@@ -75,6 +76,15 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
         log::warn!("removing lab {id}: its attack box's password stayed in the keychain: {e}");
         let entry = runtime::attack_box::password_entry(&dir);
         removal.left.push(Leftover { path: format!("the attack box's password is still in the keychain ({entry})"), error: e.to_string() });
+    }
+    // The values its run was launched with, which a run taken down outside the app may have left
+    // (`runtime::launch_values`); a keychain that refuses leaves them, listed as the password is.
+    if let Err(e) = runtime::launch_values::forget_lab(id) {
+        log::warn!("removing lab {id}: the values its run was launched with stayed in the keychain: {e}");
+        removal.left.push(Leftover {
+            path: format!("the values its run was launched with are still in the keychain (launch-values:{})", runtime::docker::project(id)),
+            error: e.to_string(),
+        });
     }
     Ok(removal)
 }

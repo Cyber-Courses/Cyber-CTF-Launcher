@@ -126,7 +126,7 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
 
 /// Masks in every log, from now on, each of the launch's values `env` but the `plain` ones
 /// ([`lab::plain_inputs`]): a token or a flag, wherever a tool prints it.
-fn mask_sensitive(env: &[(String, String)], plain: &[String]) {
+pub(crate) fn mask_sensitive(env: &[(String, String)], plain: &[String]) {
     for (_, value) in env.iter().filter(|(name, _)| !plain.contains(name)) {
         crate::platform::redact::register(value);
     }

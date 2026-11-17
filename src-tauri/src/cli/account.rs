@@ -123,7 +123,7 @@ fn cloud_text(c: &Value) -> String {
 }
 
 /// Runs an account command.
-pub(super) async fn account(command: Account, out: &mut Output<'_>) -> Exit {
+pub(super) async fn account(command: Account, ctx: &Context, out: &mut Output<'_>) -> Exit {
     match command {
         Account::Status => {
             let status = crate::account::auth::auth_status().await;
@@ -150,7 +150,8 @@ pub(super) async fn account(command: Account, out: &mut Output<'_>) -> Exit {
             out.finish(status.map_err(Failure::from).and_then(|s| to_json(&s)), account_text)
         }
         Account::Signout => {
-            let done = crate::account::auth::auth_logout().await;
+            // The values the account's runs were launched with go with the session.
+            let done = crate::account::auth::auth_logout().await.inspect(|()| crate::runtime::launch_values::forget_all(&ctx.dirs));
             out.finish(done.map(|()| json!({ "signedOut": true })).map_err(Failure::from), |_| "Signed out.".to_owned())
         }
     }

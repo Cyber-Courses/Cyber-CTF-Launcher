@@ -11,7 +11,7 @@ use isothrum_runner::{Format, RunOptions};
 
 use super::cloud_runs::CloudPlace;
 use super::server::{self, ServerPlace};
-use super::{EsxiPlace, Inputs, errors, remote, run_name, runner_provider, start_options};
+use super::{EsxiPlace, Inputs, deliver, errors, remote, run_name, runner_provider, start_options};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::host::Failed;
@@ -225,14 +225,18 @@ impl Deployment {
         if let Site::Esxi(place) = &self.site { place.onto(opts) } else { opts }
     }
 
-    /// What a change of the run runs with (its start's values `start` for a start): here and on ESXi, [`Deployment::placed`]; on a
-    /// server, its place's ([`server::applying`]); in a cloud account, a start's are the account's
+    /// What a change of the run runs with (its start's values `start` for a start): here and on
+    /// ESXi, [`Deployment::placed`], a later change here with the values its start was launched
+    /// with ([`Deployment::launched_with`]); on a server, its place's ([`server::applying`]); in a cloud account, a start's are the account's
     /// values and credentials with the runner's key for the lab's instances, a later change's its
     /// credentials only (the runner replays what the start was given).
     async fn changing(&self, start: Option<Start<'_>>) -> Result<RunOptions> {
         let inputs = start.map_or_else(Inputs::default, |s| s.inputs);
         match &self.site {
-            Site::Here | Site::Esxi(_) => Ok(self.placed(start.map_or_else(RunOptions::new, |s| start_options(s.inputs, s.provider)))),
+            Site::Here | Site::Esxi(_) => Ok(self.placed(match start {
+                Some(s) => start_options(s.inputs, s.provider),
+                None => self.launched_with(),
+            })),
             Site::Server(place) => Ok(server::applying(place, inputs, &self.key())),
             Site::Cloud(place) if start.is_some() => {
                 // The key the lab's instances let in: a plain value the record keeps, so every
@@ -242,6 +246,24 @@ impl Deployment {
             }
             Site::Cloud(place) => Ok(place.later_options()),
         }
+    }
+
+    /// The values the run here was launched with, as its start gave them (`runtime::launch_values`):
+    /// those the lab's spec marks `sensitive: false` as values, every other one as a secret, masked
+    /// in every log from now on. None kept, or a run elsewhere: none, the lab's defaults.
+    fn launched_with(&self) -> RunOptions {
+        if !matches!(self.site, Site::Here) {
+            return RunOptions::new();
+        }
+        let values = crate::runtime::launch_values::kept(self.served.name.as_str());
+        if values.is_empty() {
+            return RunOptions::new();
+        }
+        let plain = lab::load(&self.dir).as_ref().map(lab::plain_inputs).unwrap_or_default();
+        crate::runtime::launch::mask_sensitive(&values, &plain);
+        let mut secrets = isothrum_runner::Secrets::new();
+        let opts = deliver(Inputs { values: &values, plain: &plain, ..Inputs::default() }, RunOptions::new(), &mut secrets);
+        opts.with_secrets(secrets)
     }
 
     /// What a read of the run takes: here and on ESXi, [`Deployment::placed`] (an ESXi host's
@@ -295,6 +317,12 @@ impl Deployment {
     /// VM lab here or on ESXi runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let provider = provider.map(runner_provider).transpose()?;
+        // Kept before it goes up, for its later operations (a resume after a restart): the
+        // runner service holds them for this operation only, and runs it to its end whatever
+        // becomes of the app.
+        if matches!(self.site, Site::Here) {
+            crate::runtime::launch_values::keep(self.served.name.as_str(), inputs.values);
+        }
         let opts = self.changing(Some(Start { inputs, provider })).await?;
         self.act(remote::Act::Up, &opts, log).await?;
         // The ports the run got, which the message names: none read, the spec's.
@@ -319,9 +347,20 @@ impl Deployment {
         // failed launch errors on the missing project.
         if !self.files_back().await? {
             log("Nothing to remove: the run has no files.".into());
+            self.forget_launch_values();
             return Ok(());
         }
-        self.change(remote::Act::Down, log).await
+        self.change(remote::Act::Down, log).await?;
+        self.forget_launch_values();
+        Ok(())
+    }
+
+    /// Forgets the values the run was launched with, once it is down: none outlives its run. A
+    /// keychain that refuses is logged (the next start of the lab replaces them).
+    fn forget_launch_values(&self) {
+        if let Err(e) = crate::runtime::launch_values::forget(self.served.name.as_str()) {
+            log::warn!("{} is down, but the values it was launched with stay in the keychain: {e}", self.served.name.as_str());
+        }
     }
 
     /// Brings the running lab up to date with its regenerated files (a machine added to the lab
@@ -344,8 +383,8 @@ impl Deployment {
     }
 
     /// Runs the lab's set-up again on its running machines (`machine`, or all): its provisioners,
-    /// and its controller's play. The launch's values aren't kept, so none reaches it: an input's
-    /// file keeps the value it was written with.
+    /// and its controller's play, with the values the run was launched with, here
+    /// ([`Deployment::launched_with`]).
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         self.change(remote::Act::Provision(machine, None), log).await
     }

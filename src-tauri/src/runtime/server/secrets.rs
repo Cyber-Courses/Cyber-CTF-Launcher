@@ -1,11 +1,15 @@
-//! The launcher's secrets: each host's (password, API token or access key), and each attack box's
-//! password for its player account ([`get_named`], under its own name). The OS keychain in release
-//! builds, a 0600 JSON file in debug builds, since every `tauri dev` rebuild is a new unsigned
-//! binary and the keychain would re-prompt on each run (as the sign-in session's store does). Both
-//! stores are built in every build, so each is checked and tested; [`in_a_file`] picks one. An
-//! end-to-end run's app (`platform::test_root`) keeps them in the file too, under the run's folder;
-//! a test's, whatever profile built it, in a file of its own (`use_test_file`, else one per test
-//! thread, removed with it), never the player's keychain or file.
+//! The launcher's secrets: each host's (password, API token or access key), and, each under its
+//! own name ([`get_named`]), each attack box's password for its player account and the values a
+//! lab's run was launched with (`runtime::launch_values`). A secret of any length: where a keychain
+//! entry holds too little (Windows), it is split across several ([`keychain::set_whole`]).
+//!
+//! The OS keychain in release builds, a 0600 JSON file in debug builds, since every `tauri dev`
+//! rebuild is a new unsigned binary and the keychain would re-prompt on each run (as the sign-in
+//! session's store does). Both stores are built in every build, so each is checked and tested;
+//! [`in_a_file`] picks one. An end-to-end run's app (`platform::test_root`) keeps them in the file
+//! too, under the run's folder; a test's, whatever profile built it, in a file of its own
+//! (`use_test_file`, else one per test thread, removed with it), never the player's keychain or
+//! file.
 //!
 //! A keychain call blocks: the OS may show its unlock prompt and wait for the player. Called
 //! from an async worker, it runs through [`blocking`], so the worker's other tasks move on to
@@ -53,7 +57,7 @@ pub(crate) fn delete_named(name: &str) -> Result<()> {
 
 /// The secret under `key` in the file, or keychain entry `entry`.
 fn read(key: &str, entry: &str) -> Result<Option<String>> {
-    if in_a_file() { Ok(dev_file::read()?.remove(key)) } else { blocking(|| keychain::get(entry)) }
+    if in_a_file() { Ok(dev_file::read()?.remove(key)) } else { blocking(|| keychain::get_whole(entry)) }
 }
 
 /// Keeps `secret` under `key` in the file, or keychain entry `entry`.
@@ -64,13 +68,13 @@ fn write(key: &str, entry: &str, secret: &str) -> Result<()> {
             true
         })
     } else {
-        blocking(|| keychain::set(entry, secret))
+        blocking(|| keychain::set_whole(entry, secret))
     }
 }
 
 /// Deletes the secret under `key` in the file, or keychain entry `entry`.
 fn remove(key: &str, entry: &str) -> Result<()> {
-    if in_a_file() { dev_file::edit(|map| map.remove(key).is_some()) } else { blocking(|| keychain::delete(entry)) }
+    if in_a_file() { dev_file::edit(|map| map.remove(key).is_some()) } else { blocking(|| keychain::delete_whole(entry)) }
 }
 
 /// The secret a host connects with: empty for hosts that sign in through their own CLI (see
