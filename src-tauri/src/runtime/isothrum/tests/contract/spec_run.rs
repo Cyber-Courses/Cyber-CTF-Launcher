@@ -23,16 +23,12 @@ use serde_json::{Value, json};
 use super::super::*;
 use crate::runtime::LabStatus;
 
-/// Isoloom's examples these tests run as containers: a web page and a cache (a message naming the
-/// page's URL), an API on a fixed host port with launch inputs, a DNS server published over UDP
-/// (a message naming its published port), and one web server with no message.
+/// Isoloom's examples these tests run, as containers and as VMs: a web page and a cache (a message
+/// naming the page's URL), an API on a fixed host port with launch inputs, a DNS server published
+/// over UDP (a message naming its published port; as VMs, a UDP forward, which `vagrant port`
+/// doesn't say and the runner reads from the Vagrantfile's line), and one web server with no
+/// message.
 const EXAMPLES: [&str; 4] = ["hello-stack", "invoice-portal-api", "udp-dns", "solo-web"];
-
-/// The ones run as VMs. `udp-dns` is left out, a known gap: `vagrant port` doesn't say a
-/// forward's protocol, so the runner reads its UDP forward as TCP (the page shows its TCP port 53
-/// published) and gives its host port back as `HOST_PORT_DNS_53_TCP`, while the Vagrantfile reads
-/// `HOST_PORT_DNS_53_UDP`: a UDP port Vagrant moved moves again at the next boot.
-const VM_EXAMPLES: [&str; 3] = ["hello-stack", "invoice-portal-api", "solo-web"];
 
 /// The free host ports the runner picks from for a publish that names none.
 const FREE: std::ops::Range<u16> = 41000..41064;
@@ -183,7 +179,7 @@ async fn isoloom_examples_as_containers_join_their_run_on_the_lab_page() {
 #[tokio::test]
 async fn isoloom_examples_as_vms_join_their_run_on_the_lab_page_and_keep_their_ports() {
     let _tools = no_tools();
-    for id in VM_EXAMPLES {
+    for id in EXAMPLES {
         let lab = Installed::new(id, lab::Target::Vagrant);
         let run = lab.run(Kind::Vm);
         let mut log = Vec::new();
@@ -409,6 +405,8 @@ struct Forward {
     /// The variable the Vagrantfile reads its host port from (none: a fixed one), and its default.
     var: Option<String>,
     default: u16,
+    /// Whether it is TCP (`protocol: "udp"` on its line: not).
+    tcp: bool,
 }
 
 impl Forward {
@@ -444,6 +442,7 @@ impl Vms {
                     guest: c[1].parse().unwrap(),
                     var: c.get(2).map(|v| v.as_str().to_owned()),
                     default: c[3].parse().unwrap(),
+                    tcp: !line.contains(r#"protocol: "udp""#),
                 });
             }
         }
@@ -456,10 +455,10 @@ impl Vms {
         self.forwards.iter().filter_map(|f| Some((f.var.clone()?, f.machine.clone(), f.guest))).collect()
     }
 
-    /// Each forward where Vagrant put it: Vagrant doesn't say a forward's protocol, so each
-    /// reads as TCP.
+    /// Each forward where Vagrant put it, of the protocol its line says.
     fn seen(&self) -> Vec<Seen> {
-        self.at.iter().map(|((machine, port), host)| Seen { machine: machine.clone(), port: *port, tcp: true, host: *host }).collect()
+        let tcp = |machine: &str, port: u16| self.forwards.iter().find(|f| f.machine == machine && f.guest == port).is_none_or(|f| f.tcp);
+        self.at.iter().map(|((machine, port), host)| Seen { machine: machine.clone(), port: *port, tcp: tcp(machine, *port), host: *host }).collect()
     }
 
     fn answer(&mut self, call: &Call) -> Reply {
