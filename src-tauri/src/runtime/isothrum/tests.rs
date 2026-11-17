@@ -308,9 +308,9 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
 
 /// A lab imported from a folder starts with no launch values: the launcher gives it none, not
 /// even empty ones. The lab's spec gives its inputs a default, which its generated files fall
-/// back to. In Compose, a one-shot job (`isoloom-inputs-<machine>`) writes each input's file into
-/// a volume the machine mounts it from: the value from a config filled from the variable, else
-/// the default, behind one byte the job drops (so an empty value is an empty file).
+/// back to. Checked on what Compose makes of the file, not on how Isoloom writes it: read with no
+/// value for the input, it holds the default; read with one, the value instead. The machine reads
+/// the input's file where the spec puts it.
 #[tokio::test]
 async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_defaults() {
     let f = Fixture::new();
@@ -320,9 +320,47 @@ async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_def
     assert_eq!(up.env("CTF_LAUNCH_TOKEN"), None, "{}", up.line());
     assert_eq!(up.env("CTF_API_URL"), None, "{}", up.line());
     let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
-    assert!(compose.contains("content: -${CTF_LAUNCH_TOKEN:-dev-launch-token}"), "the token's default, unless a value is given: {compose}");
-    assert!(compose.contains("tail -c +2 /in/0 > /out/0"), "written into the job's volume without its first byte: {compose}");
-    assert!(compose.contains("source: isoloom-inputs-web\n      target: /run/lab/token"), "the machine reads its file from that volume: {compose}");
+    let unset = interpolated(&compose, &[]);
+    assert!(unset.contains("dev-launch-token"), "with no value, the token's default: {unset}");
+    let given = interpolated(&compose, &[("CTF_LAUNCH_TOKEN", "g1ven-t0ken")]);
+    assert!(given.contains("g1ven-t0ken") && !given.contains("dev-launch-token"), "with one, the value instead: {given}");
+    assert!(compose.contains("target: /run/lab/token"), "the machine reads its file where the spec says: {compose}");
+}
+
+/// `compose` as Compose reads it with only `env` set: each `${NAME}`, `${NAME:-default}`,
+/// `${NAME-default}`, `${NAME:+other}` and `${NAME+other}` replaced, `$$` a `$`.
+fn interpolated(compose: &str, env: &[(&str, &str)]) -> String {
+    let value = |name: &str| env.iter().find(|(n, _)| *n == name).map(|(_, v)| *v);
+    let mut out = String::new();
+    let mut rest = compose;
+    while let Some(at) = rest.find('$') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at + 1..];
+        if let Some(after) = rest.strip_prefix('$') {
+            out.push('$');
+            rest = after;
+            continue;
+        }
+        let Some((expr, after)) = rest.strip_prefix('{').and_then(|b| b.find('}').map(|end| (&b[..end], &b[end + 1..]))) else {
+            out.push('$');
+            continue;
+        };
+        let end = expr.find([':', '-', '+']).unwrap_or(expr.len());
+        let (name, op) = expr.split_at(end);
+        let set = value(name);
+        let filled = |empty_unset: bool| set.filter(|v| !(empty_unset && v.is_empty()));
+        out.push_str(&match op {
+            "" => set.unwrap_or_default().to_owned(),
+            _ if op.starts_with(":-") => filled(true).unwrap_or(&op[2..]).to_owned(),
+            _ if op.starts_with('-') => filled(false).unwrap_or(&op[1..]).to_owned(),
+            _ if op.starts_with(":+") => filled(true).map_or("", |_| &op[2..]).to_owned(),
+            _ if op.starts_with('+') => filled(false).map_or("", |_| &op[1..]).to_owned(),
+            _ => panic!("an interpolation this reading doesn't know: ${{{expr}}}"),
+        });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Regression (docs/contributing/testing/resilience.md M4): a container stopped outside the app (`docker stop`,
