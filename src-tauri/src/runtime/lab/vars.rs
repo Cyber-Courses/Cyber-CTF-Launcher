@@ -68,6 +68,10 @@ fn cloud_vars(h: &HostProfile) -> Vec<(String, String)> {
 /// The private key Proxmox's module signs in to the node with, for the snippets (a token setup).
 pub const NODE_KEY: &str = "proxmox_ssh_private_key_file";
 
+/// The SHA-256 of the server's certificate the player confirmed, for the runner's requests to its
+/// API (`isothrum::server` hands it on as `PROXMOX_VE_TLS_FINGERPRINT`); no module variable.
+pub const TLS_PIN: &str = "proxmox_tls_fingerprint";
+
 /// Isoloom's Proxmox module variables: the API connection, then node / storage / bridge.
 fn proxmox_vars(h: &HostProfile, password: &str) -> Vec<(String, String)> {
     let mut vars = vec![
@@ -88,6 +92,11 @@ fn proxmox_vars(h: &HostProfile, password: &str) -> Vec<(String, String)> {
         }
     } else {
         vars.push(("proxmox_password", password.to_string()));
+    }
+    // The certificate the player confirmed for a self-signed server: the runner's own requests
+    // (a VM's state, its console) trust it alone, as the launcher's do.
+    if let (true, Some(pin)) = (h.insecure_tls, h.tls_fingerprint) {
+        vars.push((TLS_PIN, pin.to_string()));
     }
     if let Some(v) = &h.node {
         vars.push(("node", v.clone()));
@@ -233,6 +242,17 @@ mod tests {
         assert_eq!(get(&vars, "node"), Some("pve"));
         // A password setup carries no api token var.
         assert!(get(&vars, "proxmox_api_token").is_none());
+        assert!(get(&vars, TLS_PIN).is_none(), "a certificate the system's store checks has no pin");
+    }
+
+    #[test]
+    fn a_self_signed_servers_confirmed_certificate_is_handed_to_the_runner() {
+        let mut h = profile(Provider::Proxmox);
+        let pin = crate::runtime::server::tls_pin::Fingerprint::of(b"cert");
+        (h.insecure_tls, h.tls_fingerprint) = (true, Some(pin));
+        assert_eq!(get(&host_vars(&h, "pw"), TLS_PIN), Some(pin.to_string().as_str()));
+        h.tls_fingerprint = None;
+        assert!(get(&host_vars(&h, "pw"), TLS_PIN).is_none(), "none before the player confirmed one");
     }
 
     #[test]
