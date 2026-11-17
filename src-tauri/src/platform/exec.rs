@@ -76,11 +76,6 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// it's treated as a stuck tool. Polled paths use this so a wedged daemon can't hang the UI.
 pub const STATUS_TIMEOUT: Duration = Duration::from_secs(25);
 
-/// How long a cloud CLI call (`aws`, `az`, `gcloud`, `oci`) may take: one waiting for a
-/// re-authentication nobody will give, or on a dead network, must not leave Test spinning or a
-/// launch stalled with its lab locked.
-pub const CLI_TIMEOUT: Duration = Duration::from_secs(60);
-
 /// The bound on `run`/`run_env` when the caller named none. A read probe or a cloud CLI sets its
 /// own shorter limit, but teardown (`docker compose down`, `docker rm -f`) runs through the plain
 /// path while holding the lab lock, and a wedged daemon there must fail rather than hang the lab
