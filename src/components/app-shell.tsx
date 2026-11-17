@@ -23,7 +23,6 @@ import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { NodeKeysPrompt } from "@/features/servers/node-keys-prompt";
 import { DialogPrompts } from "@/components/destructive-prompt";
-import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useActiveOperations } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
 import { WindowTitleBar } from "@/components/window-title-bar";
@@ -53,7 +52,6 @@ export function AppShell() {
   // double every poll (docker and vagrant are run for the workloads one).
   const ops = useActiveOperations(mainWindow);
   // Main window only: two windows must not both start a box.
-  useAttackBoxAutoStart(ops, mainWindow);
   const sidebarLabs = useSidebarLabs(session.auth?.loggedIn, ops, mainWindow);
 
   function completeOnboarding() {

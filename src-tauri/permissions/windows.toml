@@ -94,8 +94,6 @@ permissions = [
   "allow-auth-login-device",
   "allow-auth-logout",
   "allow-auth-status",
-  "allow-attack-box-attach",
-  "allow-attack-box-status",
   "allow-busy-labs",
   "allow-hyperv-join-admins",
   "allow-image-download-size",

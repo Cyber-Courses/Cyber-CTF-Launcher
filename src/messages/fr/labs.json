@@ -238,7 +238,6 @@
     "start": "Démarrer l’attack box",
     "attaching": "Démarrage de l’attack box…",
     "removing": "Suppression de l’attack box…",
-    "autoAttachFailed": "L’attack box n’a pas pu être ajoutée avec le lab",
     "credentials": "Identifiants",
     "credentialsHint": "Connectez-vous en {user} avec ce mot de passe partout où la box en demande un : son écran, su, SSH. sudo n’en demande aucun.",
     "showPassword": "Afficher le mot de passe",
