@@ -1,12 +1,10 @@
-//! Elevation: whether this process may manage Hyper-V, and starting a program elevated through
+//! Elevation: whether this process runs elevated, and starting a program elevated through
 //! a UAC prompt (`ShellExecuteEx` with the `runas` verb).
 
 use std::path::Path;
 
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
-use windows_sys::Win32::Security::{
-    AllocateAndInitializeSid, CheckTokenMembership, FreeSid, GetTokenInformation, PSID, SID_IDENTIFIER_AUTHORITY, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
-};
+use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetExitCodeProcess, INFINITE, OpenProcessToken, WaitForSingleObject};
 use windows_sys::Win32::UI::Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
 
@@ -30,27 +28,6 @@ pub fn is_elevated() -> bool {
         let ok = GetTokenInformation(token, TokenElevation, std::ptr::from_mut(&mut elevation).cast(), size, &raw mut len) != 0;
         CloseHandle(token);
         ok && elevation.TokenIsElevated != 0
-    }
-}
-
-/// Whether this process's token is in BUILTIN\Hyper-V Administrators (S-1-5-32-578).
-pub fn in_hyperv_admins() -> bool {
-    const SECURITY_NT_AUTHORITY: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
-    const SECURITY_BUILTIN_DOMAIN_RID: u32 = 32;
-    const DOMAIN_ALIAS_RID_HYPER_V_ADMINS: u32 = 578;
-    // SAFETY: the SID is allocated, checked against this thread's (or process's) token, and
-    // freed here.
-    unsafe {
-        let mut sid: PSID = std::ptr::null_mut();
-        if AllocateAndInitializeSid(&SECURITY_NT_AUTHORITY, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_HYPER_V_ADMINS, 0, 0, 0, 0, 0, 0, &raw mut sid)
-            == 0
-        {
-            return false;
-        }
-        let mut member = 0;
-        let ok = CheckTokenMembership(std::ptr::null_mut(), sid, &raw mut member) != 0;
-        FreeSid(sid);
-        ok && member != 0
     }
 }
 

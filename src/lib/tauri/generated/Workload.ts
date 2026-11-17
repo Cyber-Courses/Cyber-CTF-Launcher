@@ -2,12 +2,11 @@
 import type { WorkloadKind } from "./WorkloadKind";
 
 /**
- * Something of the launcher's running on this machine, as the Machine page lists it: a lab's
- * containers or VMs, or a setup test's.
+ * A lab running on this machine, as the Machine page lists it: its containers or its VMs.
  */
 export type Workload = { 
 /**
- * Lab id, or `selftest` for a setup test.
+ * Lab id.
  */
 id: string, 
 /**
@@ -15,7 +14,7 @@ id: string,
  */
 kind: WorkloadKind, 
 /**
- * Containers running for it (VMs: 1 per machine).
+ * Its machines running (containers, or VMs).
  */
 count: number, 
 /**

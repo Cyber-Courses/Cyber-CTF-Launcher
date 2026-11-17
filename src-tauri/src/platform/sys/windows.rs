@@ -6,7 +6,7 @@ mod registry;
 
 use std::ffi::OsStr;
 
-pub use elevation::{ElevatedProcess, in_hyperv_admins, is_elevated, launch_elevated};
+pub use elevation::{ElevatedProcess, is_elevated, launch_elevated};
 #[cfg(test)]
 pub use job::terminate;
 pub use job::{Created, Job, create_in_job, exit_code, process_created, terminate_process};

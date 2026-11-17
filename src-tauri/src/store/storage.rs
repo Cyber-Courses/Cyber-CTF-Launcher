@@ -1,10 +1,10 @@
-//! What the app downloaded for its own operations (`machine::storage::owned`): the images it
+//! What the app downloaded for its own operations (`machine::storage::record`): the images it
 //! pulled and the boxes it downloaded.
 
 use rusqlite::Connection;
 
 use crate::error::Result;
-use crate::machine::storage::owned::{Owned, OwnedBox, OwnedImage};
+use crate::machine::storage::record::{Owned, OwnedBox, OwnedImage};
 
 /// The whole record.
 ///

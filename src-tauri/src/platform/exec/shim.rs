@@ -150,9 +150,5 @@ mod tests {
         // No fake rule matches: had the guard not refused it, this would try to spawn `az`.
         let err = crate::platform::exec::run("az", &["group", "create", "--name", "x&calc"], None).await.unwrap_err();
         assert!(err.to_string().contains("cmd.exe"), "{err}");
-        let lines = std::cell::RefCell::new(Vec::new());
-        let err = crate::platform::exec::stream("gcloud", &["projects", "create", "a|b"], None, &[], |l| lines.borrow_mut().push(l)).await.unwrap_err();
-        assert!(err.to_string().contains("cmd.exe"), "{err}");
-        assert!(lines.borrow().is_empty());
     }
 }

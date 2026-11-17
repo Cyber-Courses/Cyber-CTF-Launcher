@@ -4,26 +4,22 @@
 //!   two-container deployment (busybox, ~2 MB) through a runner of its own: the engine answers,
 //!   the image is here, the deployment starts, its containers reach each other by name and a
 //!   published port answers on this machine. Always cleaned up.
-//! - `vm`: a real throwaway VM on the first usable local hypervisor. It checks the
-//!   hypervisor answers, gets a small test box (once, then cached), boots it on a private
-//!   lab network, runs a command inside it, pings it from this machine, then destroys it.
+//! - `vm`: isothrum-machine's hypervisor self-test (`selftest::hypervisor`), a real throwaway VM
+//!   on the first usable local hypervisor, through a runner of its own. It checks the hypervisor
+//!   answers, gets a small test box (once, then cached), boots it on a private lab network, runs a
+//!   command inside it, pings it from this machine, then destroys it.
 //!
 //! Progress goes to the UI as one event per step: `running`, then `ok` or `fail`.
 
 mod docker;
-mod downloads;
 mod vm;
 
 use std::path::PathBuf;
 
 use crate::error::Result;
-use crate::machine::storage::owned;
 use crate::platform::AppDirs;
-use crate::platform::host::Arch;
 use crate::runtime::providers::Provider;
 use crate::runtime::selftest_report::{Event, Reporter};
-
-use vm::candidate_boxes;
 
 /// Which self-test to run.
 #[derive(Clone, Copy, serde::Deserialize, ts_rs::TS)]
@@ -49,6 +45,38 @@ fn explain(raw: &str) -> String {
     format!("{hint} Details: {raw}")
 }
 
+/// Says one step's `progress` through `r`: the step named by `named`, what it found by `detail`,
+/// why it failed by `error` (said through the reporter's explanation).
+fn say<S, F, E>(
+    r: &Reporter,
+    progress: isothrum_machine::selftest::Progress<S, F, E>,
+    named: fn(S) -> (&'static str, &'static str),
+    detail: fn(F) -> Option<String>,
+    error: fn(E) -> crate::error::Error,
+) {
+    use crate::runtime::selftest_report::StepState;
+    use isothrum_machine::selftest::Progress;
+    match progress {
+        Progress::Running(step) => {
+            let (id, label) = named(step);
+            r.send(id, label, StepState::Running, None);
+        }
+        Progress::Passed(step, found) => {
+            let (id, label) = named(step);
+            r.send(id, label, StepState::Ok, detail(found));
+        }
+        Progress::Skipped(step, why) => {
+            let (id, label) = named(step);
+            r.send(id, label, StepState::Skip, detail(why));
+        }
+        Progress::Failed(step, why) => {
+            let (id, label) = named(step);
+            r.failed(id, label, &error(why).to_string());
+        }
+        _ => {}
+    }
+}
+
 /// The self-test's own folder in the app's cache (`selftest/<kind>`), created when missing.
 pub(crate) fn work_dir(dirs: &AppDirs, kind: &str) -> Result<PathBuf> {
     let dir = dirs.cache()?.join("selftest").join(kind);
@@ -56,14 +84,7 @@ pub(crate) fn work_dir(dirs: &AppDirs, kind: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Runs `op`, the VM self-test, recording what it downloaded as the app's (the test box of
-/// whichever provider it used), for Storage to clean up.
-async fn tracked<T>(dirs: &AppDirs, op: impl std::future::Future<Output = T>) -> T {
-    let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, Arch::HERE).iter().map(ToString::to_string)).collect();
-    owned::tracked(dirs.clone(), &[], &boxes, op).await
-}
-
-/// Adds the test image a self-test pulled (`pulled`) to the app's runner record, for Storage to
+/// Adds the test image or box a self-test fetched (`pulled`) to the app's runner record, for Storage to
 /// clean up. Best effort: a failure is logged, and only means it isn't cleaned up later.
 async fn keep(dirs: &AppDirs, pulled: Option<isothrum_runner::DownloadToAdopt>) {
     let Some(pulled) = pulled else { return };
@@ -82,13 +103,12 @@ pub async fn machine_selftest_prefetch(dirs: AppDirs, kind: Kind, provider: Opti
     match kind {
         Kind::Docker => docker::prefetch(&dirs).await,
         Kind::Vm => {
-            let Some(p) = vm::test_provider(provider).await else { return Ok(()) };
-            let (bx, cached) = vm::pick_box(p, Arch::HERE).await;
-            if cached {
+            let Some(p) = vm::test_provider(provider).await.and_then(Provider::vagrant) else { return Ok(()) };
+            let (bx, held) = isothrum_machine::selftest::hypervisor::box_for(&crate::runtime::providers::machine_selftest(), p).await;
+            if held {
                 return Ok(());
             }
-            let dir = work_dir(&dirs, "vm")?;
-            owned::tracked(dirs, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, Arch::HERE, |_| {})).await.map(|_| ())
+            vm::ensure_box(&dirs, p, bx, &|_| {}).await.map(drop)
         }
     }
 }
@@ -120,7 +140,7 @@ pub async fn machine_selftest(
     // Boxed: the steps of a test VM's run make a large future.
     match kind {
         Kind::Docker => Box::pin(docker::run_test(&dirs, &work_dir(&dirs, "docker")?, context.as_deref(), &r)).await,
-        Kind::Vm => Box::pin(tracked(&dirs, async { vm::run_test(&work_dir(&dirs, "vm")?, provider, &r).await })).await,
+        Kind::Vm => Box::pin(vm::run_test(&dirs, &work_dir(&dirs, "vm")?, provider, &r)).await,
     }
 }
 
@@ -146,7 +166,6 @@ mod tests {
         let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("Cannot connect to the Docker daemon".into())) }).await.unwrap_err();
         assert!(err.to_string().contains("Docker daemon"));
         assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
-        let _ = Arch::HERE;
     }
 
     #[test]
@@ -260,47 +279,102 @@ mod tests {
         drop(first);
     }
 
-    #[tokio::test]
-    async fn the_vm_test_boots_pings_and_deletes_a_vm() {
-        use crate::platform::exec::fake::{Tools, ok};
-        // The hypervisors are the fakes', every one answering, none needing a plugin listed: this
-        // host's /dev/kvm and VirtualBox driver don't count (a Linux CI runner has neither usable).
-        let machine = crate::testing::temp_dir("vm-test-machine");
-        let tools = isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::ok(""));
-        let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::new(tools), crate::runtime::providers::testing::host(&machine));
-        let t = crate::testing::test_app::TestApp::new();
-        let boxes = "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\ngeneric/alpine319 (libvirt, 4.3.12)\nbento/debian-12 (parallels, 1)\nbento/debian-12 (vmware_desktop, 1)\ngeneric/alpine319 (qemu, 1)\ngeneric/alpine319 (hyperv, 1)\nutm/bookworm (utm, 1)\n";
-        let tools = Tools::new(move |program, args| match (program, args) {
-            ("vagrant", ["plugin", "list"]) => {
-                ok("vagrant-qemu (0.3.6)\nvagrant-parallels (2.4)\nvagrant-vmware-desktop (3.0)\nvagrant-libvirt (0.12)\nvagrant_utm (0.2.0)\n")
+    /// A machine whose hypervisors all answer, their plugins installed, the test box held, Vagrant
+    /// there when `vagrant` (else missing): the VM boots, answers the command and the ping, and
+    /// goes.
+    fn hypervisors(vagrant: bool) -> isothrum_runner::fake::FakeProcesses {
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        let up = std::sync::Mutex::new(String::new());
+        FakeProcesses::model(move |call| {
+            let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+            let mut on = up.lock().unwrap();
+            match (call.program.as_str(), args.as_slice()) {
+                ("vagrant", _) if !vagrant => Reply::missing(),
+                ("vagrant", ["--version"]) => Reply::ok("Vagrant 2.4.3"),
+                ("vagrant", ["plugin", "list", ..]) => Reply::ok(
+                    "1,,plugin-name,vagrant-qemu\n1,,plugin-name,vagrant-parallels\n1,,plugin-name,vagrant-vmware-desktop\n1,,plugin-name,vagrant-libvirt\n1,,plugin-name,vagrant_utm",
+                ),
+                ("vagrant", ["box", "list"]) => Reply::ok(
+                    "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\ngeneric/alpine319 (libvirt, 4.3.12)\nbento/debian-12 (parallels, 1)\nbento/debian-12 (vmware_desktop, 1)\ngeneric/alpine319 (hyperv, 1)\nutm/bookworm (utm, 1)\n",
+                ),
+                ("vagrant", ["up", "--provider", provider, ..]) => {
+                    *on = (*provider).to_owned();
+                    Reply::ok("==> default: Booting VM...")
+                }
+                ("vagrant", ["status", "--machine-readable"]) => {
+                    let state = if on.is_empty() { "not_created" } else { "running" };
+                    Reply::ok(&format!("1,default,provider-name,{on}\n1,default,state,{state}"))
+                }
+                ("vagrant", ["ssh", "default", "-c", ..]) => Reply::ok("Linux 6.6 x86_64"),
+                ("vagrant", ["destroy", ..]) => {
+                    on.clear();
+                    Reply::ok("")
+                }
+                // Every test address is free until the VM boots on the first.
+                ("ping", [.., address]) if !on.is_empty() && *address == "192.168.56.250" => {
+                    Reply::ok("64 bytes from 192.168.56.250: icmp_seq=1 ttl=64 time=0.412 ms")
+                }
+                ("ping", _) => Reply::fail(1, "1 packets transmitted, 0 received"),
+                _ => Reply::ok(""),
             }
-            ("vagrant", ["box", "list"]) => ok(boxes),
-            ("vagrant", ["--version"]) => ok("Vagrant 2.4.3\n"),
-            ("vagrant", ["ssh", "-c", _]) => ok("cyberctf-uname:Linux 6.6 x86_64\n"),
-            // Every address answers, as a ping's reply line says (an exit 0 alone isn't a reply).
-            ("ping", _) => ok("64 bytes from 192.168.56.250: icmp_seq=1 ttl=64 time=0.412 ms\n"),
-            _ => ok(""),
-        });
+        })
+    }
+
+    /// The VM test on [`hypervisors`]: how it went, its events, and the calls made.
+    async fn vm_test(vagrant: bool) -> (Result<()>, Sink, std::sync::Arc<isothrum_runner::fake::FakeProcesses>, crate::testing::test_app::TestApp) {
+        let machine = crate::testing::temp_dir("vm-test-machine");
+        let tools = std::sync::Arc::new(hypervisors(vagrant));
+        let runner: std::sync::Arc<dyn isothrum_runner::ProcessRunner> = tools.clone();
+        let _machine = crate::runtime::providers::testing::Machine::set(runner, crate::runtime::providers::testing::host(&machine));
+        let t = crate::testing::test_app::TestApp::new();
         let (channel, seen) = events();
-        let r = machine_selftest(t.dirs(), Kind::Vm, None, None, channel).await;
-        let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
-        assert_eq!(&done[..2], ["vagrant:ok", "provider:ok"], "{done:?}");
-        r.unwrap();
-        assert_eq!(&done[2..6], ["hypervisor:ok", "box:ok", "boot:ok", "exec:ok"]);
-        assert!(done[6] == "network:ok" || done[6] == "network:skip");
-        assert_eq!(done.last().map(String::as_str), Some("cleanup:ok"));
-        assert!(tools.called("vagrant up --provider") && tools.called("vagrant destroy -f"));
+        (machine_selftest(t.dirs(), Kind::Vm, None, None, channel).await, seen, tools, t)
+    }
+
+    #[tokio::test]
+    async fn the_vm_test_says_each_step_in_the_apps_words_boots_pings_and_deletes_a_vm() {
+        let (ran, seen, tools, t) = vm_test(true).await;
+        let done: Vec<String> = seen
+            .messages()
+            .iter()
+            .filter(|e| e["state"] != "running")
+            .map(|e| {
+                format!(
+                    "{}:{}:{}:{}",
+                    e["step"].as_str().unwrap(),
+                    e["state"].as_str().unwrap(),
+                    e["label"].as_str().unwrap(),
+                    e["detail"].as_str().unwrap_or("")
+                )
+            })
+            .collect();
+        ran.unwrap();
+        let provider = done[1].rsplit(':').next().unwrap().to_owned();
+        // The box this CPU gets for that hypervisor.
+        let boxed = done[3].rsplit(':').next().unwrap().trim_end_matches(" (ready)").to_owned();
+        let mut said = vec!["vagrant:ok:Vagrant is installed:Vagrant 2.4.3".to_owned(), format!("provider:ok:A hypervisor is ready:{provider}")];
+        assert_eq!(done[..2], said[..], "{done:?}");
+        said.push(done[2].clone());
+        said.extend([
+            format!("box:ok:Get a small test VM image:{boxed} (ready)"),
+            format!("boot:ok:Boot the test VM:{boxed} on {provider}"),
+            "exec:ok:Run a command inside the VM:Linux 6.6 x86_64".to_owned(),
+        ]);
+        assert_eq!(done[..6], said[..], "{done:?}");
+        assert!(done[2].starts_with("hypervisor:ok:Hypervisor responds"), "{done:?}");
+        assert!(done[6].starts_with("network:"), "{done:?}");
+        assert_eq!(done.last().map(String::as_str), Some("cleanup:ok:Delete the test VM:test box kept for next time"), "{done:?}");
+        let calls: Vec<String> = tools.calls().iter().map(|c| format!("{} {}", c.program, c.args.join(" "))).collect();
+        assert!(calls.iter().any(|c| c.starts_with("vagrant up --provider")) && calls.iter().any(|c| c.starts_with("vagrant destroy")), "{calls:?}");
         // The box is there already: nothing to prefetch.
         machine_selftest_prefetch(t.dirs(), Kind::Vm, None).await.unwrap();
-        assert!(!tools.called("box add"));
+        assert!(!tools.calls().iter().any(|c| c.args.join(" ").contains("box add")));
     }
 
     #[tokio::test]
     async fn without_vagrant_the_vm_test_stops_at_once() {
-        let t = crate::testing::test_app::TestApp::new();
-        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("VBoxManage list vms", crate::platform::exec::fake::ok("")), ("vagrant", None)]);
-        let (channel, seen) = events();
-        assert!(machine_selftest(t.dirs(), Kind::Vm, None, None, channel).await.is_err());
+        let (ran, seen, _, _) = vm_test(false).await;
+        assert!(ran.is_err());
         assert_eq!(states(&seen), ["vagrant:running", "vagrant:fail"]);
     }
 

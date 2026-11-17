@@ -10,7 +10,7 @@ use std::path::Path;
 
 use isothrum_runner::DownloadToAdopt;
 
-use super::owned::Owned;
+use super::record::Owned;
 use crate::error::Result;
 use crate::platform::AppDirs;
 use crate::runtime::isothrum as remote;
