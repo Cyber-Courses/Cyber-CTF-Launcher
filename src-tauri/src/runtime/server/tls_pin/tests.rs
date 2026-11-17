@@ -87,11 +87,11 @@ async fn a_refused_console_says_the_certificate_and_the_server() {
     let changed = Client::upgrade(Trust::Pinned(Some(a))).unwrap();
     assert!(changed.http.get(format!("https://127.0.0.1:{other}/")).send().await.is_err());
     let b = Fingerprint::of(&der(CERT_B));
-    assert_eq!(changed.refused().map(Refusal::from), Some(Refusal::Changed { pinned: a, presented: b }));
+    assert_eq!(changed.refused(), Some(Refusal::Changed { pinned: a, presented: b }));
     assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0, "nothing reached the server");
-    let said = Refusal::Changed { pinned: a, presented: b }.error("Garage Proxmox");
+    let said = refused(Refusal::Changed { pinned: a, presented: b }, "Garage Proxmox");
     assert!(matches!(said.code(), Code::TlsChanged { ref server, ref pinned, .. } if server == "Garage Proxmox" && pinned == FINGERPRINT_A), "{said:?}");
-    let new = refused(isothrum_runner::tls::Refusal::Unconfirmed { presented: a }, "Garage Proxmox");
+    let new = refused(Refusal::Unconfirmed { presented: a }, "Garage Proxmox");
     assert!(matches!(new.code(), Code::TlsUnconfirmed { ref presented, .. } if presented == FINGERPRINT_A), "{new:?}");
 }
 

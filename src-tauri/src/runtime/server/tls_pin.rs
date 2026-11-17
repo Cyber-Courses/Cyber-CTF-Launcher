@@ -11,52 +11,17 @@
 use std::time::Duration;
 
 use isothrum_runner::tls::Tls;
-pub use isothrum_runner::tls::{Fingerprint, Trust};
+pub use isothrum_runner::tls::{Fingerprint, Refusal, Trust};
 
 use crate::error::{Code, Error, Result};
 
-/// Why a pinned client refused a server's certificate (Isothrum's [`isothrum_runner::tls::Refusal`]),
-/// with the error the learner sees for it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Refusal {
-    /// No certificate was confirmed for the server yet: this is the one it offers.
-    Unconfirmed {
-        /// The certificate the server offered.
-        presented: Fingerprint,
-    },
-    /// The server offered another certificate than the one confirmed.
-    Changed {
-        /// The certificate confirmed for it.
-        pinned: Fingerprint,
-        /// The one it offered.
-        presented: Fingerprint,
-    },
-}
-
-impl From<isothrum_runner::tls::Refusal> for Refusal {
-    fn from(r: isothrum_runner::tls::Refusal) -> Refusal {
-        match r {
-            isothrum_runner::tls::Refusal::Unconfirmed { presented } => Refusal::Unconfirmed { presented },
-            isothrum_runner::tls::Refusal::Changed { pinned, presented } => Refusal::Changed { pinned, presented },
-        }
-    }
-}
-
-impl Refusal {
-    /// The error the learner sees for server `server` (its name).
-    pub fn error(self, server: &str) -> Error {
-        Error::coded(match self {
-            Refusal::Unconfirmed { presented } => Code::TlsUnconfirmed { server: server.to_owned(), presented: presented.to_string() },
-            Refusal::Changed { pinned, presented } => {
-                Code::TlsChanged { server: server.to_owned(), pinned: pinned.to_string(), presented: presented.to_string() }
-            }
-        })
-    }
-}
-
-/// The error the learner sees when Isothrum refused the certificate of server `server` (its name).
-pub fn refused(refusal: isothrum_runner::tls::Refusal, server: &str) -> Error {
-    Refusal::from(refusal).error(server)
+/// The error the learner sees when Isothrum refused the certificate of server `server` (its name):
+/// none confirmed for it yet, or not the confirmed one.
+pub fn refused(refusal: Refusal, server: &str) -> Error {
+    Error::coded(match refusal {
+        Refusal::Unconfirmed { presented } => Code::TlsUnconfirmed { server: server.to_owned(), presented: presented.to_string() },
+        Refusal::Changed { pinned, presented } => Code::TlsChanged { server: server.to_owned(), pinned: pinned.to_string(), presented: presented.to_string() },
+    })
 }
 
 /// An HTTP client for one server's websocket upgrade (the console), its certificate trusted as
@@ -83,7 +48,7 @@ impl Client {
 
     /// Why a request of this client failed on the server's certificate: none confirmed yet, or
     /// not the confirmed one. None when the certificate isn't why.
-    pub fn refused(&self) -> Option<isothrum_runner::tls::Refusal> {
+    pub fn refused(&self) -> Option<Refusal> {
         self.tls.refused()
     }
 }
