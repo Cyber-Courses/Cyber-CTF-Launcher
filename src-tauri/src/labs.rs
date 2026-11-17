@@ -443,13 +443,30 @@ pub(crate) struct PreparedLaunch {
     pub(crate) place: runtime::Placed,
 }
 
-/// Prepares `request`'s launch: resolves the `startLab` spec (the backend's, kept for a later
-/// offline start, or the installed lab's when the backend can't be reached and the player asked)
-/// and the Docker context of the engine it runs on. The deploy itself runs next ([`run`]), its
-/// run's operations in the runner service (so quitting the app never cuts them short); `log`
-/// carries the one "starting offline" line the preparation may emit.
+/// Prepares `request`'s launch: checks everything on this machine that would stop it, before the
+/// launch is registered ([`runtime::preflight`]: a refusal spends no launch token), then resolves
+/// the `startLab` spec (the backend's, kept for a later offline start, or the installed lab's when
+/// the backend can't be reached and the player asked) and the Docker context of the engine it
+/// runs on. The deploy itself runs next ([`run`]), its run's operations in the runner service (so
+/// quitting the app never cuts them short); `log` carries the one "starting offline" line the
+/// preparation may emit.
 pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
-    let launch = launch_spec(dirs, &request.lab_id, request.offline, log).await?;
+    let listed = catalogue_source(dirs, &request.lab_id, request.offline).await?;
+    let (lab_id, placement) = (request.lab_id.clone(), request.placement.clone());
+    // Boxed: the preflight reads the spec and asks this machine's tools, which makes its future large.
+    let checked = Box::pin(runtime::preflight::check(dirs, &lab_id, listed.runtime, listed.source(), &placement));
+    prepare_checked(request, checked, async |request: &LaunchRequest| launch_spec(dirs, &request.lab_id, request.offline, log).await).await
+}
+
+/// [`prepare_launch`] once the catalogue was read: `checked` (the preflight) first, then
+/// `register` (`startLab`) only once it passed.
+async fn prepare_checked(
+    request: LaunchRequest,
+    checked: impl Future<Output = Result<()>>,
+    register: impl AsyncFnOnce(&LaunchRequest) -> Result<Launch>,
+) -> Result<PreparedLaunch> {
+    checked.await?;
+    let launch = register(&request).await?;
     let docker_context = pinned_context(&request.placement).await?;
     Ok(PreparedLaunch { launch, place: runtime::Placed { placement: request.placement, docker_context } })
 }
@@ -756,6 +773,26 @@ mod tests {
         // Elsewhere than on Docker here, or with no engine chosen, nothing is pinned.
         assert_eq!(pinned_context(&Placement::Server { host: "pve".into() }).await.unwrap(), None);
         assert_eq!(pinned_context(&docker(None)).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn a_launch_that_cant_run_here_is_never_registered() {
+        use crate::runtime::placement::Placement;
+        let request = || LaunchRequest { lab_id: "web".into(), placement: Placement::Docker { engine: None, default_ports: false }, offline: false };
+        let registered = std::sync::atomic::AtomicUsize::new(0);
+        let register = async |_: &LaunchRequest| -> Result<Launch> {
+            registered.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            parse_launch(
+                json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": "0123456789abcdef0123456789abcdef01234567", "env": [] }),
+            )
+        };
+        // The preflight refuses: `startLab` is never asked, no launch token spent.
+        let refused = prepare_checked(request(), async { Err(Error::coded(crate::error::Code::NoHypervisor)) }, register).await;
+        assert_eq!(refused.err().map(|e| e.code()), Some(crate::error::Code::NoHypervisor));
+        assert_eq!(registered.load(std::sync::atomic::Ordering::SeqCst), 0);
+        // It passes: registered once.
+        let prepared = prepare_checked(request(), async { Ok(()) }, register).await.unwrap();
+        assert_eq!((prepared.launch.lab_id.as_str(), registered.load(std::sync::atomic::Ordering::SeqCst)), ("web", 1));
     }
 
     #[test]
