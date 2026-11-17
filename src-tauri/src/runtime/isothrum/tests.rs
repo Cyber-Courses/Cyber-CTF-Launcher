@@ -436,11 +436,9 @@ async fn tearing_down_a_lab_never_generated_is_a_clean_no_op() {
 }
 
 #[test]
-fn the_deploy_log_shows_steps_tool_lines_and_warnings_only() {
-    let step = |state, note: Option<&str>| EventKind::Step { step: "up".into(), state, note: note.map(Into::into) };
-    assert_eq!(progress::line(&step(StepState::Running, Some("Starting the lab's containers…"))).as_deref(), Some("Starting the lab's containers…"));
-    assert_eq!(progress::line(&step(StepState::Running, None)), None, "a step without its line");
-    assert_eq!(progress::line(&step(StepState::Done, None)), None);
+fn the_deploy_log_shows_tool_lines_and_warnings_only() {
+    let step = EventKind::Step { step: "images".into(), state: StepState::Started, label: None, count: None };
+    assert_eq!(progress::line(&step), None, "a step is a step, not a line");
     let log = EventKind::Log { step: "up".into(), stream: isothrum_runner::Stream::Stderr, line: " Container web  Healthy".into() };
     assert_eq!(progress::line(&log).as_deref(), Some(" Container web  Healthy"));
     let warning = |code: WarningCode, message: &str| progress::line(&EventKind::Warning { code, message: message.into() });
@@ -466,6 +464,17 @@ fn the_specs_sensitive_flag_alone_decides_value_or_secret() {
     let secrets: Vec<&str> = opts.secrets.iter().map(|(name, _)| name).collect();
     assert_eq!(secrets, ["CTF_FLAG_MAIN", "CTF_LAUNCH_TOKEN"], "sensitive, or undeclared: secrets");
     assert!(!opts.env.contains_key("CTF_LAUNCH_TOKEN") && !opts.env.contains_key("CTF_FLAG_MAIN"));
+}
+
+#[test]
+fn the_runners_step_events_are_the_deploy_logs_steps_and_nothing_else_is() {
+    use crate::runtime::deploy_log::{DeployStep, DeployStepState, StepCount};
+    let failed = EventKind::Step { step: "up".into(), state: StepState::Failed, label: Some("dc01".into()), count: None };
+    assert_eq!(progress::step(&failed), Some(DeployStep { step: "up".into(), state: DeployStepState::Failed, label: Some("dc01".into()), count: None }));
+    let counted = EventKind::Step { step: "images".into(), state: StepState::Started, label: None, count: Some(isothrum_runner::StepCount::new(1, Some(3))) };
+    assert_eq!(progress::step(&counted).and_then(|s| s.count), Some(StepCount { done: 1, total: Some(3) }));
+    let log = EventKind::Log { step: "up".into(), stream: isothrum_runner::Stream::Stdout, line: "x".into() };
+    assert_eq!(progress::step(&log), None);
 }
 
 #[test]

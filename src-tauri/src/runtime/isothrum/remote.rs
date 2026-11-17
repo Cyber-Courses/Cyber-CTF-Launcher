@@ -16,6 +16,7 @@ use isothrum_client::proto::{Command, OpOptions, Target};
 use isothrum_client::{Client, ClientError, HeldConsole, Pool};
 use isothrum_runner::{ErrorReport, EventKind, Format, NativeConsole, RunName, RunOptions, RunRecord, ServiceEndpoint, ShellCommand, Status};
 
+use super::super::deploy_log;
 use super::{errors, progress};
 use crate::error::{Code, Error, Result};
 
@@ -199,8 +200,8 @@ impl Served {
         Target::new(&self.project, Some(self.name.clone())).with_format(self.format)
     }
 
-    /// Runs `act` with `opts` on the run, its events as `log`'s lines: whether it reached its
-    /// goal (false: a check failed).
+    /// Runs `act` with `opts` on the run, its events as `log`'s lines and its steps told to the
+    /// operation's ([`deploy_log::tell`]): whether it reached its goal (false: a check failed).
     pub(super) async fn operate(&self, act: Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, Failure> {
         // Queued on a connection that answers: one found dead first is made again.
         let mut followed = call(&self.home, |client| async move { client.follow(command(act, self.target(), opts)).await }).await?;
@@ -210,6 +211,9 @@ impl Served {
             let event = event.map_err(Failure::of_client)?;
             if let Some(line) = progress::line(&event.kind) {
                 log(line);
+            }
+            if let Some(step) = progress::step(&event.kind) {
+                deploy_log::tell(step);
             }
             match event.kind {
                 EventKind::Result { ok, .. } => outcome = Some(Ok(ok)),
@@ -482,6 +486,13 @@ pub(crate) enum Others {
         /// The line.
         line: String,
     },
+    /// One of its steps.
+    Step {
+        /// The service's id for it.
+        operation: i64,
+        /// The step.
+        step: deploy_log::DeployStep,
+    },
     /// It ended (failed with the error).
     Ended {
         /// The service's id for it.
@@ -569,6 +580,9 @@ impl OthersTold {
         }
         if let Some(line) = progress::line(&event.kind) {
             on(Others::Line { operation: id, line });
+        }
+        if let Some(step) = progress::step(&event.kind) {
+            on(Others::Step { operation: id, step });
         }
         if let EventKind::Error(report) = &event.kind {
             self.told.insert(id, Some(errors::coded(report)));

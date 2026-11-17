@@ -14,6 +14,7 @@ fn told(others: &mut OthersTold, events: &[(isothrum_runner::Event, bool)]) -> V
             said.push(match o {
                 Others::Began { operation, run, op } => format!("began {operation} {op:?} of {run}"),
                 Others::Line { operation, .. } => format!("line {operation}"),
+                Others::Step { operation, step } => format!("step {operation} {}", step.step),
                 Others::Ended { operation, error } => format!("ended {operation}{}", if error.is_some() { " failed" } else { "" }),
                 Others::Left { run } => format!("left {run}"),
             });
@@ -32,6 +33,20 @@ fn another_process_s_operation_is_told_begun_then_ended() {
     let mut others = OthersTold::since_now(HashSet::new());
     let said = told(&mut others, &[(phase(7, OperationPhase::Started), false), (phase(7, OperationPhase::Ended), false)]);
     assert_eq!(said, ["began 7 Up of cyberctf-web", "ended 7"]);
+}
+
+#[test]
+fn another_process_s_operation_s_steps_and_lines_are_told() {
+    let mut others = OthersTold::since_now(HashSet::new());
+    let of_7 = |kind: isothrum_runner::EventKind| {
+        let mut event = phase(7, OperationPhase::Started);
+        event.kind = kind;
+        event
+    };
+    let step = of_7(isothrum_runner::EventKind::Step { step: "images".into(), state: isothrum_runner::StepState::Started, label: None, count: None });
+    let line = of_7(isothrum_runner::EventKind::Log { step: "up".into(), stream: isothrum_runner::Stream::Stdout, line: " web Pulling".into() });
+    let said = told(&mut others, &[(phase(7, OperationPhase::Started), false), (step, false), (line, false)]);
+    assert_eq!(said, ["began 7 Up of cyberctf-web", "step 7 images", "line 7"]);
 }
 
 #[test]

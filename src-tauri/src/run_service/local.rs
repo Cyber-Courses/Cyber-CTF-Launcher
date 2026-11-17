@@ -12,6 +12,7 @@ use super::watch::{self, Watch};
 use super::{AttachPick, BoxFuture, EventLog, OperationId, Request, RunEvent, RunService};
 use crate::error::{Code, Error, Result, Wire};
 use crate::platform::AppDirs;
+use crate::runtime::deploy_log;
 use crate::runtime::isothrum::Others;
 use crate::runtime::paths::lab_dir;
 use crate::runtime::{Operation, Runtime, attack_box};
@@ -175,6 +176,14 @@ impl LocalRunService {
         Arc::new(move |line| events.emit(RunEvent::Log { operation: operation.clone(), lab_id: lab_id.clone(), line }))
     }
 
+    /// `work`, operation `operation` on `lab_id`, the steps its runs say told as events
+    /// ([`deploy_log::telling`]).
+    fn telling_steps<F: Future>(&self, operation: &OperationId, lab_id: &str, work: F) -> impl Future<Output = F::Output> + use<F> {
+        let (events, operation, lab_id) = (Arc::clone(&self.events), operation.clone(), lab_id.to_owned());
+        let steps: deploy_log::Steps = Arc::new(move |step| events.emit(RunEvent::Step { operation: operation.clone(), lab_id: lab_id.clone(), step }));
+        deploy_log::telling(steps, work)
+    }
+
     /// Begins the operation `started` tells of (refused, nothing told, when `exclusive` and
     /// another acts on its lab), running `work` on a task with its log; its end is told when
     /// `work` returns, or panics.
@@ -184,7 +193,7 @@ impl LocalRunService {
         self.admit(&operation, &lab_id, op, exclusive)?;
         log::info!("operation {operation}: {op:?} of lab {lab_id} started");
         self.events.emit(started);
-        let work = work(self.log_of(&operation, &lab_id));
+        let work = self.telling_steps(&operation, &lab_id, work(self.log_of(&operation, &lab_id)));
         let (events, running) = (Arc::clone(&self.events), Arc::clone(&self.running));
         crate::spawn(async move {
             let error = unpanicked(work).await.err().map(|e| e.to_wire());
@@ -211,7 +220,7 @@ impl LocalRunService {
         let deploying = !matches!(op, Operation::Stop | Operation::Pause | Operation::Shutdown);
         self.events.emit(RunEvent::Started { operation: operation.clone(), lab_id: id.to_owned(), op, machine: None, runtime, deploying, at: now_ms() });
         self.running.earlier_ended(&operation).await;
-        let out = unpanicked(work(self.log_of(&operation, id))).await;
+        let out = unpanicked(self.telling_steps(&operation, id, work(self.log_of(&operation, id)))).await;
         end(&self.events, &self.running, &operation, out.as_ref().err().map(Error::to_wire));
         out
     }
@@ -351,6 +360,11 @@ fn tell(events: &EventLog, running: &Under, told: &mut HashMap<i64, (OperationId
         Others::Line { operation, line } => {
             if let Some((id, lab_id)) = told.get(&operation) {
                 events.emit(RunEvent::Log { operation: id.clone(), lab_id: lab_id.clone(), line });
+            }
+        }
+        Others::Step { operation, step } => {
+            if let Some((id, lab_id)) = told.get(&operation) {
+                events.emit(RunEvent::Step { operation: id.clone(), lab_id: lab_id.clone(), step });
             }
         }
         Others::Ended { operation, error } => {

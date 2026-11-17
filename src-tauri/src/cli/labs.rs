@@ -175,7 +175,7 @@ async fn operate(ctx: &Context, out: &mut Output<'_>, request: Request) -> Exit 
         let text = match &event {
             RunEvent::Started { op, lab_id, .. } => Some(format!("{op:?} of {lab_id} (operation {operation})")),
             RunEvent::Log { line, .. } => Some(line.clone()),
-            RunEvent::Ended { .. } | RunEvent::Status { .. } | RunEvent::Running { .. } => None,
+            RunEvent::Step { .. } | RunEvent::Ended { .. } | RunEvent::Status { .. } | RunEvent::Running { .. } => None,
         };
         out.event(&event, text.as_deref());
         if let RunEvent::Ended { operation: ended, lab_id, op, error } = event

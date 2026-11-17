@@ -1,4 +1,4 @@
-//! The run events the webview is driven by: each operation's start, its log lines and its end,
+//! The run events the webview is driven by: each operation's start, its log lines, its steps and its end,
 //! numbered by a cursor. The log keeps what was emitted (up to [`KEPT`] events), so a window that
 //! (re)loads replays what it missed ([`EventLog::since`]) and then follows the live ones, the
 //! same Tauri event ([`RUN_EVENT`]) for every window.
@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use super::OperationId;
 use crate::error::Wire;
+use crate::runtime::deploy_log::DeployStep;
 use crate::runtime::{LabStatus, Operation, Runtime};
 
 pub use crate::app::events::RUN_EVENT;
@@ -47,6 +48,16 @@ pub enum RunEvent {
         lab_id: String,
         /// The line.
         line: String,
+    },
+    /// One of the operation's steps started, moved on or ended, as the runner said it: the lab
+    /// page's steps are built from them.
+    Step {
+        /// The operation.
+        operation: OperationId,
+        /// The lab it acts on.
+        lab_id: String,
+        /// The step.
+        step: DeployStep,
     },
     /// The operation ended: done, or failed with `error`.
     Ended {

@@ -254,6 +254,14 @@ async fn an_operation_run_outside_a_request_is_told_like_the_others() {
     let url = service
         .observe("web", Operation::Launch, Some(Runtime::Docker), |log| async move {
             log("==> web: Starting".into());
+            // A step the runner said within the operation reaches its events.
+            let step = crate::runtime::deploy_log::DeployStep {
+                step: "up".into(),
+                state: crate::runtime::deploy_log::DeployStepState::Started,
+                label: Some("web".into()),
+                count: None,
+            };
+            crate::runtime::deploy_log::tell(step);
             Ok(Some("http://127.0.0.1:8080".to_owned()))
         })
         .await
@@ -266,11 +274,12 @@ async fn an_operation_run_outside_a_request_is_told_like_the_others() {
         .map(|e| match e.event {
             RunEvent::Started { .. } => "started",
             RunEvent::Log { .. } => "log",
+            RunEvent::Step { .. } => "step",
             RunEvent::Ended { .. } => "ended",
             RunEvent::Status { .. } | RunEvent::Running { .. } => "lab",
         })
         .collect();
-    assert_eq!(kinds, ["started", "log", "ended"]);
+    assert_eq!(kinds, ["started", "log", "step", "ended"]);
 }
 
 /// A step with a bug: it panics.
