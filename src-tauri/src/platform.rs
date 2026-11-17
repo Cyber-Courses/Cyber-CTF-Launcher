@@ -30,7 +30,6 @@ pub mod remembered;
 pub mod sync;
 pub mod sys;
 pub mod test_root;
-pub mod tool_output;
 pub mod tree_link;
 pub mod unwind;
 

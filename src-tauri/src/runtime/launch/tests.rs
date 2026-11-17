@@ -1,4 +1,4 @@
-use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
+use super::local::{UTM_NOT_ALLOWED, check_utm};
 use super::{
     Destination, LabRef, LocalRun, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, local_run, low_memory_warning, per_machine_runs_on,
 };
@@ -151,11 +151,14 @@ async fn one_vm_per_machine_is_refused_on_a_server() {
 async fn one_vm_per_machine_on_utm_opens_utm_first() {
     let t = TestApp::new();
     t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
-    let tools = Tools::strict_rules(&[("open -g -j -a UTM", None)]);
+    let tools = std::sync::Arc::new(isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::missing()));
+    let mac = crate::runtime::providers::testing::host_on(isothrum_machine::HostOs::Macos, Arch::Arm64, None);
+    let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::<isothrum_runner::fake::FakeProcesses>::clone(&tools), mac);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
     let err = r.unwrap_err();
     assert!(matches!(err, crate::error::Error::ToolMissing { tool: "UTM" }), "{err}");
-    assert!(tools.called("open -g -j -a UTM"), "{:?}", tools.calls());
+    let opened = tools.calls().iter().any(|c| c.program == "open" && c.args.starts_with(&["-g".to_owned(), "-j".to_owned(), "-a".to_owned()]));
+    assert!(opened, "UTM opened hidden, in the background");
 }
 
 #[test]
@@ -261,13 +264,33 @@ async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }
 
-#[test]
-fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
-    // macOS refusing this app Apple events (no wait fixes it) against a UTM not answering yet.
-    assert!(utm_not_allowed("54:63: execution error: Not authorized to send Apple events to UTM. (-1743)"));
-    assert!(utm_not_allowed("UTM got an error: (-1743)"));
-    assert!(!utm_not_allowed("execution error: UTM got an error: Application isn't running. (-600)"));
-    assert!(!utm_not_allowed(""));
+/// UTM on a Mac whose tools answer `osascript`'s ask for UTM's machines with `answers`, one
+/// after the other (the last one kept): what `check_utm` says, and what it logged.
+async fn utm_answering(answers: Vec<isothrum_runner::fake::Reply>) -> (crate::error::Result<()>, Vec<String>) {
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+    let asked = std::sync::atomic::AtomicUsize::new(0);
+    let tools = FakeProcesses::model(move |call| match call.program.as_str() {
+        "osascript" => {
+            let n = asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            answers[n.min(answers.len() - 1)].clone()
+        }
+        _ => Reply::ok(""),
+    });
+    let mac = crate::runtime::providers::testing::host_on(isothrum_machine::HostOs::Macos, Arch::Arm64, None);
+    let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::new(tools), mac);
+    let mut lines = Vec::new();
+    let r = check_utm(&mut |l| lines.push(l)).await;
+    (r, lines)
+}
+
+/// macOS refusing this app Apple events to UTM (no wait fixes it) is said with its way out, at
+/// once.
+#[tokio::test]
+async fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
+    use isothrum_runner::fake::Reply;
+    let (r, lines) = utm_answering(vec![Reply::fail(1, "54:63: execution error: Not authorized to send Apple events to UTM. (-1743)")]).await;
+    assert_eq!(r.unwrap_err().to_string(), UTM_NOT_ALLOWED);
+    assert!(lines.is_empty(), "{lines:?}");
     assert!(UTM_NOT_ALLOWED.contains("Automation"));
 }
 
@@ -275,19 +298,11 @@ fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
 /// answering its name) is waited for like one still opening: the start goes on once it is.
 #[tokio::test]
 async fn a_utm_not_ready_for_commands_is_waited_for() {
-    use crate::testing::tools::{Tools, fail, ok};
-    let mut probes = 0;
-    let tools = Tools::new(move |program, args| match (program, args) {
-        ("osascript", [_, probe]) if probe.contains("every virtual machine") => {
-            probes += 1;
-            if probes == 1 { fail("execution error: UTM got an error: UTM is not ready to accept commands. (-2700)") } else { ok("") }
-        }
-        _ => ok(""),
-    });
-    let mut lines = Vec::new();
-    check_utm(&mut |l| lines.push(l)).await.unwrap();
-    assert!(lines.iter().any(|l| l.contains("waiting for it to answer")), "{lines:?}");
-    assert!(tools.called("every virtual machine"), "asks for its VMs, which only a ready UTM lists");
+    use isothrum_runner::fake::Reply;
+    let not_ready = Reply::fail(1, "execution error: UTM got an error: UTM is not ready to accept commands. (-2700)");
+    let (r, lines) = utm_answering(vec![not_ready, Reply::ok("")]).await;
+    r.unwrap();
+    assert_eq!(lines, [crate::runtime::deploy_log::OPENING_UTM]);
 }
 
 /// The real UTM, opened cold: run by hand before a release with UTM quit (`osascript -e 'tell
