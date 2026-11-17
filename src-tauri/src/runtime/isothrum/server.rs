@@ -72,8 +72,8 @@ impl ServerPlace {
 /// (`ssh_jump_known_hosts_file`). Through it the runner's own SSH goes first (a console, a
 /// command, its endpoints' forwards), and Terraform's SSH to the router through the SOCKS proxy
 /// the runner opens for each apply and destroy.
-pub(super) fn applying(place: &ServerPlace, env: &[(String, String)], key: &Path) -> RunOptions {
-    let opts = options(place, env);
+pub(super) fn applying(place: &ServerPlace, inputs: super::Inputs<'_>, key: &Path) -> RunOptions {
+    let opts = options(place, inputs);
     let Some(jump) = &place.jump else { return opts };
     let opts = opts.with_env(JUMP_VALUE, jump.clone()).with_env(JUMP_KEY_VALUE, key.to_string_lossy().into_owned());
     match &place.nodes_known_hosts {
@@ -91,7 +91,7 @@ impl Deployment {
         }
         // The server's API is asked with `place`'s credentials, which the module's variables
         // carry: a status reads the run's tool as an operation does.
-        let mut status = self.read_with(&options(place, &[])).await?;
+        let mut status = self.read_with(&options(place, super::Inputs::default())).await?;
         self.reached(place, &mut status).await?;
         let shown = view::lab_status(&self.described()?, &status, None);
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
@@ -107,7 +107,7 @@ impl Deployment {
         }
         let Some(output) = status.outputs.iter_mut().find(|o| o.name == PUBLISHED && !o.sensitive) else { return Ok(()) };
         let mut reached = BTreeMap::new();
-        for endpoint in self.endpoints(&options(place, &[])).await? {
+        for endpoint in self.endpoints(&options(place, super::Inputs::default())).await? {
             match (endpoint.address, endpoint.why) {
                 (Some(at), _) => {
                     reached.insert(endpoint.name, at);
@@ -124,7 +124,7 @@ impl Deployment {
 /// among the secrets), the discovered node when the profile names none, and the launch's values
 /// (`env`) for the lab's inputs. The jump host is given by an operation that applies the module
 /// ([`applying`]).
-pub(super) fn options(place: &ServerPlace, env: &[(String, String)]) -> RunOptions {
+pub(super) fn options(place: &ServerPlace, inputs: super::Inputs<'_>) -> RunOptions {
     let mut secrets = Secrets::new();
     let mut opts = RunOptions::new();
     for (k, v) in &place.vars {
@@ -151,9 +151,7 @@ pub(super) fn options(place: &ServerPlace, env: &[(String, String)]) -> RunOptio
             secrets.insert(provider.to_owned(), SecretValue::new(v));
         }
     }
-    for (k, v) in env {
-        secrets.insert(k.clone(), SecretValue::new(v.clone()));
-    }
+    let opts = super::deliver(inputs, opts, &mut secrets);
     opts.with_secrets(secrets).with_host_label(&place.label)
 }
 
@@ -187,7 +185,7 @@ mod tests {
 
     #[test]
     fn the_servers_variables_are_params_and_its_secret_a_slot() {
-        let opts = options(&place(), &[("CTF_FLAG".into(), "flag{x}".into())]);
+        let opts = options(&place(), super::super::Inputs::values(&[("CTF_FLAG".into(), "flag{x}".into())]));
         assert_eq!(opts.env.get("proxmox_endpoint").map(String::as_str), Some("https://10.0.0.5:8006/"));
         assert_eq!(opts.env.get("node").map(String::as_str), Some("pve-lab"), "the discovered node");
         assert!(!opts.env.contains_key("proxmox_password"), "a secret is never a plain value");
@@ -200,15 +198,15 @@ mod tests {
     fn a_pinned_certificate_reaches_the_runner_under_the_name_it_reads() {
         let mut p = place();
         p.vars.push(("proxmox_tls_fingerprint".into(), "AB:CD".into()));
-        assert_eq!(options(&p, &[]).env.get("PROXMOX_VE_TLS_FINGERPRINT").map(String::as_str), Some("AB:CD"));
-        assert!(!options(&place(), &[]).env.contains_key("PROXMOX_VE_TLS_FINGERPRINT"));
+        assert_eq!(options(&p, super::super::Inputs::default()).env.get("PROXMOX_VE_TLS_FINGERPRINT").map(String::as_str), Some("AB:CD"));
+        assert!(!options(&place(), super::super::Inputs::default()).env.contains_key("PROXMOX_VE_TLS_FINGERPRINT"));
     }
 
     #[test]
     fn the_profiles_own_node_wins_over_the_discovered_one() {
         let mut p = place();
         p.vars.push(("node".into(), "pve2".into()));
-        assert_eq!(options(&p, &[]).env.get("node").map(String::as_str), Some("pve2"));
+        assert_eq!(options(&p, super::super::Inputs::default()).env.get("node").map(String::as_str), Some("pve2"));
     }
 
     /// docs/contributing/testing/resilience.md M10 and N4: a Proxmox lab's page reads its VMs from the server's API,

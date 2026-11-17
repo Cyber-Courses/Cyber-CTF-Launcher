@@ -34,7 +34,7 @@ pub(super) async fn start_on_server(
     // Every server lab runs through the Isothrum runner: a cloud account, an ESXi host (Vagrant),
     // or a Proxmox server (Terraform). The runner keeps the state, the slot and the connection.
     if conn.provider.is_cloud() {
-        return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env: inputs.values, per_machine }, log).await;
+        return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, inputs, per_machine }, log).await;
     }
     if conn.provider == Provider::VmwareEsxi {
         lab::prepare(dir, lab::Target::Vagrant)?;
@@ -115,7 +115,8 @@ pub(crate) struct CloudStart<'a> {
     pub(crate) runtime: Runtime,
     pub(crate) host: &'a str,
     pub(crate) conn: server::Connection,
-    pub(crate) env: &'a [(String, String)],
+    /// The launch's values for the lab's input slots.
+    pub(crate) inputs: isothrum::Inputs<'a>,
     /// The player picked "one VM per machine" (cloud-vm): a container lab's machines as cloud
     /// instances, not its containers on one cloud VM (cloud-docker). Only for a lab with VM
     /// recipes; ignored for a VM lab, which is cloud-vm already.
@@ -128,7 +129,7 @@ pub(crate) struct CloudStart<'a> {
 /// the runner does the work: it delivers the lab over SSH, applies the egress seal, reads the
 /// module's `ssh_user` output and keeps the Terraform state and the run's expiry.
 pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let CloudStart { dir, id, runtime, host, conn, env, per_machine } = start;
+    let CloudStart { dir, id, runtime, host, conn, inputs, per_machine } = start;
     let cloud = conn.terraform()?;
     // The form the player picked, resolved to the runtime that drives the cloud module (cloud-vm
     // for one VM per machine, else cloud-docker): the run's record keeps its module's folder, which
@@ -145,7 +146,6 @@ pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
     // The firewall opens the lab's SSH and published ports to this machine's public IP only.
     let allowed = public_ip().await?;
     let place = isothrum::CloudPlace::launch(&conn, Some(&allowed));
-    let inputs = isothrum::Inputs { values: env, ..isothrum::Inputs::default() };
     isothrum::Deployment::in_cloud(&runner_home(dirs)?, dir, id, (runtime, cloud), place)?.up(inputs, None, log).await
 }
 

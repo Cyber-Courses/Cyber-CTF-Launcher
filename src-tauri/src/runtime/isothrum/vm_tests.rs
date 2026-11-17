@@ -209,7 +209,7 @@ async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_pr
     let worker = Deployment::here_with(config, &f.home.dir, "web", Kind::Vm).unwrap();
     let app = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let mut log = |_| {};
-    let start = worker.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut log);
+    let start = worker.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut log);
     tokio::pin!(start);
     // The page reads once the start's `vagrant up` holds the VMs (two minutes into it, in the
     // regression), then the `vagrant up` ends.
@@ -274,7 +274,7 @@ fn timed_reads(model: &Mutex<Reads>, call: &Call) -> Reply {
 async fn the_apps_reads_of_a_vm_lab_never_ask_vagrant_at_once() {
     let f: Scripted<Reads> = Scripted::answered_by(Home::new("-vm-reads", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), timed_reads);
     let worker = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
-    worker.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
+    worker.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     f.model().most = 0;
     // The lab page's poll, its read after the start, the auto-start's read, and the attack box's:
     // each command opens the run on its own.
@@ -293,7 +293,7 @@ async fn a_vm_labs_hypervisor_is_read_from_its_record_without_vagrant() {
     let f = Fixture::new();
     let run = f.run();
     assert_eq!(run.recorded_provider().await.unwrap(), None, "never started");
-    run.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
+    run.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     let before = f.fake.calls().len();
     assert_eq!(run.recorded_provider().await.unwrap().as_deref(), Some("virtualbox"));
     assert_eq!(f.fake.calls().len(), before, "no tool ran");
@@ -306,7 +306,7 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
     let mut log = Vec::new();
     // On the lab's own ports: the fixture's host has no free port to pick instead.
     let values = [("CTF_FLAG_MAIN".into(), "flag{v}".into())];
-    run.up(Inputs { values: &values, default_ports: true, docker_context: None }, Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
+    run.up(Inputs { values: &values, plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last("vagrant up --provider virtualbox").unwrap();
     assert_eq!(up.env("CTF_FLAG_MAIN"), Some("flag{v}"), "the launch's input reaches its slot");
     assert!(
@@ -327,7 +327,7 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
 async fn a_vm_lab_is_checked_parked_resumed_reprovisioned_and_stopped() {
     let f = Fixture::new();
     let run = f.run();
-    run.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
+    run.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     let c = run.check().await.unwrap();
     assert!(c.available && c.ok, "{}", c.output);
     let booted = |c: &Call| c.program == "vagrant" && c.args.first().is_some_and(|a| a == "up") && c.args.last().is_some_and(|a| a == "isoloom-controller");
@@ -429,7 +429,7 @@ async fn an_esxi_labs_status_reads_sign_in_with_its_password() {
 async fn a_vm_lab_whose_controller_halted_itself_parks_and_resumes() {
     let f = Fixture::new();
     let run = f.run();
-    run.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
+    run.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     assert_eq!(f.state("isoloom-controller"), "poweroff");
     assert!(run.status().await.unwrap().running);
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();

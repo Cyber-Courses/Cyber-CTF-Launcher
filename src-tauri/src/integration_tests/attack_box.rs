@@ -187,7 +187,15 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
         &mut f,
         async |f: &mut Vec<String>| {
             let mut l = log(&id);
-            let start = CloudStart { dir: &dir, id: &id, runtime: crate::runtime::Runtime::Docker, host: &host, conn, env: &[], per_machine };
+            let start = CloudStart {
+                dir: &dir,
+                id: &id,
+                runtime: crate::runtime::Runtime::Docker,
+                host: &host,
+                conn,
+                inputs: crate::runtime::launch::Inputs::default(),
+                per_machine,
+            };
             let started = start_cloud_run(&dirs, start, &mut l).await;
             check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), f);
             if started.is_err() {

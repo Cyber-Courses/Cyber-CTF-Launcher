@@ -215,6 +215,9 @@ pub(crate) fn protocol_word(protocol: isothrum_runner::ConsoleProtocol) -> &'sta
 pub(crate) struct Inputs<'a> {
     /// The launch's values, by the name of the lab's slot each goes to.
     pub(crate) values: &'a [(String, String)],
+    /// The names of the values the lab's spec marks `sensitive: false` ([`super::lab::plain_inputs`]):
+    /// these go as plain values; every other one as a secret.
+    pub(crate) plain: &'a [String],
     /// Whether its services keep their own host ports rather than free ones picked at random.
     pub(crate) default_ports: bool,
     /// The Docker context a container lab runs on (`orbstack`, `desktop-linux`…), when the player
@@ -228,6 +231,7 @@ impl std::fmt::Debug for Inputs<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Inputs")
             .field("names", &self.values.iter().map(|(name, _)| name).collect::<Vec<_>>())
+            .field("plain", &self.plain)
             .field("default_ports", &self.default_ports)
             .field("docker_context", &self.docker_context)
             .finish()
@@ -247,10 +251,7 @@ impl<'a> Inputs<'a> {
 /// than rebuilt.
 pub(super) fn start_options(inputs: Inputs<'_>, provider: Option<isothrum_runner::Provider>) -> RunOptions {
     let mut secrets = Secrets::new();
-    for (name, value) in inputs.values {
-        secrets.insert(name.clone(), SecretValue::new(value.clone()));
-    }
-    let mut opts = RunOptions::new().with_secrets(secrets);
+    let mut opts = deliver(inputs, RunOptions::new(), &mut secrets).with_secrets(secrets);
     if let Some(p) = provider {
         opts = opts.with_provider(p);
     }
@@ -258,6 +259,21 @@ pub(super) fn start_options(inputs: Inputs<'_>, provider: Option<isothrum_runner
         opts = opts.with_docker_context(context);
     }
     if inputs.default_ports { opts.with_env(PUBLISH_FIXED, "1") } else { opts }
+}
+
+/// The launch's values (`inputs`) as the lab's spec marks them: its plain inputs onto `opts` as
+/// values (the run's record keeps them), every other value into `secrets` (never stored, masked
+/// in every event). Every start delivers them this way, here, on a server or in a cloud account.
+pub(super) fn deliver(inputs: Inputs<'_>, opts: RunOptions, secrets: &mut Secrets) -> RunOptions {
+    let mut opts = opts;
+    for (name, value) in inputs.values {
+        if inputs.plain.contains(name) {
+            opts = opts.with_env(name.clone(), value.clone());
+        } else {
+            secrets.insert(name.clone(), SecretValue::new(value.clone()));
+        }
+    }
+    opts
 }
 
 /// The runner's provider for the launcher's provider id `id` (`virtualbox`, `libvirt`…): the same

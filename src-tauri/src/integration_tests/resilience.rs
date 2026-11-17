@@ -231,7 +231,7 @@ async fn a_port_the_lab_publishes_taken_at_start_is_named_and_a_start_once_free_
     on_lab("port taken", async |l: &Run, f: &mut Vec<String>| {
         // The port the lab publishes with its own ports (its instance's: 8180 for hello-stack's
         // 8080 on a second instance), read from a first start.
-        let fixed = crate::runtime::launch::Inputs { values: &[], default_ports: true, docker_context: None };
+        let fixed = crate::runtime::launch::Inputs { values: &[], plain: &[], default_ports: true, docker_context: None };
         let first = crate::runtime::launch::start_docker_run(&l.home, &l.dir, &l.id, fixed, &mut log(&l.id)).await;
         check(first.is_ok(), format!("it starts on its own ports ({:?})", first.as_ref().err()), f);
         let url = l.status().await.ok().and_then(|s| s.url);

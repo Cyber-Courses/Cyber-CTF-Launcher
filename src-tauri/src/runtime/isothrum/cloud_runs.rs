@@ -67,13 +67,9 @@ impl CloudPlace {
 
     /// The run's secrets: every credential in the account's environment, by its
     /// environment-variable name.
-    fn secrets(&self, env: &[(String, String)]) -> Secrets {
+    fn secrets(&self) -> Secrets {
         let mut secrets = Secrets::new();
         for (k, v) in self.tf_env.iter().filter(|(k, _)| !PARAM_ENV.contains(&k.as_str())) {
-            secrets.insert(k.clone(), SecretValue::new(v.clone()));
-        }
-        // The launch's values for the lab's input slots (a flag, a launch token).
-        for (k, v) in env {
             secrets.insert(k.clone(), SecretValue::new(v.clone()));
         }
         secrets
@@ -112,7 +108,7 @@ impl CloudPlace {
     /// account's credentials only. The runner replays the plain values the start was given, so
     /// the operation acts on the region and account the start did.
     pub(crate) fn later_options(&self) -> RunOptions {
-        RunOptions::new().with_secrets(self.secrets(&[])).with_host_label(&self.label)
+        RunOptions::new().with_secrets(self.secrets()).with_host_label(&self.label)
     }
 
     /// Every plain value the module gets from this place: [`CloudPlace::values`], then its
@@ -121,12 +117,15 @@ impl CloudPlace {
         self.values().into_iter().chain(self.placement()).collect()
     }
 
-    /// The options of a start on this account, with the launch's values `env`: the module's plain
-    /// values (which the runner's record keeps and every later operation replays), the
-    /// credentials and launch values as secrets.
-    pub(crate) fn options(&self, env: &[(String, String)]) -> RunOptions {
+    /// The options of a start on this account, with the launch's values `inputs`: the module's
+    /// plain values (which the runner's record keeps and every later operation replays), the
+    /// credentials as secrets, the launch's values as the lab's spec marks them
+    /// ([`super::deliver`]).
+    pub(crate) fn options(&self, inputs: super::Inputs<'_>) -> RunOptions {
         let opts = self.plain().into_iter().fold(RunOptions::new(), |o, (k, v)| o.with_env(k, v));
-        let opts = opts.with_secrets(self.secrets(env)).with_host_label(&self.label);
+        let mut secrets = self.secrets();
+        let opts = super::deliver(inputs, opts, &mut secrets);
+        let opts = opts.with_secrets(secrets).with_host_label(&self.label);
         match self.lifetime {
             Some(lifetime) => opts.with_lifetime(lifetime),
             None => opts,
@@ -140,7 +139,7 @@ impl Deployment {
     #[cfg(feature = "cloud-services")]
     pub(crate) async fn up_own(&self, values: &crate::runtime::cloud_services::values::ModuleValues, log: &mut impl FnMut(String)) -> Result<()> {
         let Site::Cloud(place) = self.site() else { return Err(crate::error::Error::Invalid("a lab's own module runs in a cloud account".into())) };
-        let opts = values.plain.iter().fold(place.options(&[]), |o, (k, v)| o.with_env(k.clone(), v.clone()));
+        let opts = values.plain.iter().fold(place.options(super::Inputs::default()), |o, (k, v)| o.with_env(k.clone(), v.clone()));
         let opts = values.secret.iter().fold(opts, |mut o, (k, v)| {
             o.secrets.insert(k.clone(), SecretValue::new(v.clone()));
             o

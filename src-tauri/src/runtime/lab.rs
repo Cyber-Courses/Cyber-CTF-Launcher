@@ -96,6 +96,14 @@ pub fn is_privileged(spec: &Spec) -> bool {
     spec.machines.values().any(|m| m.privileged)
 }
 
+/// The launch values the lab's spec marks `sensitive: false` (a URL, a mode), by name: the one
+/// rule for a value's sensitivity. These reach the lab's tools as plain values and stay readable
+/// in the logs; every other value (a sensitive input, or one the spec doesn't declare) is a
+/// secret, never stored and masked wherever a tool prints it.
+pub fn plain_inputs(spec: &Spec) -> Vec<String> {
+    spec.inputs.iter().filter(|i| !i.sensitive).map(|i| i.name.clone()).collect()
+}
+
 /// A spec from its text, unchecked.
 #[cfg(test)]
 pub fn parse(text: &str) -> Result<Spec> {

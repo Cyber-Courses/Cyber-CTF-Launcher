@@ -297,12 +297,9 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
     runtime::check_destination(dirs, launch.runtime, &to)?;
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit, runtime: launch.runtime };
     let dir = install(dirs, release, &log).await?;
-    // Fixed names for every lab; the evidence itself is never in the environment. The token and
-    // the flags are redacted from the logs from now on, wherever a tool prints them.
+    // Fixed names for every lab; the evidence itself is never in the environment. Which of them
+    // are sensitive (masked in the logs, given as secrets) the lab's spec says, at the start.
     let env = launch_env(launch.env);
-    for (_, value) in env.iter().filter(|(name, _)| name != "CTF_API_URL") {
-        crate::platform::redact::register(value);
-    }
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
     runtime::start_locked(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
