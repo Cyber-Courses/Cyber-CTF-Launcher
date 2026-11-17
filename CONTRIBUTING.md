@@ -95,6 +95,11 @@ share the setting). They are POSIX sh and quick:
 `pnpm test` stays fast: the test runners' own tests, which start a runner in child processes with
 real timers and take seconds each, are `pnpm test:harness`; `pnpm check` runs both.
 
+The Rust tests need an Isoloom checkout: the contract tests run Isoloom's own example labs
+(`src-tauri/src/runtime/isothrum/tests/contract/spec_run.rs`) from `CYBERCTF_TEST_ISOLOOM_DIR`,
+else `../isoloom` beside this checkout (the workspace's layout, and `./ws`'s copies). Without one
+they fail, saying so, and `pnpm check` stops at its `prereqs` step.
+
 [tests/README.md](tests/README.md) says what each tier proves and needs, how to run it, every knob,
 and where a new test goes.
 Every runner script takes `--help`.
