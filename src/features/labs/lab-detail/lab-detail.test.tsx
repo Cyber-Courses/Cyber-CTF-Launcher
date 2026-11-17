@@ -44,6 +44,18 @@ const idle = { busy_labs: () => [], active_operations: () => [] };
 const flush = () => flushUi(30);
 const renderDetail = (props: Partial<Parameters<typeof LabDetail>[0]> = {}) => renderLabPage(dockerLab, props);
 
+/** Clicks the lab's Resume button, which resumes it (`onResume`). */
+const resumes = async (user: ReturnType<typeof userEvent.setup>, onResume: unknown) => {
+  await user.click(
+    must(
+      screen.getAllByRole("button").find((b) => /resume/i.test(b.textContent)),
+      "a Resume button",
+    ),
+  );
+  await flush();
+  expect(onResume).toHaveBeenCalled();
+};
+
 describe("LabDetail", () => {
   it("offers to start a stopped Docker lab and starts it", async () => {
     installTauri({ lab_status: () => status({ running: false, machines: [], url: null }) });
@@ -227,14 +239,7 @@ describe("LabDetail", () => {
       status: status({ running: false, parked: "pause", machines: [], place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
     });
     await flush();
-    await user.click(
-      must(
-        screen.getAllByRole("button").find((b) => /resume/i.test(b.textContent)),
-        "a Resume button",
-      ),
-    );
-    await flush();
-    expect(h.onResume).toHaveBeenCalled();
+    await resumes(user, h.onResume);
   });
 
   it("says a paused container lab is paused, and offers to resume it", async () => {
@@ -246,14 +251,7 @@ describe("LabDetail", () => {
     // Its header says Paused, as a paused VM lab's does, and its diagram stays.
     expect(screen.getAllByText("Paused").length).toBeGreaterThan(0);
     expect(screen.queryByText("Shut down")).toBeNull();
-    await user.click(
-      must(
-        screen.getAllByRole("button").find((b) => /resume/i.test(b.textContent)),
-        "a Resume button",
-      ),
-    );
-    await flush();
-    expect(h.onResume).toHaveBeenCalled();
+    await resumes(user, h.onResume);
   });
 
   it("asks a signed-out player to sign in", async () => {
