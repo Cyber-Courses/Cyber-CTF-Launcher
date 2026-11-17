@@ -1,7 +1,7 @@
 //! Everything on this machine that would stop a start, checked before the launch is registered
 //! (`startLab` spends a launch token): the policy, the placement against what Isoloom allows, the
 //! hypervisor's readiness, the container engine and its Docker context, and the host ports the
-//! lab's spec keeps fixed.
+//! lab's spec keeps fixed (what holds one that is taken, named).
 //! Every problem is found, not only the first; [`verdict`] is the one mapper that says them, as
 //! the coded errors a start says.
 
@@ -60,7 +60,7 @@ async fn problems(dirs: &AppDirs, c: &Checked<'_>) -> Vec<Error> {
             if !c.present
                 && let Some(lab) = c.lab
             {
-                found.extend(taken_ports(&fixed_ports(lab)));
+                found.extend(taken_ports(&fixed_ports(lab)).await);
             }
         }
         Placement::Docker { .. } | Placement::Server { .. } | Placement::Cloud { .. } => {}
@@ -140,13 +140,17 @@ fn fixed_ports(lab: &Lab) -> Vec<(u16, Protocol)> {
 }
 
 /// Of `ports`, the ones something on this machine holds (isothrum-machine's `net::port_free`), as
-/// the start would say each.
-fn taken_ports(ports: &[(u16, Protocol)]) -> Vec<Error> {
-    ports
-        .iter()
-        .filter(|(port, protocol)| !isothrum_machine::net::port_free(*port, *protocol))
-        .map(|(port, _)| Error::coded(Code::PortInUse { port: isothrum_runner::HostPort::new(*port), holder: None }))
-        .collect()
+/// the start would say each: naming the process that holds it when the system's tools say
+/// (`net::port_holder`), as a run's own taken port is named (`isothrum::errors::holder_named`).
+async fn taken_ports(ports: &[(u16, Protocol)]) -> Vec<Error> {
+    let cx = super::providers::machine();
+    let mut taken = Vec::new();
+    for &(port, protocol) in ports.iter().filter(|(port, protocol)| !isothrum_machine::net::port_free(*port, *protocol)) {
+        let holder = isothrum_machine::net::port_holder(&cx, port, protocol).await;
+        let holder = holder.as_ref().map(super::isothrum::errors::holder_named);
+        taken.push(Error::coded(Code::PortInUse { port: isothrum_runner::HostPort::new(port), holder }));
+    }
+    taken
 }
 
 #[cfg(test)]
