@@ -21,8 +21,8 @@ enum Claim {
     SizeVar(&'static str),
     /// The keychain keeps a secret for it, which reaches the launch.
     Secret,
-    /// The account's Test and the setup ask the cloud's CLI this question (its sign-in).
-    CliSignIn(&'static str, &'static [&'static str]),
+    /// The account's sign-in is its cloud's CLI's, which isothrum-machine asks whether it holds.
+    CliSignIn,
 }
 
 /// Every claim of row `k`. The destructuring names each field: a new one is a claim or not.
@@ -48,7 +48,7 @@ fn claims(k: &Kind) -> Vec<Claim> {
     if *secret != Secret::None {
         out.push(Claim::Secret);
     }
-    out.extend(cli_sign_in.as_ref().map(|s| Claim::CliSignIn(s.question.0, s.question.1)));
+    out.extend(cli_sign_in.as_ref().map(|_| Claim::CliSignIn));
     out
 }
 
@@ -76,10 +76,10 @@ fn unwitnessed(provider: Provider, claim: &Claim) -> Option<String> {
             let given = [connection_env(&h, "witness-secret"), host_vars(&h, "witness-secret"), terraform_env(&h, "witness-secret")];
             (!given.iter().flatten().any(|(_, v)| v.contains("witness-secret"))).then(|| "the secret reaches nothing the launch is given".to_owned())
         }
-        // The account's Test and the setup ask that CLI this question.
-        Claim::CliSignIn(program, question) => {
-            let asked = crate::runtime::server::sign_in::sign_in_question(provider);
-            (asked != Some((program, question))).then(|| format!("the sign-in question is {asked:?}"))
+        // isothrum-machine asks the cloud's CLI whether the sign-in holds.
+        Claim::CliSignIn => {
+            let cloud = isothrum_runner::from_wire_name::<isothrum_machine::cloud::Cloud>(provider.id());
+            cloud.and_then(isothrum_machine::cloud::cli).is_none().then(|| "isothrum-machine has no CLI to ask its sign-in".to_owned())
         }
     }
 }
@@ -105,6 +105,6 @@ fn every_claim_of_the_host_kinds_table_changes_what_runs() {
 #[test]
 fn a_claim_the_code_does_not_keep_has_no_witness() {
     assert!(unwitnessed(Provider::Aws, &Claim::SizeVar("not_a_module_variable")).is_some());
-    assert!(unwitnessed(Provider::Linode, &Claim::CliSignIn("linode-cli", &["whoami"])).is_some());
+    assert!(unwitnessed(Provider::Linode, &Claim::CliSignIn).is_some(), "a token cloud has no CLI sign-in");
     assert!(unwitnessed(Provider::Gcp, &Claim::Secret).is_some(), "GCP keeps no secret: nothing carries one");
 }

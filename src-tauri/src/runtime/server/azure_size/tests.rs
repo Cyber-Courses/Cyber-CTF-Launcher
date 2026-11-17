@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use super::*;
-use crate::error::Error;
 use crate::platform::exec::fake::{Tools, fail, ok};
 use crate::runtime::{
     providers::Provider,
@@ -165,54 +164,28 @@ async fn an_azure_cli_that_fails_says_it_couldnt_ask_never_that_the_size_isnt_of
     assert_eq!(capacity_check(&account("sub-signed-out", "westeurope")).await.state, CheckState::Ok);
 }
 
-#[test]
-fn only_a_location_restriction_covering_the_region_refuses_a_size() {
-    let zones = json!([{
-        "name": SIZE, "family": "f", "locations": ["westeurope"],
-        "restrictions": [{"type": "Zone", "reasonCode": "NotAvailableForSubscription", "values": ["westeurope"], "restrictionInfo": {"locations": ["westeurope"], "zones": ["1"]}}]
-    }]);
-    assert_eq!(in_region(&skus(&zones.to_string()).unwrap(), SIZE), InRegion::Usable("f".into()));
-    let elsewhere = json!([{"name": SIZE, "family": "f", "locations": ["westeurope"], "restrictions": [{"type": "Location", "reasonCode": "NotAvailableForSubscription", "values": ["eastus"]}]}]);
-    assert_eq!(in_region(&skus(&elsewhere.to_string()).unwrap(), SIZE), InRegion::Usable("f".into()));
-    let here = json!([{"name": SIZE, "family": "f", "locations": ["WestEurope"], "restrictions": [{"type": "Location", "reasonCode": "NotAvailableForSubscription", "values": ["westeurope"]}]}]);
-    assert_eq!(in_region(&skus(&here.to_string()).unwrap(), SIZE), InRegion::Restricted("NotAvailableForSubscription".into()));
-    assert_eq!(in_region(&[], SIZE), InRegion::NotOffered);
+/// `subscription`'s quotas in a region, as `az vm list-usage` lists them.
+async fn quotas_of(usage: &str) -> Result<Vec<azure::Quota>, Failure> {
+    let _tools = Tools::strict_rules(&[("vm list-usage", ok(usage))]);
+    azure::quotas(&machine(), "sub", "westeurope").await
 }
 
-#[test]
-fn azure_listings_of_the_wrong_shape_or_with_missing_fields_do_not_panic() {
-    // The SKU list as an object, a size with null restrictions and no family, and a usage list
-    // whose numbers are missing or not numbers.
-    assert!(skus("{}").unwrap_err().contains("isn't the list of sizes"));
-    assert!(skus("oops").is_err());
-    let loose = skus(r#"[{"name": "Standard_D2als_v6", "restrictions": null}, {"no": "name"}]"#).unwrap();
-    assert_eq!(in_region(&loose, SIZE), InRegion::Usable(String::new()));
-    let usage = json!([
-        {"name": {"value": "fam"}, "limit": "10"},
-        {"name": {"value": "odd"}, "limit": "ten", "currentValue": 4},
-        {"name": "not an object"}
-    ]);
-    let usage = usage.as_array().unwrap();
-    assert_eq!(free_cores(usage, "fam"), Some(10), "no current use yet");
-    assert_eq!(free_cores(usage, "odd"), Some(-4), "unreadable numbers count as 0");
-    assert_eq!(free_cores(usage, "not an object"), None);
-    assert_eq!(quota_check(&Ok("{}".into()), "fam", "s", "r").state, CheckState::Warn);
-}
-
-#[test]
-fn the_quota_says_how_many_cores_are_free_and_never_names_another_region() {
-    let answer = |json: &str| Ok(json.to_owned());
-    let usage = answer(r#"[{"name": {"value": "standardDALSv6Family"}, "limit": "10", "currentValue": "4"}]"#);
+#[tokio::test]
+async fn the_quota_says_how_many_cores_are_free_and_never_names_another_region() {
+    let usage = quotas_of(r#"[{"name": {"value": "standardDALSv6Family"}, "limit": "10", "currentValue": "4"}]"#).await;
     let c = quota_check(&usage, "standarddalsv6family", SIZE, "westeurope");
     assert_eq!((c.state, c.detail.as_str()), (CheckState::Ok, "Standard_D2als_v6 is available in westeurope (6 cores of quota free)."));
-    let full = answer(r#"[{"name": {"value": "standardDALSv6Family"}, "limit": 4, "currentValue": 3}]"#);
+    let full = quotas_of(r#"[{"name": {"value": "standardDALSv6Family"}, "limit": 4, "currentValue": 3}]"#).await;
     let c = quota_check(&full, "standarddalsv6family", SIZE, "swedencentral");
     assert_eq!(
         (c.state, c.detail.as_str()),
         (CheckState::Fail, "No core quota left for Standard_D2als_v6 in swedencentral. Request more in the Azure portal (Quotas), or try another region.")
     );
     assert_eq!(quota_check(&usage, "otherfamily", "s", "r").state, CheckState::Warn);
-    let c = quota_check(&Err(Error::CommandFailed { command: "az".into(), stderr: "throttled".into() }), "f", SIZE, "westeurope");
+    // A list that isn't one, and a CLI that failed: a warning saying why.
+    assert_eq!(quota_check(&quotas_of("{}").await, "fam", "s", "r").state, CheckState::Warn);
+    let throttled = Err(Failure::Refused { program: "az".into(), refusal: isothrum_machine::Refusal::Other, said: "throttled".into() });
+    let c = quota_check(&throttled, "f", SIZE, "westeurope");
     assert_eq!(c.state, CheckState::Warn);
     assert!(c.detail.contains("throttled"), "{}", c.detail);
 }

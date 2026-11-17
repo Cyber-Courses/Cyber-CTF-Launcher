@@ -21,19 +21,7 @@ const ALLOWED: &[(&str, &str)] = &[
     ("platform/exec/elevate.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
     ("platform/exec/vagrant.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
     (
-        "runtime/server/azure_size.rs",
-        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
-    ),
-    (
-        "runtime/server/cloud_checks.rs",
-        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
-    ),
-    (
         "runtime/server/gcp.rs",
-        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
-    ),
-    (
-        "runtime/server/kind.rs",
         "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
     ),
 ];

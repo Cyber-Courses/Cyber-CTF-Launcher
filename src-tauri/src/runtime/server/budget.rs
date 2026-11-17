@@ -1,10 +1,13 @@
 //! What an AWS account has cost this month (Cost Explorer), and the budget check run before a
 //! cloud launch. AWS-only: the other clouds have no cost read yet, and never persist a limit.
 
+use isothrum_machine::cloud::aws;
+use isothrum_machine::{Failure, Refusal};
+
+use crate::cloud_cli::{machine, tool_error};
 use crate::platform::AppDirs;
 
-use super::cloud_checks::{aws_cmd, last_line};
-use super::contract::terraform_env;
+use super::cloud_checks::{aws_account, last_line, reason};
 use super::profile::HostProfile;
 use super::secrets::host_secret;
 use super::store::load_host;
@@ -13,7 +16,7 @@ use crate::runtime::providers::Provider;
 
 /// This month's AWS spend as the AWS CLI's `profile` (or its default) sees it: the setup form's,
 /// before an account in CLI mode is saved.
-pub async fn cli_month_to_date_cost(profile: Option<String>) -> Result<f64> {
+pub async fn cli_month_to_date_cost(profile: Option<String>) -> std::result::Result<f64, Failure> {
     month_to_date_cost(&cli_account(profile), "").await
 }
 
@@ -63,69 +66,13 @@ pub(crate) async fn account_month_spend(dirs: &AppDirs, id: &str) -> Result<Mont
     let Some(limit) = budget_limit(&host) else {
         return Err(Error::Invalid("only an AWS account with a monthly budget reports its spend".into()));
     };
-    let spent = month_to_date_cost(&host, &host_secret(&host)?).await?;
+    let spent = month_to_date_cost(&host, &host_secret(&host)?).await.map_err(|e| tool_error(&e))?;
     Ok(MonthSpend { spent, over: reached(limit, spent) })
 }
 
-/// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
-/// build Cost Explorer date ranges without a date-crate dependency.
-fn ymd_from_secs(secs: i64) -> (i64, i64, i64) {
-    let z = secs.div_euclid(86_400) + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
-}
-
-/// The Cost Explorer time period for this month so far: Start = the 1st, End = tomorrow
-/// (End is exclusive, so tomorrow includes today's spend).
-fn month_period() -> String {
-    let now = i64::try_from(crate::platform::clock::unix_secs()).unwrap_or(0);
-    let (y, m, _) = ymd_from_secs(now);
-    let (ey, em, ed) = ymd_from_secs(now + 86400);
-    format!("Start={y:04}-{m:02}-01,End={ey:04}-{em:02}-{ed:02}")
-}
-
-/// This month's AWS spend so far (USD) for a host, via Cost Explorer.
-pub(super) async fn month_to_date_cost(h: &HostProfile, password: &str) -> Result<f64> {
-    let env = terraform_env(h, password);
-    let period = month_period();
-    let out = aws_cmd(h, &env, &cost_args(&period)).await?;
-    parse_spend(&out)
-}
-
-/// `aws ce get-cost-and-usage` for `period`, printing just the amount.
-fn cost_args(period: &str) -> [&str; 12] {
-    [
-        "ce",
-        "get-cost-and-usage",
-        "--time-period",
-        period,
-        "--granularity",
-        "MONTHLY",
-        "--metrics",
-        "UnblendedCost",
-        "--query",
-        "ResultsByTime[0].Total.UnblendedCost.Amount",
-        "--output",
-        "text",
-    ]
-}
-
-/// Cost Explorer's amount (text output) as a number.
-fn parse_spend(out: &str) -> Result<f64> {
-    // `f64::from_str` takes "NaN" and "inf" too; neither is a spend this check can act on.
-    out.trim()
-        .parse::<f64>()
-        .ok()
-        .filter(|v| v.is_finite())
-        .ok_or_else(|| Error::Invalid(format!("couldn't read the spend figure from Cost Explorer: {:?}", out.trim())))
+/// This month's AWS spend so far (USD) for a host, via Cost Explorer, with its own credentials.
+pub(super) async fn month_to_date_cost(h: &HostProfile, password: &str) -> std::result::Result<f64, Failure> {
+    aws::month_to_date_cost(&machine(), &aws_account(h, password)).await
 }
 
 /// The budget check for a launch. Blocks only when the spend is readable and over the limit;
@@ -180,29 +127,23 @@ fn reached(limit: f64, spent: f64) -> bool {
 }
 
 /// This month's spend (or why it couldn't be read) against `limit`.
-fn verdict(limit: f64, spent: Result<f64>) -> BudgetCheck {
+fn verdict(limit: f64, spent: std::result::Result<f64, Failure>) -> BudgetCheck {
     match spent {
-        Ok(spent) if spent.is_nan() => BudgetCheck::Unverifiable(budget_unverifiable_message("the spend figure isn't a number")),
+        Ok(spent) if spent.is_nan() => BudgetCheck::Unverifiable("couldn't read this month's spend (the spend figure isn't a number).".into()),
         Ok(spent) if reached(limit, spent) => BudgetCheck::Over(spent, limit),
         Ok(_) => BudgetCheck::Ok,
-        Err(e) => BudgetCheck::Unverifiable(budget_unverifiable_message(&e.to_string())),
+        Err(e) => BudgetCheck::Unverifiable(budget_unverifiable_message(&e)),
     }
 }
 
 /// Turns a Cost Explorer failure into actionable guidance. An expired / missing sign-in is the
 /// common case (and the launch would fail on it too), so it gets a "reauthenticate" message
 /// rather than the misleading "enable Cost Explorer".
-pub(super) fn budget_unverifiable_message(err: &str) -> String {
-    let lower = err.to_lowercase();
-    let auth = ["expired", "aws login", "invalidclienttokenid", "unable to locate credentials", "sso", "not logged in", "tokenrefresh", "credentials"]
-        .iter()
-        .any(|m| lower.contains(m));
-    if auth {
-        "the AWS session has expired or isn't signed in.".into()
-    } else if lower.contains("cost explorer") || lower.contains("not enabled") {
-        "Cost Explorer isn't enabled on this account (enable it in the AWS Billing console).".into()
-    } else {
-        format!("couldn't read this month's spend ({}).", last_line(err))
+pub(super) fn budget_unverifiable_message(failure: &Failure) -> String {
+    match failure.refusal() {
+        Some(Refusal::CredentialsExpired) => "the AWS session has expired or isn't signed in.".into(),
+        Some(Refusal::NotEnabled) => "Cost Explorer isn't enabled on this account (enable it in the AWS Billing console).".into(),
+        _ => format!("couldn't read this month's spend ({}).", last_line(&reason(failure))),
     }
 }
 
@@ -264,45 +205,22 @@ mod tests {
     #[test]
     fn stored_keys_reach_cost_explorer_in_the_cli_container() {
         let keys = HostProfile { host: "eu-west-3".into(), username: "AKIAIOSFODNN7EXAMPLE".into(), ..profile(Provider::Aws) };
-        let env = terraform_env(&keys, "secret");
+        let (program, _, env) = aws_account(&keys, "secret").invocation(&["ce"]);
+        assert_eq!(program, "docker");
         assert!(env.contains(&("AWS_ACCESS_KEY_ID".to_string(), "AKIAIOSFODNN7EXAMPLE".to_string())));
         assert!(cli_account(Some("p".into())).use_cli_creds && cli_account(None).aws_profile.is_none());
     }
 
-    #[test]
-    fn spend_figures_parse_or_say_what_came_back() {
-        crate::testing::assert_close(parse_spend("12.5\n").unwrap(), 12.5);
-        crate::testing::assert_close(parse_spend(" 0 ").unwrap(), 0.0);
-        assert_eq!(parse_spend("None\n").unwrap_err().to_string(), "couldn't read the spend figure from Cost Explorer: \"None\"");
-    }
-
-    #[test]
-    fn spend_figures_in_exponent_or_signed_form_parse_and_localized_ones_do_not() {
-        crate::testing::assert_close(parse_spend("1.5e2").unwrap(), 150.0);
-        crate::testing::assert_close(parse_spend("-0.0").unwrap(), 0.0);
-        crate::testing::assert_close(parse_spend("\n  7\n").unwrap(), 7.0);
-        for bad in ["", "12,5", "$12.5", "12.5 USD"] {
-            assert!(parse_spend(bad).is_err(), "{bad:?}");
+    #[tokio::test]
+    async fn a_spend_cost_explorer_answers_in_words_is_unverifiable_never_under_budget() {
+        use crate::platform::exec::fake::{Tools, ok};
+        for answer in ["None", "NaN", "12,5"] {
+            let _tools = Tools::expect(&[("aws ce get-cost-and-usage", ok(answer))]);
+            assert!(matches!(verdict(40.0, cli_month_to_date_cost(None).await), BudgetCheck::Unverifiable(_)), "{answer}");
         }
         // An infinite spend is over any limit.
         assert!(matches!(verdict(40.0, Ok(f64::INFINITY)), BudgetCheck::Over(..)));
-    }
-
-    #[test]
-    fn a_spend_that_is_not_a_number_is_unverifiable_not_under_budget() {
-        // `f64::from_str` accepts "NaN", "inf" and "infinity" (any case). A NaN is not a readable
-        // spend: the launch should warn (Unverifiable), not read as under budget. Fix: refuse a
-        // parsed value that isn't finite (`.filter(f64::is_finite)`), and in `verdict` treat NaN
-        // as unverifiable.
-        assert!(parse_spend("NaN").is_err());
         assert!(matches!(verdict(40.0, Ok(f64::NAN)), BudgetCheck::Unverifiable(_)));
-    }
-
-    #[test]
-    fn cost_explorer_is_asked_for_this_period_only() {
-        let args = cost_args("Start=2026-10-01,End=2026-10-11");
-        assert_eq!(args[..4], ["ce", "get-cost-and-usage", "--time-period", "Start=2026-10-01,End=2026-10-11"]);
-        assert_eq!(args[args.len() - 2..], ["--output", "text"]);
     }
 
     #[test]
@@ -313,11 +231,19 @@ mod tests {
         assert_eq!(budget_limit(&HostProfile { monthly_limit: Some(40.0), ..profile(Provider::Azure) }), None);
     }
 
+    /// AWS refusing the spend, saying `said`, read as isothrum-machine reads it.
+    fn refused(said: &str) -> Failure {
+        Failure::Refused { program: "aws".into(), refusal: aws::refusal(said), said: said.lines().last().unwrap_or_default().into() }
+    }
+
     #[test]
     fn the_verdict_blocks_only_a_readable_spend_over_the_limit() {
         assert!(matches!(verdict(40.0, Ok(40.0)), BudgetCheck::Over(s, l) if (s - 40.0).abs() < f64::EPSILON && (l - 40.0).abs() < f64::EPSILON));
         assert!(matches!(verdict(40.0, Ok(39.99)), BudgetCheck::Ok));
-        match verdict(40.0, Err(Error::Invalid("Cost Explorer is not enabled".into()))) {
+        match verdict(
+            40.0,
+            Err(refused("An error occurred (AccessDeniedException) when calling the GetCostAndUsage operation: User not enabled for cost explorer access")),
+        ) {
             BudgetCheck::Unverifiable(why) => assert!(why.contains("Cost Explorer isn't enabled"), "{why}"),
             _ => panic!("should be unverifiable"),
         }
@@ -328,61 +254,21 @@ mod tests {
         // Auth-shaped failures win, whatever else is in the text.
         for err in ["The security token included in the request is expired", "Unable to locate credentials", "Error loading SSO Token", "InvalidClientTokenId"]
         {
-            assert_eq!(budget_unverifiable_message(err), "the AWS session has expired or isn't signed in.", "{err}");
+            assert_eq!(budget_unverifiable_message(&refused(err)), "the AWS session has expired or isn't signed in.", "{err}");
         }
     }
 
     #[test]
     fn budget_message_explains_cost_explorer_when_disabled() {
-        let msg = budget_unverifiable_message("Cost Explorer is not enabled for this account");
+        let msg = budget_unverifiable_message(&refused("Cost Explorer is not enabled for this account"));
         assert!(msg.contains("Cost Explorer isn't enabled"), "{msg}");
     }
 
     #[test]
     fn budget_message_falls_back_to_the_last_line() {
-        let msg = budget_unverifiable_message("something odd\nthe real reason here");
-        assert!(msg.contains("the real reason here"), "{msg}");
-    }
-
-    #[test]
-    fn the_civil_date_at_year_and_century_boundaries() {
-        // The last second of 2026, then the day after it: a month period crossing New Year
-        // ends on 2027-01-01.
-        assert_eq!(ymd_from_secs(1_798_761_599), (2026, 12, 31));
-        assert_eq!(ymd_from_secs(1_798_761_599 + 86_400), (2027, 1, 1));
-        // 2100 is not a leap year (2100-03-01 00:00 UTC less one second is Feb 28); 2000 was.
-        assert_eq!(ymd_from_secs(4_107_542_399), (2100, 2, 28));
-        assert_eq!(ymd_from_secs(951_782_400), (2000, 2, 29));
-        // The extremes don't overflow.
-        let _ = (ymd_from_secs(i64::MIN), ymd_from_secs(i64::MAX));
-    }
-
-    #[test]
-    fn civil_date_from_unix_timestamp() {
-        // Epoch.
-        assert_eq!(ymd_from_secs(0), (1970, 1, 1));
-        // A known instant: 2021-01-01 00:00:00 UTC = 1609459200.
-        assert_eq!(ymd_from_secs(1_609_459_200), (2021, 1, 1));
-        // Leap day: 2020-02-29 12:00:00 UTC = 1582977600.
-        assert_eq!(ymd_from_secs(1_582_977_600), (2020, 2, 29));
-        // End of a year: 2023-12-31 23:59:59 UTC = 1704067199.
-        assert_eq!(ymd_from_secs(1_704_067_199), (2023, 12, 31));
-        // The day before epoch (negative seconds).
-        assert_eq!(ymd_from_secs(-1), (1969, 12, 31));
-    }
-
-    #[test]
-    fn month_period_spans_the_first_to_an_exclusive_end() {
-        // Cost Explorer wants Start=<1st of this month>,End=<tomorrow> (End exclusive).
-        let p = month_period();
-        assert!(p.starts_with("Start="), "{p}");
-        let (start, end) = p.split_once(",End=").unwrap();
-        let start = start.strip_prefix("Start=").unwrap();
-        // Start is always day 01 of a month; both are YYYY-MM-DD.
-        assert!(start.ends_with("-01"), "{start}");
-        assert_eq!(start.len(), 10);
-        assert_eq!(end.len(), 10);
-        // End is strictly after Start (this month has at least one day so far).
-        assert!(end > start, "end {end} should be after start {start}");
+        let msg = budget_unverifiable_message(&refused("something odd\nthe real reason here"));
+        assert_eq!(msg, "couldn't read this month's spend (the real reason here).");
+        let missing = budget_unverifiable_message(&Failure::Missing { program: "docker".into() });
+        assert!(missing.starts_with("couldn't read this month's spend ("), "{missing}");
     }
 }

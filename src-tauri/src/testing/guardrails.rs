@@ -138,8 +138,6 @@ const ADAPTERS: &[&str] = &["platform/exec", "runtime/docker/", "runtime/isothru
 /// Shipped JSON parsing outside the adapters, each with what it reads. A tool's output among them
 /// is marked so; the rest read the app's own files or answers that are no tool's.
 const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
-    ("runtime/server/azure_size.rs", "serde_json::from_str(json)", "tool output: `az vm list-sizes`; belongs in cloud_cli"),
-    ("runtime/server/azure_size.rs", "serde_json::from_str::<Vec<Value>>(out)", "tool output: `az vm list-usage`; belongs in cloud_cli"),
     ("app.rs", "serde_json::from_str(json)", "the webview's stored settings"),
     ("platform/policy.rs", "serde_json::from_str::<serde_json::Value>(text)", "the administrator's policy file"),
     ("runtime/attack_box.rs", "serde_json::from_str::<File>(IMAGE_FILE)", "the bundled attack box image file"),
