@@ -2,7 +2,8 @@
 //! for emulated machines, UTM open and answering, and a local VM start with one recovery from
 //! leftover state.
 
-use std::time::Duration;
+use isothrum_machine::providers::ready::{self, NotReady};
+use isothrum_runner::ProviderNeed;
 
 use super::super::deploy_log;
 use super::{Error, Result, lab};
@@ -40,35 +41,26 @@ pub(super) fn check_provider(lab: &lab::Lab, target: lab::Target, provider: supe
 }
 
 /// A lab on QEMU: a machine built for another CPU needs that CPU's emulator
-/// (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac). Its networks' fit (QEMU's
-/// two-VM links) is [`check_provider`]'s.
+/// (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac), as isothrum-machine asks it
+/// ([`ready::emulators`]). Its networks' fit (QEMU's two-VM links) is [`check_provider`]'s.
 pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(String)) -> Result<()> {
-    let host = isothrum_runner::this_arch();
-    for arch in lab::emulated_arches(&prepared.spec, host) {
-        let bin = isothrum_machine::host::qemu_system(arch);
-        if crate::platform::exec::run(bin, &["--version"], None).await.is_err() {
+    let cx = crate::runtime::providers::machine();
+    let host = cx.host.arch;
+    match ready::emulators(&cx, lab::emulated_arches(&prepared.spec, host)).await {
+        Ok(emulated) => {
+            for arch in emulated {
+                log(deploy_log::emulating(crate::platform::cpu_name(arch), crate::platform::cpu_name(host)));
+            }
+            Ok(())
+        }
+        Err(NotReady::Emulator { arch, program }) => {
             // The webview knows a missing tool by its code, and points at the Machine page.
             log(format!("This lab's machines are {}: they need QEMU's {} emulator.", crate::platform::cpu_name(arch), crate::platform::cpu_name(arch)));
-            return Err(Error::ToolMissing { tool: bin });
+            Err(Error::ToolMissing { tool: program })
         }
-        log(deploy_log::emulating(crate::platform::cpu_name(arch), crate::platform::cpu_name(host)));
+        Err(other) => Err(Error::Invalid(other.to_string())),
     }
-    Ok(())
 }
-
-/// How UTM is opened when it isn't running: in the background (`-g`, not brought to the front)
-/// and hidden (`-j`), so its window doesn't show: `-g` alone still showed UTM's library window
-/// over the app. Hidden, it stays hidden while Vagrant's UTM plugin starts the VM (`utmctl
-/// start`). A UTM the player already has open is left as it is.
-const OPEN_UTM: [&str; 4] = ["-g", "-j", "-a", "UTM"];
-
-/// How long UTM may take to open and answer Apple events.
-const UTM_WAIT: Duration = Duration::from_secs(60);
-
-/// What UTM is asked, once it runs: its virtual machines. Not its name: UTM answers that while
-/// it is still loading, then refuses the VM import a moment later with "UTM is not ready to
-/// accept commands. (-2700)"; it lists its VMs only once it takes commands.
-const UTM_PROBE: &str = "tell application \"UTM\" to get id of every virtual machine";
 
 /// Why UTM refused the probe when macOS doesn't let this app drive it, with the way out.
 pub(super) const UTM_NOT_ALLOWED: &str =
@@ -77,38 +69,30 @@ pub(super) const UTM_NOT_ALLOWED: &str =
 /// A lab on UTM: Vagrant's UTM plugin drives UTM through Apple events (`osascript`, `utmctl`),
 /// reading the VM's state and its forwarded ports from the app, so a UTM that isn't running when
 /// `vagrant up` asks, or that this app may not control, fails that read mid-start ("Application
-/// isn't running (-600)", "Not authorized to send Apple events (-1743)"). UTM is opened first and
-/// waited for until it answers; the automation refusal is named with its way out. It is opened in
-/// the background and hidden ([`OPEN_UTM`]): the player never gets its window in front of the app.
+/// isn't running (-600)", "Not authorized to send Apple events (-1743)"). UTM is opened first,
+/// hidden and in the background, and waited for until it answers ([`ready::utm`]); the
+/// automation refusal is named with its way out.
 pub(crate) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
-    if crate::platform::exec::run("open", &OPEN_UTM, None).await.is_err() {
-        return Err(Error::ToolMissing { tool: "UTM" });
-    }
-    let started = std::time::Instant::now();
-    let mut said = false;
-    loop {
-        let probe = crate::platform::exec::run_env_timed("osascript", &["-e", UTM_PROBE], None, &[], Duration::from_secs(15)).await;
-        match probe {
-            Ok(_) => return Ok(()),
-            Err(Error::CommandFailed { stderr, .. }) if utm_not_allowed(&stderr) => return Err(Error::Invalid(UTM_NOT_ALLOWED.into())),
-            Err(e) if started.elapsed() >= UTM_WAIT => {
-                return Err(Error::Invalid(format!("UTM didn't answer within {} s ({e}): open UTM, then start the lab again.", UTM_WAIT.as_secs())));
-            }
-            Err(_) => {
-                if !said {
-                    log(deploy_log::OPENING_UTM.into());
-                    said = true;
-                }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
+    let cx = crate::runtime::providers::machine();
+    // UTM opening is said as the wait starts: the readiness check tells it through a channel,
+    // `log` being this caller's alone.
+    let (opening, mut said) = tokio::sync::mpsc::unbounded_channel();
+    let ready = async move {
+        let mut waiting = move || drop(opening.send(()));
+        ready::utm(&cx, ready::UTM_WAIT, &mut waiting).await
+    };
+    let say = async {
+        while said.recv().await.is_some() {
+            log(deploy_log::OPENING_UTM.into());
         }
-    }
-}
-
-/// Whether `osascript`'s complaint is macOS refusing this app Apple events to UTM (the
-/// Automation permission), which no wait fixes: `Not authorized to send Apple events to UTM.
-/// (-1743)`.
-pub(super) fn utm_not_allowed(stderr: &str) -> bool {
-    use crate::platform::tool_output::apple_events::AppleEvent;
-    AppleEvent::of(stderr) == Some(AppleEvent::NotAuthorized)
+    };
+    let (ready, ()) = tokio::join!(ready, say);
+    ready.map_err(|e| match e {
+        NotReady::NotOpened { .. } => Error::ToolMissing { tool: "UTM" },
+        NotReady::Needs(ProviderNeed::Automation) => Error::Invalid(UTM_NOT_ALLOWED.into()),
+        NotReady::NoAnswer { waited, said } => {
+            Error::Invalid(format!("UTM didn't answer within {} s ({said}): open UTM, then start the lab again.", waited.as_secs()))
+        }
+        other => Error::Invalid(other.to_string()),
+    })
 }
