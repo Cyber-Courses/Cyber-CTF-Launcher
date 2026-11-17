@@ -54,13 +54,13 @@ fn machine(r: &SystemReport) -> Machine {
 /// The engines the setup offers on `os`, in the order it shows them.
 #[cfg(test)]
 pub fn engines_on(os: HostOs) -> &'static [Engine] {
-    isothrum_machine::setup::engines_on(os.isothrum())
+    isothrum_machine::setup::engines_on(os)
 }
 
 /// The engine the setup installs in one click on `os`.
 #[cfg(test)]
 pub fn recommended_engine(os: HostOs) -> Engine {
-    isothrum_machine::setup::recommended_engine(os.isothrum())
+    isothrum_machine::setup::recommended_engine(os)
 }
 
 /// Docker answers: its CLI is installed and its daemon runs for this account.
@@ -72,7 +72,7 @@ pub fn docker_ready(r: &SystemReport) -> bool {
 /// The hypervisor the setup installs as `provider` on `os`, when it installs it.
 #[cfg(test)]
 pub(crate) fn installable(provider: Provider, os: HostOs) -> Option<Dependency> {
-    isothrum_machine::setup::installable(provider.vagrant()?, os.isothrum())
+    isothrum_machine::setup::installable(provider.vagrant()?, os)
 }
 
 /// What each choice takes on the machine `r` reports; `hyperv_restart`: the setup turned Hyper-V

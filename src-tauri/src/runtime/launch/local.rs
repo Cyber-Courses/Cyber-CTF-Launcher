@@ -43,16 +43,15 @@ pub(super) fn check_provider(lab: &lab::Lab, target: lab::Target, provider: supe
 /// (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac). Its networks' fit (QEMU's
 /// two-VM links) is [`check_provider`]'s.
 pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(String)) -> Result<()> {
-    use crate::machine::system::cpu_name;
     let host = isothrum_runner::this_arch();
     for arch in lab::emulated_arches(&prepared.spec, host) {
         let bin = isothrum_machine::host::qemu_system(arch);
         if crate::platform::exec::run(bin, &["--version"], None).await.is_err() {
             // The webview knows a missing tool by its code, and points at the Machine page.
-            log(format!("This lab's machines are {}: they need QEMU's {} emulator.", cpu_name(arch), cpu_name(arch)));
+            log(format!("This lab's machines are {}: they need QEMU's {} emulator.", crate::platform::cpu_name(arch), crate::platform::cpu_name(arch)));
             return Err(Error::ToolMissing { tool: bin });
         }
-        log(deploy_log::emulating(cpu_name(arch), cpu_name(host)));
+        log(deploy_log::emulating(crate::platform::cpu_name(arch), crate::platform::cpu_name(host)));
     }
     Ok(())
 }

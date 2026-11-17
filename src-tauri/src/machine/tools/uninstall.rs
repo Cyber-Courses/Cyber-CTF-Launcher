@@ -233,7 +233,7 @@ mod tests {
     fn records_round_trip_through_their_file_and_keep_one_entry_per_tool() {
         let dir = crate::testing::temp_dir("tools");
         let f = dir.join("data");
-        assert!(load_at(&f).unwrap().is_empty());
+        assert_eq!(load_at(&f).unwrap(), []);
         update_at(&f, |tools| {
             record::remember(tools, Dependency::Vagrant, Outcome::Installed, 1);
             record::remember(tools, Dependency::Docker, Outcome::Installed, 1);

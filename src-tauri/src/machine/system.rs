@@ -11,7 +11,7 @@ pub use isothrum_machine::tools::{CloudClis, PackageManager, Tool};
 
 use crate::platform::exec::docker_denied_error;
 use crate::runtime::providers::{self, ProviderStatus};
-use isothrum_machine::{Arch, HostOs};
+use isothrum_machine::HostOs;
 
 /// What the machine check found on this computer: the OS, the tools, the container engines and
 /// hypervisors, and what the guided setup takes from here.
@@ -21,10 +21,9 @@ pub struct SystemReport {
     /// The OS.
     #[ts(as = "OsId")]
     pub os: HostOs,
-    /// The CPU architecture, by Rust's name for it ([`cpu_name`]).
-    #[serde(serialize_with = "cpu_named")]
+    /// The CPU architecture, by Rust's name for it (`x86_64`, `aarch64`).
     #[ts(as = "CpuName")]
-    pub arch: Arch,
+    pub arch: &'static str,
     /// The OS's package manager.
     pub pkg_manager: PackageManager,
     /// The Docker CLI.
@@ -91,7 +90,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     let host = &cx.host;
     let mut report = SystemReport {
         os: host.os,
-        arch: host.arch,
+        arch: crate::platform::cpu_name(host.arch),
         pkg_manager: found.packages,
         docker: found.docker,
         docker_running: found.daemon.running(),
@@ -118,22 +117,8 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     report
 }
 
-/// `arch` by Rust's name for it (`std::env::consts::ARCH`'s: `x86_64`, `aarch64`), as the machine
-/// report and the player's messages name a CPU.
-pub fn cpu_name(arch: Arch) -> &'static str {
-    match arch {
-        Arch::Amd64 => "x86_64",
-        Arch::Arm64 => "aarch64",
-    }
-}
-
-/// Writes a CPU by [`cpu_name`].
-fn cpu_named<S: serde::Serializer>(arch: &Arch, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(cpu_name(*arch))
-}
-
-/// The webview's type of an OS (`Os`): its id, as isothrum-machine writes [`HostOs`]. A type only,
-/// for the report's TypeScript.
+/// An OS the launcher runs on, by its id (`macos`), as isothrum-machine writes it. (The webview's
+/// `Os`: a type only, for the report's TypeScript.)
 #[derive(ts_rs::TS)]
 #[ts(rename = "Os", rename_all = "lowercase")]
 #[allow(dead_code)]
@@ -143,7 +128,8 @@ enum OsId {
     Linux,
 }
 
-/// The webview's type of a CPU (`Arch`): [`cpu_name`]'s. A type only, for the report's TypeScript.
+/// A CPU the launcher runs on, by Rust's name for it (`std::env::consts::ARCH`). (The webview's
+/// `Arch`: a type only, for the report's TypeScript.)
 #[derive(ts_rs::TS)]
 #[ts(rename = "Arch")]
 #[allow(dead_code)]

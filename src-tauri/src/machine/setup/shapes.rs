@@ -22,7 +22,7 @@ fn found(version: &str) -> Tool {
 /// The hypervisors the check offers on `host` (none installed), then ESXi (remote), in
 /// `Provider::ALL`'s order: the hypervisor table's ([`Provider::offered_on`]). The check detects
 /// Vagrant's providers only.
-fn offered(host: Host) -> Vec<Provider> {
+fn offered(host: &Host) -> Vec<Provider> {
     Provider::ALL.into_iter().filter(|p| p.vagrant().is_some() && p.offered_on(host, false)).collect()
 }
 
@@ -73,7 +73,7 @@ pub(crate) fn bare(os: HostOs, arch: Arch) -> SystemReport {
     let wsl = (os == HostOs::Windows).then_some(WslReport { state: WslState::Missing, reopens_after_restart: true, virtualization_off: false });
     let mut r = SystemReport {
         os,
-        arch,
+        arch: crate::platform::cpu_name(arch),
         pkg_manager,
         docker: missing(),
         docker_running: false,
@@ -88,7 +88,7 @@ pub(crate) fn bare(os: HostOs, arch: Arch) -> SystemReport {
         ovftool: missing(),
         ovftool_location: None,
         cloud_clis: CloudClis { aws: missing(), azure: missing(), gcloud: missing() },
-        vm_providers: offered(Host { os, arch, packages: None }).into_iter().map(|p| status(p, false, false, false, None)).collect(),
+        vm_providers: offered(&crate::runtime::providers::testing::host_on(os, arch, None)).into_iter().map(|p| status(p, false, false, false, None)).collect(),
         ready_hypervisors: Vec::new(),
         wsl,
         groups_pending: Vec::new(),

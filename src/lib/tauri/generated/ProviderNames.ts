@@ -41,5 +41,5 @@ export const SERVER_PROVIDERS = ["proxmox", "vmware_esxi"] as const satisfies re
 /** The cloud accounts labs run in, in the launcher's order (Rust's `Provider::CLOUDS`). */
 export const CLOUD_PROVIDERS = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"] as const satisfies readonly Provider[];
 
-/** Each OS's name, by the machine report's id for it (Rust's `Os::name`). */
+/** Each OS's name, by the machine report's id for it (isothrum-machine's `os_name`). */
 export const OS_NAMES: Record<Os, string> = { macos: "macOS", windows: "Windows", linux: "Linux", };

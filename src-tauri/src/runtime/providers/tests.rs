@@ -6,7 +6,7 @@ use std::sync::Arc;
 use isothrum_runner::fake::{FakeProcesses, Reply};
 
 use super::*;
-use isothrum_machine::{Arch, Host};
+use isothrum_machine::Arch;
 
 #[test]
 fn the_preferred_hypervisor_is_picked_when_ready_else_the_first_ready_one() {
@@ -89,23 +89,23 @@ fn ids_are_unique_and_round_trip_through_serde() {
 
 #[test]
 fn servers_and_cloud_accounts_are_offered_everywhere_and_share_no_folder() {
-    let on = |os, arch| Host { os, arch, packages: None };
+    let on = |os, arch| crate::runtime::providers::testing::host_on(os, arch, None);
     // The hypervisors follow isothrum-machine's table: QEMU never on Windows (#314), VirtualBox
     // and VMware not on Windows on Arm.
-    assert!(!Provider::Qemu.runs_on(HostOs::Windows) && !Provider::Qemu.offered_on(on(HostOs::Windows, Arch::Amd64), true));
+    assert!(!Provider::Qemu.runs_on(HostOs::Windows) && !Provider::Qemu.offered_on(&on(HostOs::Windows, Arch::Amd64), true));
     let arm_pc = on(HostOs::Windows, Arch::Arm64);
-    assert!(!Provider::Virtualbox.offered_on(arm_pc, true) && !Provider::VmwareDesktop.offered_on(arm_pc, true));
-    assert!(Provider::Hyperv.offered_on(arm_pc, false));
+    assert!(!Provider::Virtualbox.offered_on(&arm_pc, true) && !Provider::VmwareDesktop.offered_on(&arm_pc, true));
+    assert!(Provider::Hyperv.offered_on(&arm_pc, false));
     assert!(Provider::Qemu.shares_folders_on(HostOs::Linux) && !Provider::Qemu.shares_folders_on(HostOs::Macos));
     for p in Provider::SERVERS.into_iter().chain(Provider::CLOUDS) {
         for os in isothrum_machine::host::ALL_OSES {
             assert!(p.runs_on(os), "{p:?} on {os:?}");
             for arch in isothrum_machine::host::ALL_ARCHES {
-                assert!(p.offered_on(on(os, arch), false), "{p:?} on {os:?} {arch:?}");
+                assert!(p.offered_on(&on(os, arch), false), "{p:?} on {os:?} {arch:?}");
             }
             assert!(!p.shares_folders_on(os), "{p:?}");
         }
-        assert!(p.offered_on(arm_pc, false) && p.vendor().is_none(), "{p:?}");
+        assert!(p.offered_on(&arm_pc, false) && p.vendor().is_none(), "{p:?}");
     }
 }
 

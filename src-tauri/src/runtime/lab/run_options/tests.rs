@@ -8,7 +8,7 @@ const VMS: &str = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 }
 
 /// The lab's run options on an x86-64 machine (the machines below are built for it).
 fn options(spec: &str, runtime: Runtime) -> RunOptions {
-    options_on(spec, runtime, Arch::X86_64)
+    options_on(spec, runtime, Arch::Amd64)
 }
 
 /// The lab's run options on a `host` CPU.
@@ -134,15 +134,15 @@ fn by_policy(setting: &str) -> RefusalCause {
 /// run options say it, by the backend's rule: those VMs run here only on an emulator.
 #[test]
 fn vms_built_for_another_cpu_are_offered_only_on_an_emulator() {
-    let native = options_on(VMS, Runtime::Vm, Arch::X86_64);
+    let native = options_on(VMS, Runtime::Vm, Arch::Amd64);
     assert!(!native.emulated);
     assert!(providers(&native.vms).len() > 1 && providers(&native.vms).contains(&Provider::Virtualbox), "{:?}", providers(&native.vms));
-    let emulated = options_on(VMS, Runtime::Vm, Arch::Aarch64);
+    let emulated = options_on(VMS, Runtime::Vm, Arch::Arm64);
     assert!(emulated.emulated);
     assert_eq!(providers(&emulated.vms), [Provider::Qemu]);
     // A container lab's machines as VMs are its VMs: emulated there too, its containers on Docker
     // as before.
-    let dual = options_on(DUAL, Runtime::Docker, Arch::Aarch64);
+    let dual = options_on(DUAL, Runtime::Docker, Arch::Arm64);
     assert!(dual.emulated && providers(&dual.vms) == [Provider::Qemu], "its machines as VMs: {:?}", providers(&dual.vms));
-    assert_eq!(dual.docker, options_on(DUAL, Runtime::Docker, Arch::X86_64).docker);
+    assert_eq!(dual.docker, options_on(DUAL, Runtime::Docker, Arch::Amd64).docker);
 }

@@ -79,6 +79,6 @@ fn the_reports_os_and_cpu_types_are_what_it_writes() {
     let cfg = ts_rs::Config::default();
     let oses: Vec<String> = isothrum_machine::host::ALL_OSES.iter().map(|os| serde_json::to_string(os).unwrap()).collect();
     assert_eq!(super::OsId::inline(&cfg), oses.join(" | "));
-    let cpus: Vec<String> = isothrum_machine::host::ALL_ARCHES.iter().map(|arch| format!("\"{}\"", super::cpu_name(*arch))).collect();
+    let cpus: Vec<String> = isothrum_machine::host::ALL_ARCHES.iter().map(|arch| format!("\"{}\"", crate::platform::cpu_name(*arch))).collect();
     assert_eq!(super::CpuName::inline(&cfg), cpus.join(" | "));
 }

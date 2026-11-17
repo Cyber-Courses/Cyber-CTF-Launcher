@@ -180,7 +180,7 @@ impl Provider {
     /// Whether it exists on `os` at all: a hypervisor where its row says, a server or a cloud
     /// account everywhere.
     pub fn runs_on(self, os: HostOs) -> bool {
-        self.row().is_none_or(|row| row.oses.contains(&os.isothrum()))
+        self.row().is_none_or(|row| row.oses.contains(&os))
     }
 
     /// Where its vendor offers it, when the setup doesn't install it (behind a login, a licence,
@@ -193,7 +193,7 @@ impl Provider {
     /// Whether its VMs share a folder of this computer (on `os`) two-way: never a server's or a
     /// cloud's.
     pub(crate) fn shares_folders_on(self, os: HostOs) -> bool {
-        self.row().is_some_and(|row| row.shares_folders.contains(&os.isothrum()))
+        self.row().is_some_and(|row| row.shares_folders.contains(&os))
     }
 
     /// Whether it is offered on `host` for a lab's VMs (isothrum-machine's
@@ -202,14 +202,9 @@ impl Provider {
     /// player chose it. A server or a cloud account is offered everywhere. (The machine check
     /// asks isothrum-machine; the setup's shapes ask this.)
     #[cfg(test)]
-    pub(crate) fn offered_on(self, host: Host, installed: bool) -> bool {
+    pub(crate) fn offered_on(self, host: &Host, installed: bool) -> bool {
         let Some(vagrant) = self.vagrant() else { return true };
-        let machine = isothrum_machine::Host {
-            os: host.os.isothrum(),
-            arch: host.arch.isothrum(),
-            packages: None,
-            devices: isothrum_machine::Devices::here(host.os.isothrum()),
-        };
+        let machine = Host { devices: isothrum_machine::Devices::here(host.os), ..host.clone() };
         isothrum_machine::providers::offered(vagrant, &machine, installed)
     }
 

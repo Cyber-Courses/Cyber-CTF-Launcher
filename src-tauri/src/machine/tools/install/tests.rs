@@ -133,7 +133,7 @@ async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
 /// The plan for every dependency on `host`: the ones that install there have steps, the
 /// others say why not.
 fn plans(host: &Host) -> Vec<(Dependency, Result<Plan>)> {
-    Dependency::ALL.into_iter().map(|d| (d, plan_on(d, &host, Some("ada")))).collect()
+    Dependency::ALL.into_iter().map(|d| (d, plan_on(d, host, Some("ada")))).collect()
 }
 
 #[test]
@@ -236,7 +236,7 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     let t = TestApp::new();
     let tools = terraform_tools(Rc::new(Cell::new(false)), true);
     let log = Sink::default();
-    let steps = match plan(Dependency::Terraform) {
+    let steps = match plan(Dependency::Terraform).await {
         Ok(steps) => steps,
         // A host with nothing to install through (macOS without Homebrew, Linux without apt or
         // dnf): the install is refused as its plan is, before anything runs.
@@ -267,7 +267,7 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
 
 #[tokio::test]
 async fn a_tool_that_was_already_there_is_never_recorded() {
-    if plan(Dependency::Terraform).is_err() {
+    if plan(Dependency::Terraform).await.is_err() {
         return;
     }
     let t = TestApp::new();
@@ -278,7 +278,7 @@ async fn a_tool_that_was_already_there_is_never_recorded() {
 
 #[tokio::test]
 async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
-    if plan(Dependency::Terraform).is_err() {
+    if plan(Dependency::Terraform).await.is_err() {
         return;
     }
     let t = TestApp::new();
@@ -295,7 +295,7 @@ async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
 
 #[tokio::test]
 async fn a_failed_install_says_so_and_records_nothing() {
-    if plan(Dependency::Terraform).is_err() {
+    if plan(Dependency::Terraform).await.is_err() {
         return;
     }
     let t = TestApp::new();
