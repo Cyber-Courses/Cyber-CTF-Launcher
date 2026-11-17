@@ -98,12 +98,12 @@ fn vagrant(s: &mut BTreeMap<String, String>, call: &Call) -> Reply {
 }
 
 /// The provider a `vagrant up` asks for.
-fn provider_of<'a>(rest: &[&'a str]) -> Option<&'a str> {
+pub(super) fn provider_of<'a>(rest: &[&'a str]) -> Option<&'a str> {
     rest.iter().position(|a| *a == "--provider").and_then(|i| rest.get(i + 1)).copied()
 }
 
 /// What Vagrant records of each machine it made, in the run's dotfile folder: its provider and id.
-fn record_made(call: &Call, machines: &[&str], provider: Option<&str>) {
+pub(super) fn record_made(call: &Call, machines: &[&str], provider: Option<&str>) {
     let (Some(dotfile), Some(provider)) = (call.env("VAGRANT_DOTFILE_PATH"), provider) else { return };
     for vm in machines {
         let dir = std::path::Path::new(dotfile).join("machines").join(vm).join(provider);

@@ -66,10 +66,10 @@ impl Fixture {
 /// The fake Compose engine's answer to `call`.
 fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
     let mut e = locked(engine);
-    if call.program == "docker" && call.args.first().is_some_and(|a| a == "ps") && call.args.iter().any(|a| a == "-aq") {
-        return Reply::ok(if e.containers == Containers::None { "" } else { "c1" });
-    }
-    let Some((verb, rest)) = compose_verb(call) else { return Reply::ok("") };
+    let (verb, rest) = match compose_asked(call, e.containers) {
+        Ok(asked) => asked,
+        Err(answered) => return answered,
+    };
     let has = |flag: &str| rest.iter().any(|a| a == flag);
     match verb {
         "ps" => Reply::ok(&ps(e.containers, has("--all"), e.host_port)),
@@ -153,15 +153,31 @@ fn last_compose(f: &Fixture, verb: &str, flag: Option<&str>) -> Option<Call> {
     f.fake.calls().into_iter().rev().find(|c| is_compose(c, verb, flag))
 }
 
+/// The Compose verb `call` asks and its arguments ([`compose_verb`]); else its answer: `docker ps
+/// -aq …` (whether any container of the project is there) answered from `containers`, nothing for
+/// any other call.
+fn compose_asked(call: &Call, containers: Containers) -> std::result::Result<(&str, &[String]), Reply> {
+    if call.program == "docker" && call.args.first().is_some_and(|a| a == "ps") && call.args.iter().any(|a| a == "-aq") {
+        return Err(Reply::ok(if containers == Containers::None { "" } else { "c1" }));
+    }
+    compose_verb(call).ok_or_else(|| Reply::ok(""))
+}
+
+/// The state `compose ps` lists the project's containers in (`--all`: stopped ones too); none
+/// when it lists none.
+fn listed_state(containers: Containers, all: bool) -> Option<&'static str> {
+    match containers {
+        Containers::None => None,
+        Containers::Stopped if !all => None,
+        Containers::Up => Some("running"),
+        Containers::Stopped => Some("exited"),
+        Containers::Paused => Some("paused"),
+    }
+}
+
 /// `compose ps --format json` for the lab's web machine and Isoloom's probe.
 fn ps(containers: Containers, all: bool, host_port: u16) -> String {
-    let state = match containers {
-        Containers::None => return String::new(),
-        Containers::Stopped if !all => return String::new(),
-        Containers::Up => "running",
-        Containers::Stopped => "exited",
-        Containers::Paused => "paused",
-    };
+    let Some(state) = listed_state(containers, all) else { return String::new() };
     let publisher = format!(r#"{{"URL":"127.0.0.1","PublishedPort":{host_port},"TargetPort":80,"Protocol":"tcp"}}"#);
     [("web", publisher.as_str()), ("isoloom-probe", "")]
         .iter()
