@@ -46,16 +46,10 @@ impl<'a> ImageRef<'a> {
     }
 }
 
-/// Whether a failed `docker` call means this account can't reach the daemon's socket (not in
-/// the `docker` group, or not since its last login) rather than a daemon that isn't running, as
-/// isothrum-machine reads the CLI ([`says_denied`](isothrum_machine::docker::says_denied)). Told
-/// apart, the app says which: offering to start an engine that already runs only spun.
-#[cfg(test)]
-pub fn docker_denied(err: &Error) -> bool {
-    matches!(err, Error::CommandFailed { stderr, .. } if isothrum_machine::docker::says_denied(stderr))
-}
-
-/// The error of a player whose account can't use the running Docker daemon.
+/// The error of a player whose account can't use the running Docker daemon (not in the `docker`
+/// group, or not since its last login), in the launcher's words: isothrum-machine tells a refusal
+/// from a daemon that isn't running ([`says_denied`](isothrum_machine::docker::says_denied)), so
+/// the app never offers to start an engine that already runs.
 pub fn docker_denied_error() -> Error {
     Error::coded(denied_code(isothrum_runner::this_host(), login_name().as_deref()))
 }
@@ -101,26 +95,6 @@ mod tests {
             ImageRef { registry: Some("registry.local:5000"), repository: "team/novnc", tag: Some("1") }
         );
         assert_eq!(ImageRef::parse("registry.local:5000/novnc"), ImageRef { registry: Some("registry.local:5000"), repository: "novnc", tag: None });
-    }
-
-    #[test]
-    fn a_denied_docker_socket_is_not_a_stopped_daemon() {
-        let failed = |stderr: &str| Error::CommandFailed { command: "docker info".into(), stderr: stderr.into() };
-        // Both wordings the Docker CLI has used.
-        assert!(docker_denied(&failed("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock")));
-        assert!(docker_denied(&failed(
-            "Got permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.24/info\""
-        )));
-        assert!(!docker_denied(&failed("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")));
-        // Windows (#218): the engine's named pipe refuses the account.
-        assert!(docker_denied(&failed(
-            "permission denied while trying to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine: open //./pipe/dockerDesktopLinuxEngine: Access is denied."
-        )));
-        assert!(docker_denied(&failed("error during connect: open //./pipe/docker_engine: Access is denied.")));
-        // Not running at all on Windows: the pipe isn't there, which isn't a refusal.
-        assert!(!docker_denied(&failed("error during connect: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.")));
-        assert!(!docker_denied(&failed("Access is denied.")), "an unrelated refusal");
-        assert!(!docker_denied(&Error::ToolMissing { tool: "docker" }));
     }
 
     #[test]
