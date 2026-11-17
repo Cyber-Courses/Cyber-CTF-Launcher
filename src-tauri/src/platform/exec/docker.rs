@@ -88,8 +88,6 @@ pub enum DockerSaid {
     Denied,
     /// The engine doesn't answer: stopped, or quit while a call ran (on Windows, its pipe gone).
     EngineDown,
-    /// The container named isn't there.
-    NoSuchContainer,
     /// Anything else.
     Other,
 }
@@ -105,8 +103,6 @@ impl DockerSaid {
             DockerSaid::Denied
         } else if ENGINE_DOWN.iter().any(|m| s.contains(m)) && !refusal(&s) {
             DockerSaid::EngineDown
-        } else if s.contains("no such container") {
-            DockerSaid::NoSuchContainer
         } else {
             DockerSaid::Other
         }
@@ -221,7 +217,7 @@ mod tests {
             ),
             ("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock", DockerSaid::Denied),
             ("error during connect: open //./pipe/docker_engine: Access is denied.", DockerSaid::Denied),
-            ("Error response from daemon: No such container: cyberctf-sqli-attacker", DockerSaid::NoSuchContainer),
+            ("Error response from daemon: No such container: cyberctf-sqli-attacker", DockerSaid::Other),
             ("Error response from daemon: pull access denied for x, repository does not exist", DockerSaid::Other),
             ("", DockerSaid::Other),
         ];

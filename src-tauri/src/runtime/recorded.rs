@@ -7,6 +7,7 @@
 //! A run never started, or taken down (`absent`), says nothing: the lab is then read as its
 //! catalogue declares it, on this machine.
 
+use isothrum_runner::store::RunRow;
 use isothrum_runner::{RunRecord, RunState};
 
 use super::{Park, Runtime, isothrum, lab};
@@ -104,26 +105,42 @@ pub(crate) fn parked(record: &RunRecord) -> Option<Park> {
     })
 }
 
-/// The labs whose runs run on this machine, as the runner records them: any state but parked or
-/// absent, but a failed run only while a machine of it was last seen running. Read from the
-/// home's service (what it last saw of each run). What
-/// changed outside the app shows once a status read has seen it.
+/// The labs whose runs run on this machine, as the runner records them ([`runs_here`]); none
+/// when the runner's runs can't be listed.
 pub(crate) async fn running_here(dirs: &AppDirs) -> Vec<String> {
-    let Ok(home) = super::paths::runner_home(dirs) else { return Vec::new() };
-    let runs: Vec<(RunRecord, bool)> = match isothrum::rows(&home).await {
-        Ok(rows) => rows.into_iter().map(|r| (r.record, r.observed.is_some_and(|o| o.machines.iter().any(|m| runs(&m.state))))).collect(),
+    match runs_here(dirs).await {
+        Ok(runs) => runs.into_iter().map(|(id, _)| id).collect(),
         Err(e) => {
             log::warn!("the runner's runs can't be listed: {e}");
             Vec::new()
         }
-    };
-    let mut ids: Vec<String> = runs
+    }
+}
+
+/// Each lab whose run runs on this machine, by id, with its run as the home's service last saw
+/// it: any state but parked or absent, but a failed run only while a machine of it was last seen
+/// running. What changed outside the app shows once a status read has seen it.
+///
+/// # Errors
+///
+/// The runner's runs can't be listed.
+pub(crate) async fn runs_here(dirs: &AppDirs) -> Result<Vec<(String, RunRow)>> {
+    let rows = isothrum::rows(&super::paths::runner_home(dirs)?).await?;
+    let mut here: Vec<(String, RunRow)> = rows
         .into_iter()
-        .filter(|(r, seen_running)| r.host_label.is_none() && up(r.state, *seen_running))
-        .filter_map(|(r, _)| super::docker::lab_of_project(r.name.as_str()).filter(|id| super::is_lab_id(id)).map(str::to_owned))
+        .filter(|r| r.record.host_label.is_none() && up(r.record.state, running_machines(r) > 0))
+        .filter_map(|r| {
+            let id = super::docker::lab_of_project(r.record.name.as_str()).filter(|id| super::is_lab_id(id))?.to_owned();
+            Some((id, r))
+        })
         .collect();
-    ids.sort();
-    ids
+    here.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(here)
+}
+
+/// How many machines of `row`'s run were last seen running.
+pub(crate) fn running_machines(row: &RunRow) -> usize {
+    row.observed.as_ref().map_or(0, |o| o.machines.iter().filter(|m| runs(&m.state)).count())
 }
 
 /// Whether a run in `state` runs: up or moving, or failed with a machine `seen_running`.

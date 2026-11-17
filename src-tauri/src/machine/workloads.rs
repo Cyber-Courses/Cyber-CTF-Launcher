@@ -1,18 +1,22 @@
-//! What Cyber CTF is running on this machine, for the Machine page: running lab containers
-//! (grouped per lab, with memory) and local lab VMs, each stoppable. Only things Cyber CTF
-//! started: containers named `cyberctf-*`, VMs whose Vagrant home is under the app's lab or
-//! self-test folders.
-
-mod docker;
-mod vm;
+//! What Cyber CTF is running on this machine, for the Machine page: each lab whose run the runner
+//! records here as running ([`crate::runtime::recorded::runs_here`]), its containers with the
+//! memory they use or its VMs on their hypervisor, each stoppable with the lab's own Stop.
+//!
+//! All of it is the runner's answer, asked of the home's service: what it last saw of each run
+//! (no tool runs for it, so a VM's lock is never taken by a poll), and for containers what the
+//! engine says they use now (`usage`).
 
 use std::future::Future;
+use std::path::Path;
 
+use isothrum_runner::RunName;
+use isothrum_runner::store::RunRow;
 use serde::Serialize;
 
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::Runtime;
+use crate::runtime::recorded::{self, RunForm};
 
 /// What stopping a workload needs from the labs' runtime: whether lab `id` is installed and runs
 /// here (in a VM or not), and the lab's own stop.
@@ -24,16 +28,15 @@ pub trait LabRuntime {
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send;
 }
 
-/// Something of the launcher's running on this machine, as the Machine page lists it: a lab's
-/// containers or VMs, or a setup test's.
+/// A lab running on this machine, as the Machine page lists it: its containers or its VMs.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Workload {
-    /// Lab id, or `selftest` for a setup test.
+    /// Lab id.
     pub id: String,
     /// What runs it.
     pub kind: WorkloadKind,
-    /// Containers running for it (VMs: 1 per machine).
+    /// Its machines running (containers, or VMs).
     pub count: u32,
     /// Memory used, when the runtime reports it (Docker); 0 if unknown.
     pub mem_bytes: u64,
@@ -51,138 +54,69 @@ pub enum WorkloadKind {
     Vm,
 }
 
-/// What the app runs on this machine: its labs' containers and local VMs.
-pub async fn machine_workloads(dirs: AppDirs) -> Vec<Workload> {
-    let (mut d, v) = tokio::join!(docker::workloads(), vm::workloads(&dirs));
-    d.extend(v);
-    d
+/// The labs running on this machine, as the runner records them: their containers (with the
+/// memory they use now) and their VMs.
+///
+/// # Errors
+///
+/// The runner's runs can't be listed: the page says so rather than show nothing running.
+pub async fn machine_workloads(dirs: AppDirs) -> Result<Vec<Workload>> {
+    let home = crate::runtime::paths::runner_home(&dirs)?;
+    let mut workloads = Vec::new();
+    for (id, row) in recorded::runs_here(&dirs).await? {
+        let Some(mut w) = workload(id, &row) else { continue };
+        if w.kind == WorkloadKind::Docker {
+            w.mem_bytes = memory(&home, &row.record.name).await;
+        }
+        workloads.push(w);
+    }
+    Ok(workloads)
 }
 
-/// Stops a workload from the Machine page. An installed lab running here gets its own Stop (the
-/// lab page's: under its lock, with its volumes, pinned ports, networks and attack box or VM);
-/// anything else of the app's (a lab removed since, the self-test) goes by name: its containers
-/// (incl. its attack box), or its local VMs. The lab can be started again from its page.
-pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: WorkloadKind, id: String) -> Result<()> {
+/// Lab `id`'s workload from its run `row`: its machines last seen running, and the hypervisor its
+/// VMs run on. None for a run that is neither containers nor VMs here (a module's).
+fn workload(id: String, row: &RunRow) -> Option<Workload> {
+    let kind = match RunForm::of(&row.record) {
+        RunForm::Docker => WorkloadKind::Docker,
+        RunForm::Vagrant | RunForm::HelperVm => WorkloadKind::Vm,
+        RunForm::Terraform => return None,
+    };
+    let provider = row.record.provider.filter(|_| kind == WorkloadKind::Vm).and_then(provider_id);
+    Some(Workload { id, kind, count: u32::try_from(recorded::running_machines(row)).unwrap_or(u32::MAX), mem_bytes: 0, provider })
+}
+
+/// `provider` as the webview names hypervisors (`virtualbox`, `hyperv`, ...).
+fn provider_id(provider: isothrum_runner::Provider) -> Option<String> {
+    serde_json::to_value(provider).ok()?.as_str().map(str::to_owned)
+}
+
+/// The memory run `name`'s machines use now, as its engine samples it; 0 when it can't say.
+async fn memory(home: &Path, name: &RunName) -> u64 {
+    match crate::runtime::isothrum::usage(home, name).await {
+        Ok(used) => used.iter().filter_map(|m| m.memory_bytes).fold(0, u64::saturating_add),
+        Err(e) => {
+            log::warn!("what {name} uses can't be read: {e}");
+            0
+        }
+    }
+}
+
+/// Stops a workload from the Machine page: the lab's own Stop (the lab page's: under its lock,
+/// with its volumes, pinned ports, networks and attack box or VM). The lab can be started again
+/// from its page.
+///
+/// # Errors
+///
+/// An id that isn't a lab's, a lab whose run doesn't run here, or the lab's Stop's own.
+pub async fn machine_workload_stop(labs: &impl LabRuntime, kind: WorkloadKind, id: String) -> Result<()> {
     if !crate::runtime::is_lab_id(&id) {
         return Err(Error::Invalid(format!("invalid id `{id}`")));
     }
-    let in_vm = kind == WorkloadKind::Vm;
-    if let Some(runtime) = labs.runtime_here(&id, in_vm).await {
-        return labs.stop_lab(&id, runtime).await;
-    }
-    if in_vm { vm::stop(&dirs, &id).await } else { docker::stop(&id).await }
+    let Some(runtime) = labs.runtime_here(&id, kind == WorkloadKind::Vm).await else {
+        return Err(Error::Invalid(format!("nothing of `{id}` runs on this machine")));
+    };
+    labs.stop_lab(&id, runtime).await
 }
 
 #[cfg(test)]
-mod tests {
-    use super::WorkloadKind;
-    #[test]
-    fn workload_ids_are_plain_names() {
-        // The self-test's workload goes by an id too: the lab-id rule takes it.
-        assert!(crate::runtime::is_lab_id("goad-light_2") && crate::runtime::is_lab_id("selftest"));
-    }
-
-    /// A fake labs' runtime: an installed, running lab here gets its own Stop (the lab page's,
-    /// now the Isothrum runner's); anything else goes by name through the Machine-page janitor.
-    /// The runner-backed Stop itself is covered by the runner's tests and the integration tests.
-    struct FakeLabs {
-        installed: Vec<(&'static str, super::Runtime)>,
-        stopped: std::sync::Mutex<Vec<(String, super::Runtime)>>,
-    }
-    impl super::LabRuntime for FakeLabs {
-        fn runtime_here(&self, id: &str, in_vm: bool) -> impl Future<Output = Option<super::Runtime>> + Send {
-            std::future::ready(self.installed.iter().find(|(n, r)| *n == id && matches!(r, super::Runtime::Vm) == in_vm).map(|(_, r)| *r))
-        }
-        fn stop_lab(&self, id: &str, runtime: super::Runtime) -> impl std::future::Future<Output = crate::error::Result<()>> + Send {
-            self.stopped.lock().unwrap().push((id.to_string(), runtime));
-            std::future::ready(Ok(()))
-        }
-    }
-
-    #[tokio::test]
-    async fn the_machine_page_lists_and_stops_the_apps_containers_and_vms() {
-        use crate::platform::exec::fake::{Tools, ok};
-        let t = crate::testing::test_app::TestApp::new();
-        let lab = t.lab("goad", &[]);
-        let vagrant = crate::runtime::lab::vagrant_dir(&lab, crate::runtime::Runtime::Vm);
-        std::fs::create_dir_all(&vagrant).unwrap();
-        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
-        let global = format!("1,,machine-id,a\n1,,provider-name,virtualbox\n1,,machine-home,{}\n1,,state,running\n", vagrant.display());
-        let tools = Tools::strict_rules(&[
-            ("docker compose -p cyberctf-sqli down", crate::platform::exec::fake::ok("")),
-            ("docker rm -f", crate::platform::exec::fake::ok("")),
-            ("docker ps --filter", ok("aaa\tcyberctf-sqli-web-1\tcyberctf-sqli\n")),
-            ("docker stats", ok("aaa\t10MiB / 1GiB\n")),
-            ("global-status", ok(global)),
-            ("ps -aq", ok("bbb\nccc\n")),
-        ]);
-        let w = super::machine_workloads(t.dirs()).await;
-        let ids: Vec<(&str, WorkloadKind, u64)> = w.iter().map(|w| (w.id.as_str(), w.kind, w.mem_bytes)).collect();
-        assert_eq!(ids, [("sqli", WorkloadKind::Docker, 10 * 1024 * 1024), ("goad", WorkloadKind::Vm, 0)]);
-        // Regression: the scan pruned Vagrant's index, which reads every VM's state live; on
-        // Hyper-V that takes each VM's lock, and a lab starting then had its own `vagrant status`
-        // refused (`MachineActionLockedError`). It reads the index as it is.
-        assert!(tools.called("vagrant global-status --machine-readable"), "{:?}", tools.calls());
-        assert!(!tools.called("--prune"), "{:?}", tools.calls());
-        // `goad` is an installed VM lab running here: its Stop is the lab's own (the runner's).
-        let labs = FakeLabs { installed: vec![("goad", super::Runtime::Vm)], stopped: std::sync::Mutex::new(Vec::new()) };
-        // `sqli` is a stray container the app left: it goes by name through the janitor.
-        super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Docker, "sqli".into()).await.unwrap();
-        assert!(tools.called("compose -p cyberctf-sqli down") && tools.called("docker rm -f bbb ccc"));
-        super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "goad".into()).await.unwrap();
-        assert_eq!(*labs.stopped.lock().unwrap(), [("goad".to_string(), super::Runtime::Vm)], "the lab's own stop, not the janitor's");
-        let err = super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "other".into()).await.unwrap_err().to_string();
-        assert_eq!(err, "no VMs found for `other`");
-        assert!(super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "selftest".into()).await.is_err());
-        // An unknown kind never reaches the stop: the command's argument doesn't parse.
-        assert!(serde_json::from_value::<WorkloadKind>(serde_json::json!("tape")).is_err());
-        assert_eq!(serde_json::from_value::<WorkloadKind>(serde_json::json!("vm")).unwrap(), WorkloadKind::Vm);
-        assert!(super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "../x".into()).await.is_err());
-    }
-
-    /// The real Docker: a lab's containers stopped from the Machine page go with their volume,
-    /// networks and pinned ports, as from the lab page. Opt-in (needs Docker and the image named
-    /// by `CYBERCTF_TEST_DOCKER_IMAGE`, default python:3.11-alpine, already local):
-    /// `cargo test real_docker -- --ignored`.
-    #[tokio::test]
-    #[ignore = "needs Docker and a local test image"]
-    async fn real_docker_machine_page_stop_removes_the_labs_volumes_and_networks() {
-        use crate::platform::exec::run;
-        let image = std::env::var("CYBERCTF_TEST_DOCKER_IMAGE").unwrap_or_else(|_| "python:3.11-alpine".into());
-        let t = crate::testing::test_app::TestApp::new();
-        let id = format!("e2e{}", rand::random::<u16>());
-        let project = format!("cyberctf-{id}");
-        let lab = t.lab(&id, &[]);
-        let compose = crate::runtime::lab::compose_file(&lab);
-        std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
-        std::fs::write(
-            &compose,
-            format!(
-                "services:\n  web:\n    image: {image}\n    command: [\"sleep\", \"300\"]\n    labels: {{ cyberctf.e2e: stop }}\n    volumes: [\"data:/data\"]\n    networks: [lab]\nvolumes:\n  data: {{}}\nnetworks:\n  lab: {{}}\n"
-            ),
-        )
-        .unwrap();
-        std::fs::write(lab.join(".cyberctf-ports.yml"), "services: {}\n").unwrap();
-        let file = compose.display().to_string();
-        run("docker", &["compose", "-p", &project, "-f", &file, "up", "-d"], Some(&lab)).await.unwrap();
-        let listed = super::machine_workloads(t.dirs()).await;
-        assert!(listed.iter().any(|w| w.id == id && w.kind == WorkloadKind::Docker), "{}", listed.iter().map(|w| w.id.as_str()).collect::<Vec<_>>().join(","));
-        super::machine_workload_stop(t.handle(), t.dirs(), WorkloadKind::Docker, id.clone()).await.unwrap();
-        let label = format!("label=com.docker.compose.project={project}");
-        let containers = run("docker", &["ps", "-aq", "--filter", &label], None).await.unwrap();
-        let volumes = run("docker", &["volume", "ls", "-q", "--filter", &label], None).await.unwrap();
-        let networks = run("docker", &["network", "ls", "-q", "--filter", &label], None).await.unwrap();
-        // Whatever is left goes before the assertions, so a failure leaves nothing behind.
-        let _ = run("docker", &["compose", "-p", &project, "-f", &file, "down", "--volumes", "-t", "0"], Some(&lab)).await;
-        assert!(containers.trim().is_empty(), "containers left: {containers}");
-        assert!(volumes.trim().is_empty(), "the lab's volume was left: {volumes}");
-        assert!(networks.trim().is_empty(), "networks left: {networks}");
-        assert!(!lab.join(".cyberctf-ports.yml").exists(), "the pinned ports went");
-    }
-
-    #[tokio::test]
-    async fn nothing_running_lists_nothing() {
-        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("docker ps", None)]);
-        assert!(super::docker::workloads().await.is_empty());
-    }
-}
+mod tests;

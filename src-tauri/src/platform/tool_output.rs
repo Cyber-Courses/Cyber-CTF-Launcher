@@ -5,7 +5,7 @@
 //! spawned with their messages in the C locale and their output decoded from the code page they
 //! wrote it in ([`text`]), so what they say is in the bytes and words these readers know.
 //!
-//! The Docker CLI's failures are read by [`super::exec::DockerSaid`], Terraform's state by
+//! The Docker CLI's failures are read by `exec::docker`'s `DockerSaid`, Terraform's state by
 //! `runtime::terraform::state` and Proxmox's API by `runtime::proxmox::api`.
 
 pub mod apple_events;

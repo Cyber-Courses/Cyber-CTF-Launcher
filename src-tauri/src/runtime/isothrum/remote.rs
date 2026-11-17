@@ -306,6 +306,16 @@ pub(crate) async fn rows(home: &Path) -> Result<Vec<isothrum_runner::store::RunR
     call(home, |client| async move { client.list().await }).await.map_err(Failure::into_error)
 }
 
+/// What each running machine of run `name` in `home`'s service uses now, as its engine samples
+/// it (none for a run whose tool reports no per-machine figure).
+///
+/// # Errors
+///
+/// No service can be reached, or the run's engine doesn't answer.
+pub(crate) async fn usage(home: &Path, name: &RunName) -> Result<Vec<isothrum_runner::MachineUsage>> {
+    call(home, |client| async move { client.usage(name, None, OpOptions::default()).await }).await.map_err(Failure::into_error)
+}
+
 /// Run `name`'s record in `home`'s service, none for a run never recorded.
 ///
 /// # Errors
