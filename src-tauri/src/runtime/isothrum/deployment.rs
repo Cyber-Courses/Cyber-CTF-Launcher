@@ -3,8 +3,7 @@
 //! an ESXi server (Vagrant there), on a Proxmox server or in a cloud account (a Terraform module).
 //! One handle whatever the place: what differs is data on it, read where an operation needs it:
 //! what its project is ([`Form`], with the runner's format of it), and where it runs ([`Site`]):
-//! the options a change, a read and a console take, the tunnel a change on a server goes
-//! through, the words of a failure, and how the lab page shows the run.
+//! the options a change, a read and a console take, the words of a failure, and how the lab page shows the run.
 
 use std::path::{Path, PathBuf};
 
@@ -12,7 +11,6 @@ use isothrum_runner::{Format, RunOptions};
 
 use super::cloud_runs::CloudPlace;
 use super::server::{self, ServerPlace};
-use super::tunnel::Tunnel;
 use super::{EsxiPlace, Inputs, errors, remote, run_name, runner_provider, start_options};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
@@ -276,23 +274,22 @@ impl Deployment {
         if let Site::Esxi(place) = &self.site { place.onto(opts) } else { opts }
     }
 
-    /// What a change of the run runs with (its start's values `start` for a start), and the
-    /// tunnel it goes through, held until it ends: here and on ESXi, [`Deployment::placed`]; on a
+    /// What a change of the run runs with (its start's values `start` for a start): here and on ESXi, [`Deployment::placed`]; on a
     /// server, its place's ([`server::applying`]); in a cloud account, a start's are the account's
     /// values and credentials with the runner's key for the lab's instances, a later change's its
     /// credentials only (the runner replays what the start was given).
-    async fn changing(&self, start: Option<Start<'_>>) -> Result<(RunOptions, Option<Tunnel>)> {
+    async fn changing(&self, start: Option<Start<'_>>) -> Result<RunOptions> {
         let values = start.map_or(&[][..], |s| s.inputs.values);
         match &self.site {
-            Site::Here | Site::Esxi(_) => Ok((self.placed(start.map_or_else(RunOptions::new, |s| start_options(s.inputs, s.provider))), None)),
-            Site::Server(place) => server::applying(place, values, &self.key()).await,
+            Site::Here | Site::Esxi(_) => Ok(self.placed(start.map_or_else(RunOptions::new, |s| start_options(s.inputs, s.provider)))),
+            Site::Server(place) => Ok(server::applying(place, values, &self.key())),
             Site::Cloud(place) if start.is_some() => {
                 // The key the lab's instances let in: a plain value the record keeps, so every
                 // later operation replays it.
                 let keys = self.key_values().await?;
-                Ok((keys.into_iter().fold(place.options(values), |o, (k, v)| o.with_env(k, v)), None))
+                Ok(keys.into_iter().fold(place.options(values), |o, (k, v)| o.with_env(k, v)))
             }
-            Site::Cloud(place) => Ok((place.later_options(), None)),
+            Site::Cloud(place) => Ok(place.later_options()),
         }
     }
 
@@ -347,7 +344,7 @@ impl Deployment {
     /// VM lab here or on ESXi runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let provider = provider.map(runner_provider).transpose()?;
-        let (opts, _tunnel) = self.changing(Some(Start { inputs, provider })).await?;
+        let opts = self.changing(Some(Start { inputs, provider })).await?;
         self.act(remote::Act::Up, &opts, log).await?;
         super::described::log_message(&self.dir, self.target(), log);
         Ok(())
@@ -356,7 +353,7 @@ impl Deployment {
     /// `act` on the run as a change does ([`Deployment::changing`]), its failure in the player's
     /// words.
     async fn change(&self, act: remote::Act<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-        let (opts, _tunnel) = self.changing(None).await?;
+        let opts = self.changing(None).await?;
         self.act(act, &opts, log).await
     }
 
@@ -378,7 +375,7 @@ impl Deployment {
     /// or taken out), with the parameters it was started with; a lab that isn't up is refused by
     /// the runner before anything acts. Its failure says whether the run may have changed.
     pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
-        let (opts, _tunnel) = self.changing(None).await.map_err(Failed::of_launcher)?;
+        let opts = self.changing(None).await.map_err(Failed::of_launcher)?;
         match self.run(remote::Act::Update, &opts, log).await {
             Ok(_) => Ok(()),
             Err(e) => {
@@ -414,7 +411,7 @@ impl Deployment {
     /// Starts the parked lab again. When nothing is left of it, the runner's record reads it
     /// absent, so the lab page offers a fresh start instead of a resume that can't work.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        let (opts, _tunnel) = self.changing(None).await?;
+        let opts = self.changing(None).await?;
         match self.run(remote::Act::Resume, &opts, log).await {
             Ok(_) => Ok(()),
             Err(remote::Failure::Service(report)) if errors::nothing_to_resume(&report) => Err(errors::coded(&report)),

@@ -8,8 +8,6 @@
 use std::path::{Path, PathBuf};
 
 pub use isothrum_machine::place::ssh::SshError;
-#[cfg(test)]
-pub use isothrum_machine::place::ssh::config_path as ssh_config_path;
 
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
@@ -52,49 +50,6 @@ pub fn ssh_error(host: &str, e: SshError) -> Error {
     }
 }
 
-/// A node reached with the launcher's SSH key, for the tunnel through it.
-#[derive(Debug, PartialEq)]
-pub struct Target {
-    /// The address to connect to.
-    pub host: String,
-    /// Its SSH port.
-    pub port: u16,
-    /// The user to sign in as.
-    pub user: String,
-    /// The private key to sign in with.
-    pub identity: PathBuf,
-}
-
-impl Target {
-    /// The node login `login` (`user@host`, as a jump names it) on port 22, signed in with
-    /// `identity`; refused when it isn't one.
-    pub fn login(login: &str, identity: PathBuf) -> Result<Self> {
-        let (user, host) = login.split_once('@').ok_or_else(|| Error::Invalid("unexpected jump host".into()))?;
-        let target = Target { host: host.into(), port: 22, user: user.into(), identity };
-        // The exec arguments refuse a host or user that isn't a plain word.
-        target.node(Path::new("")).exec_args("true").map_err(|_| Error::Invalid("unexpected SSH host or user".into()))?;
-        Ok(target)
-    }
-
-    /// The same as isothrum-machine's target, its host keys checked against `known_hosts`.
-    fn node(&self, known_hosts: &Path) -> isothrum_machine::place::ssh::Target {
-        isothrum_machine::place::ssh::Target::new(self.host.clone(), self.user.clone(), self.identity.clone(), known_hosts.to_path_buf()).on_port(self.port)
-    }
-
-    /// The `ssh` arguments of a SOCKS5 proxy on `127.0.0.1:port` through this host, signing in
-    /// to nothing else (`-N`): unattended, its host key checked against `known_hosts`, and ending
-    /// when the port can't be forwarded (taken meanwhile) rather than running on as no proxy.
-    pub fn socks_args(&self, known_hosts: &Path, port: u16) -> Result<Vec<String>> {
-        let mut args: Vec<String> = vec!["-N".into(), "-D".into(), format!("127.0.0.1:{port}")];
-        let mut exec = self.node(known_hosts).exec_args("").map_err(|e| Error::Invalid(e.to_string()))?;
-        // isothrum-machine's arguments end with `--`, the login and the command: the proxy runs none.
-        exec.truncate(exec.len().saturating_sub(3));
-        args.extend(exec);
-        args.extend(["-o".into(), "ExitOnForwardFailure=yes".into(), format!("{}@{}", self.user, self.host)]);
-        Ok(args)
-    }
-}
-
 /// The host keys of the server nodes the launcher reaches with its key (a Proxmox node: the jump
 /// host to an internal lab bridge, its key setup), next to that key, as the learner confirmed
 /// them ([`known_hosts`]). A lab host's keys are never kept here: the Isothrum runner keeps each
@@ -106,24 +61,6 @@ pub fn node_known_hosts(identity: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_node_login_is_a_plain_user_and_host() {
-        assert!(Target::login("root@pve.lan", "/k/id".into()).is_ok());
-        for bad in ["nobody", "root@pve;rm", "-o@x", "root@-oProxyCommand=x"] {
-            assert!(Target::login(bad, "/k/id".into()).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn the_socks_proxy_signs_in_to_nothing_with_the_key_and_the_confirmed_host_keys() {
-        let node = Target::login("root@pve.lan", "/k/id".into()).unwrap();
-        let args = node.socks_args(Path::new("/Users/a/Application Support/kh"), 1080).unwrap();
-        assert_eq!(args[..5], ["-N", "-D", "127.0.0.1:1080", "-i", "/k/id"]);
-        assert!(args.contains(&"BatchMode=yes".to_owned()) && args.contains(&"StrictHostKeyChecking=yes".to_owned()));
-        assert!(args.contains(&r"UserKnownHostsFile=/Users/a/Application\ Support/kh".to_owned()));
-        assert_eq!(args[args.len() - 3..], ["-o", "ExitOnForwardFailure=yes", "root@pve.lan"]);
-    }
 
     #[test]
     fn the_shared_known_hosts_is_dropped_and_nodes_keep_their_own() {

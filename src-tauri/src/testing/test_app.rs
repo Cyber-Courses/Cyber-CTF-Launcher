@@ -50,6 +50,9 @@ impl TestApp {
     /// system's place (`~/Library/Application Support/<identifier>` on macOS) the runner never
     /// reached them: a capped scenario's VMware VMs kept running and its data stayed (#308).
     pub fn scenario() -> TestApp {
+        // A scenario runs this machine's real tools: the app's runner, not a unit test's empty one
+        // (`platform::exec` and detection run through the test machine).
+        crate::runtime::providers::testing::read_this_machine();
         TestApp::in_root(root_of(std::env::var_os(SCENARIO_ROOT)))
     }
 
