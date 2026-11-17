@@ -1,9 +1,9 @@
 //! "Test connection" for cloud accounts: a checklist per cloud (credentials, what a launch
 //! needs, Terraform), each failure worded as the thing to fix.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use isothrum_machine::cloud::{aws, azure, gcp, oci};
+use isothrum_machine::cloud::{TokenError, aws, azure, digitalocean, gcp, linode, oci};
 use isothrum_machine::{Failure, Refusal};
 
 use super::budget::{budget_unverifiable_message, month_to_date_cost};
@@ -260,26 +260,24 @@ pub(super) async fn test_gcp(h: &HostProfile) -> TestResult {
 }
 
 /// A token API's answer to its `account` endpoint: the HTTP status, or why it couldn't be reached.
-fn token_outcome(cloud: &str, instances: &str, answer: std::result::Result<reqwest::StatusCode, String>) -> First<()> {
+fn token_outcome(cloud: &str, instances: &str, answer: std::result::Result<(), TokenError>) -> First<()> {
     match answer {
-        Ok(status) if status.is_success() => First::Pass(Check::ok("API token", format!("Token is valid. Labs run as {instances} in this account.")), ()),
-        Ok(status) if status == reqwest::StatusCode::UNAUTHORIZED => {
-            First::Refused(Check::fail("API token", format!("{cloud} rejected this token. Create a new one with read/write scope.")))
+        Ok(()) => First::Pass(Check::ok("API token", format!("Token is valid. Labs run as {instances} in this account.")), ()),
+        Err(TokenError::Rejected) => First::Refused(Check::fail("API token", format!("{cloud} rejected this token. Create a new one with read/write scope."))),
+        Err(TokenError::Status(code)) => {
+            let status = reqwest::StatusCode::from_u16(code).map_or_else(|_| code.to_string(), |s| s.to_string());
+            First::Refused(Check::fail("API token", format!("{cloud} API returned {status}.")))
         }
-        Ok(status) => First::Refused(Check::fail("API token", format!("{cloud} API returned {status}."))),
-        Err(e) => First::Unreachable(Check::fail("API token", format!("Can't reach {cloud}: {e}"))),
+        Err(TokenError::Unreachable(e)) => First::Unreachable(Check::fail("API token", format!("Can't reach {cloud}: {e}"))),
+        Err(other) => First::Unreachable(Check::fail("API token", format!("Can't reach {cloud}: {other}"))),
     }
 }
 
-/// A token-authenticated cloud (`DigitalOcean`, Linode): the API token is valid when its
-/// `account` endpoint returns 2xx. `instances` is what labs run as there.
-async fn test_token_api(cloud: &str, account_url: &str, instances: &str, token: &str) -> TestResult {
+/// A token-authenticated cloud (`DigitalOcean`, Linode): `answer` is isothrum-machine's check of
+/// the token against the provider's `account` endpoint. `instances` is what labs run as there.
+async fn test_token_api(cloud: &str, instances: &str, answer: std::result::Result<(), TokenError>) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
-    let answer = match crate::platform::http::api_client() {
-        Ok(client) => client.get(account_url).timeout(Duration::from_secs(15)).bearer_auth(token).send().await.map(|r| r.status()).map_err(|e| e.to_string()),
-        Err(e) => Err(e.to_string()),
-    };
     if let Err(done) = token_outcome(cloud, instances, answer).settle(&mut checks, started) {
         return done;
     }
@@ -288,11 +286,11 @@ async fn test_token_api(cloud: &str, account_url: &str, instances: &str, token: 
 }
 
 pub(super) async fn test_digitalocean(token: &str) -> TestResult {
-    test_token_api("DigitalOcean", "https://api.digitalocean.com/v2/account", "droplets", token).await
+    test_token_api("DigitalOcean", "droplets", digitalocean::check_token(token).await).await
 }
 
 pub(super) async fn test_linode(token: &str) -> TestResult {
-    test_token_api("Linode", "https://api.linode.com/v4/account", "Linodes", token).await
+    test_token_api("Linode", "Linodes", linode::check_token(token).await).await
 }
 
 /// OCI's compartment: its name, or why it couldn't be read. A missing CLI isn't fatal
