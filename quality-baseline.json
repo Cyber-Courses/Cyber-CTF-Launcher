@@ -3,7 +3,6 @@
     "dup/clone": {
       "rs:integration_tests": 1,
       "rs:labs": 1,
-      "rs:machine": 1,
       "rs:screen": 1,
       "ts:components": 1
     }
@@ -45,15 +44,14 @@
     "src-tauri/src/machine/tools/install.rs": {
       "#[allow(clippy::too_many_lines, reason = \"one row per tool: the table itself\")]": 1
     },
-    "src-tauri/src/machine/tools/steps.rs": {
-      "#![allow(clippy::disallowed_methods, reason = \"the install and removal steps' runner: each step streams to the setup log through its own process\")]": 1,
-      "#[cfg_attr(not(target_os = \"linux\"), allow(dead_code, reason = \"only a Linux root step keeps a private folder\"))]": 1
-    },
     "src-tauri/src/platform/env_path.rs": {
       "#[allow(unsafe_code, reason = \"this test runs alone, so it is the only thread\")]": 1
     },
     "src-tauri/src/platform/exec.rs": {
       "#![allow(clippy::disallowed_methods, reason = \"the adapter: every tool the app runs starts here\")]": 1
+    },
+    "src-tauri/src/platform/exec/elevate.rs": {
+      "#[cfg_attr(not(windows), allow(dead_code, reason = \"the elevated broker's scripts, built on Windows (and in its tests)\"))]": 1
     },
     "src-tauri/src/platform/exec/fake.rs": {
       "#[expect(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2
