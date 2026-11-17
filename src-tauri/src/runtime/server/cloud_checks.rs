@@ -1,7 +1,7 @@
 //! "Test connection" for cloud accounts: a checklist per cloud (credentials, what a launch
 //! needs, Terraform), each failure worded as the thing to fix.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use isothrum_machine::cloud::{TokenError, aws, azure, digitalocean, gcp, linode, oci};
 use isothrum_machine::{Failure, Refusal};
