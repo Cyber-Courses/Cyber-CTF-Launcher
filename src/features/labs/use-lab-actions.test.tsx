@@ -66,8 +66,8 @@ const launchArgs = (calls: Call[]) => {
   const { labId, provider, host, defaultPorts } = flat;
   return { labId, provider, host, defaultPorts };
 };
-/** What the launch asked the backend's rule (`lab_placement`) for. */
-const choiceSent = (calls: Call[]) => calls.find((x) => x.cmd === "lab_placement")?.args?.choice;
+/** What the launch asked the backend's rule (`lab_placement`) for (lab `id`'s, when given). */
+const choiceSent = (calls: Call[], id?: string) => calls.find((x) => x.cmd === "lab_placement" && (id === undefined || x.args?.id === id))?.args?.choice;
 const logsOf = (id: string) => {
   return getDeploySnapshot().runs[id]?.logs ?? [];
 };
@@ -370,11 +370,21 @@ describe("useLabActions: launch", () => {
         lab_placement: (a) => (a?.id === "act-again-pve" ? { kind: "server", host: "pve" } : { kind: "vms", provider: "libvirt" }),
       });
       await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-again-vms" }, undefined, undefined));
-      expect(choiceSent(calls)).toEqual({ here: true, host: null, provider: "libvirt", perMachineVm: false, engine: null, defaultPorts: null });
-      calls.length = 0;
       await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-again-pve" }, undefined, undefined));
-      expect(choiceSent(calls)).toEqual({ here: false, host: "pve", provider: null, perMachineVm: false, engine: null, defaultPorts: null });
-      expect(launchArgs(calls)).toMatchObject({ host: "pve" });
+      expect(choiceSent(calls, "act-again-vms")).toEqual({
+        here: true,
+        host: null,
+        provider: "libvirt",
+        perMachineVm: false,
+        engine: null,
+        defaultPorts: null,
+      });
+      expect(choiceSent(calls, "act-again-pve")).toEqual({ here: false, host: "pve", provider: null, perMachineVm: false, engine: null, defaultPorts: null });
+      const launched = calls.filter((c) => c.cmd === "lab_launch").map((c) => c.args?.placement);
+      expect(launched).toEqual([
+        { kind: "vms", provider: "libvirt" },
+        { kind: "server", host: "pve" },
+      ]);
     });
 
     it("keeps a container lab's form, engine and ports, without asking the ports again", async () => {
@@ -382,15 +392,22 @@ describe("useLabActions: launch", () => {
       setLastRun("act-again-pervm", { kind: "vms", provider: "qemu" });
       setLastRun("act-again-cloud", { kind: "cloud", account: "aws1", perMachine: true });
       const { calls, hook } = setup();
-      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-again-docker" }));
-      expect(choiceSent(calls)).toEqual({ here: true, host: null, provider: null, perMachineVm: false, engine: "colima", defaultPorts: true });
-      expect(calls.find((c) => c.cmd === "lab_launch")?.args?.placement).toEqual({ kind: "docker", engine: "colima", defaultPorts: true });
-      calls.length = 0;
-      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-again-pervm" }));
-      expect(choiceSent(calls)).toMatchObject({ here: true, provider: "qemu", perMachineVm: true });
-      calls.length = 0;
-      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-again-cloud" }));
-      expect(choiceSent(calls)).toMatchObject({ here: false, host: "aws1", perMachineVm: true });
+      for (const id of ["act-again-docker", "act-again-pervm", "act-again-cloud"]) await act(() => hook.result.current.launch({ ...dockerLab, id }));
+      expect(choiceSent(calls, "act-again-docker")).toEqual({
+        here: true,
+        host: null,
+        provider: null,
+        perMachineVm: false,
+        engine: "colima",
+        defaultPorts: true,
+      });
+      expect(choiceSent(calls, "act-again-pervm")).toMatchObject({ here: true, provider: "qemu", perMachineVm: true });
+      expect(choiceSent(calls, "act-again-cloud")).toMatchObject({ here: false, host: "aws1", perMachineVm: true });
+      expect(calls.find((c) => c.cmd === "lab_launch" && c.args?.labId === "act-again-docker")?.args?.placement).toEqual({
+        kind: "docker",
+        engine: "colima",
+        defaultPorts: true,
+      });
     });
 
     it("is refused, launching nothing, when the rule says it can't run there now", async () => {
