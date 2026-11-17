@@ -81,7 +81,9 @@ pub async fn run_env(program: &'static str, args: &[&str], cwd: Option<&Path>, e
 
 /// `run_env` that gives up after `timeout`, killing the process, instead of waiting forever.
 /// For read-only probes (status, inspect) where a wedged tool must not hang the caller: a
-/// stuck VirtualBox or Docker daemon then surfaces as an error rather than piling up.
+/// stuck VirtualBox or Docker daemon then surfaces as an error rather than piling up. Only the
+/// real-lab tests use it now.
+#[cfg(test)]
 pub async fn run_env_timed(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], timeout: Duration) -> Result<String> {
     run_inner(program, args, cwd, env, Some(timeout)).await
 }

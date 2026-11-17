@@ -26,7 +26,7 @@ pub use check::{bridge_is_internal, test};
 #[cfg(test)]
 use check::{node_report, outcome, sign_in_report, storage_problems};
 #[cfg(test)]
-use node_ssh::{SDN_MISSING, SDN_SOURCE_CHECK, askpass_script, authorize_args, sdn_outcome, write_askpass};
+use node_ssh::{SDN_MISSING, sdn_outcome};
 pub use node_ssh::{authorize_launcher_key, node_login, ssh_user};
 use node_ssh::{sdn_problem, ssh_key_problem};
 
