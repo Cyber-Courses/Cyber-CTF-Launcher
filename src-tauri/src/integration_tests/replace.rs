@@ -19,6 +19,7 @@ use std::path::Path;
 use super::support::lab::vm_inputs;
 use super::support::{check, log, scenario};
 use crate::error::Code;
+use crate::runtime::placement::Placement;
 use crate::runtime::providers::Provider;
 use crate::runtime::{Destination, LabRef, Runtime, lab, stop_lab};
 use crate::testing::test_app::TestApp;
@@ -63,7 +64,8 @@ async fn a_running_lab_is_not_replaced_under_it() {
     }
     let started = std::time::Instant::now();
     let mut f = Vec::new();
-    let to = Destination { provider, ..Destination::default() };
+    let placement = provider.map_or(Placement::Docker { engine: None, default_ports: false }, |provider| Placement::Vms { provider });
+    let to = Destination::at(&placement);
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {

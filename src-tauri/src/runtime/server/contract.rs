@@ -180,7 +180,7 @@ pub fn host_provider(dirs: &AppDirs, id: &str) -> Result<Option<Provider>> {
     Ok(saved_host(dirs, id)?.map(|h| h.provider))
 }
 
-/// The server marked as default, and its provider, if one is (`start_place::default_place` decides
+/// The server marked as default, and its provider, if one is (`placement::choose` decides
 /// whether a lab starts there). A server list that can't be read is an error, never "no
 /// default": the lab would start here instead of on the server the player chose.
 pub fn default_server(dirs: &AppDirs) -> Result<Option<(String, Provider)>> {

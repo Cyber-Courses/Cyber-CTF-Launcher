@@ -269,7 +269,7 @@ describe("Lab page, driven through the Labs screen", () => {
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Start lab" }));
     await flush();
     expect(commands(calls).filter((c) => c === "lab_launch")).toHaveLength(1);
-    expect(calls.find((c) => c.cmd === "lab_launch")?.args).toMatchObject({ defaultPorts: false });
+    expect(calls.find((c) => c.cmd === "lab_launch")?.args?.placement).toMatchObject({ kind: "docker", defaultPorts: false });
     launch.release();
     await flush(80);
   });
@@ -514,6 +514,6 @@ describe("Lab page, driven through the Labs screen", () => {
     await user.click(within(dialog).getByText("office-esxi"));
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
     await flush(80);
-    expect(calls.find((c) => c.cmd === "lab_launch")?.args).toMatchObject({ labId: "lab-goad", host: "esxi" });
+    expect(calls.find((c) => c.cmd === "lab_launch")?.args).toMatchObject({ labId: "lab-goad", placement: { kind: "server", host: "esxi" } });
   });
 });

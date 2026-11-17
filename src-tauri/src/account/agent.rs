@@ -31,7 +31,7 @@ use crate::account::api;
 use crate::account::colocation;
 use crate::error::{Error, Result};
 use crate::labs;
-use crate::runtime::start_place::{self, StartPlace};
+use crate::runtime::placement::{self, Placement};
 use crate::runtime::{self, Runtime, server};
 
 /// A system notification for the player (title, body), shown when a website launch starts here.
@@ -104,19 +104,15 @@ fn parse_claim(data: &Value) -> Result<Claim> {
     serde_json::from_value(data["claimLaunch"].clone()).map_err(|e| Error::Invalid(format!("the website's launch request is incomplete: {e}")))
 }
 
-/// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
-/// or cloud accounts); else where the app's Start with no place chosen runs it
-/// ([`start_place::default_place`]: where it last ran, else a ready hypervisor here for a VM lab,
-/// else the default server). A cloud lab never runs on an account it wasn't sent to (it costs
-/// money): no target, no launch (`runtime::start` says so).
-async fn launch_place(dirs: &AppDirs, claim: &Claim) -> Result<StartPlace> {
-    if let Some(target) = picked_target(claim.target.as_deref(), |target| server::host_name(dirs, target))? {
-        return Ok(StartPlace { host: Some(target), ..StartPlace::default() });
-    }
+/// Where a claimed launch runs ([`placement::choose`], the app's one rule): the target picked
+/// on the website (one of this launcher's hosts or cloud accounts), else the player's saved
+/// preference among what the lab's spec allows and is ready here. A cloud lab never runs on an
+/// account it wasn't sent to (it costs money): no target, no launch (`pickCloudAccount`).
+async fn launch_place(dirs: &AppDirs, claim: &Claim) -> Result<Placement> {
+    let host = picked_target(claim.target.as_deref(), |target| server::host_name(dirs, target))?;
     let l = &claim.launch;
-    // The player's preferred hypervisor is the webview's (Settings): a website launch takes the
-    // first ready one.
-    start_place::default_place(dirs, &l.lab_id, l.runtime, labs::source(&l.repository, &l.commit), None).await
+    let choice = placement::Choice { host, ..placement::Choice::default() };
+    placement::for_lab(dirs, &l.lab_id, l.runtime, labs::source(&l.repository, &l.commit), &choice).await
 }
 
 /// The target picked on the website, given how to name a host (`None` when it isn't set up):
@@ -171,9 +167,10 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
 /// Starts a claimed lab at `place` (no host: this machine). A failure tears down what this
 /// start brought up, and only that (see [`undoes`]; `present_before`: whether something of it
 /// was there before, see `runtime::lab_present`). Where the lab is reachable here, once running.
-async fn run_claimed(deps: &Deps, launch: &labs::Launch, place: &StartPlace, present_before: bool) -> Result<Option<String>> {
-    let to =
-        runtime::Destination { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..runtime::Destination::default() };
+async fn run_claimed(deps: &Deps, launch: &labs::Launch, place: &Placement, present_before: bool) -> Result<Option<String>> {
+    // The engine a container lab here runs on, pinned to its Docker context as the app's launch does.
+    let docker_context = labs::pinned_context(place).await?;
+    let to = runtime::Destination { placement: place, docker_context: docker_context.as_deref() };
     // Boxed: the launch's future is large, and the operation around it adds to it.
     let run = |log: crate::run_service::local::Log| Box::pin(labs::run(deps.dirs(), launch.clone(), to, move |l| log(l)));
     // Told as an operation of the lab, so its page shows it starting, with its log.
@@ -221,7 +218,7 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     .await?;
     let claim = parse_claim(&data)?;
     let place = launch_place(deps.dirs(), &claim).await?;
-    let host = place.host.clone();
+    let host = place.host().map(str::to_owned);
     let request = launch_request(deps.dirs(), session_id, &claim.launch, host.as_deref()).await?;
     update_state(session_id, "PULLING", Progress { message: Some("Waiting for approval on your machine"), ..Default::default() }).await?;
     confirm_here(deps, &request).await?;

@@ -13,13 +13,12 @@ import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { setLocalePreference } from "@/lib/i18n";
 import type { CommandError } from "@/lib/errors";
 import { setPortMode, setVmProvider, type PortMode } from "@/lib/settings";
-import { readyReport as armReport } from "@/test/fixtures";
 import { commands, installTauri, rejects, type Call, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
 import { labStatus, rejectWith } from "@/features/labs/labs-test-kit";
 import { CALLED_OFF } from "@/features/labs/lab-operations";
-import type { ServerHost } from "@/lib/tauri";
+import type { LabPlacement } from "@/lib/tauri";
 
 const notified = vi.hoisted(() => vi.fn<(title: string, body?: string) => Promise<void>>(() => Promise.resolve()));
 vi.mock("@/lib/notify", () => ({ notify: notified }));
@@ -47,29 +46,38 @@ const SHA = "0123456789abcdef0123456789abcdef01234567";
 /** The VM lab with its source at a pinned commit, as the catalogue lists it. */
 const sourcedVmLab: Lab = { ...vmLab, runtime: { ...must(vmLab.runtime), repository: "CyberCTF/goad", commit: SHA } };
 
-/** The `lab_launch` call's arguments as sent (the flags `launchArgs` leaves out included). */
-const rawLaunchArgs = (calls: Call[]) => calls.find((x) => x.cmd === "lab_launch")?.args;
-const launchArgs = (calls: Call[]) => {
-  const c = calls.find((x) => x.cmd === "lab_launch");
+/** The placement the `lab_launch` call sent, read as where it runs: the lab, the hypervisor
+ *  here, the host, the lab's own ports; and one VM per machine (`perMachineVm`, in `rawLaunchArgs`). */
+function flatLaunch(c: Call | undefined) {
   if (!c) return undefined;
-  const { labId, provider, host, defaultPorts } = c.args ?? {};
+  const p = c.args?.placement as LabPlacement;
+  return {
+    labId: c.args?.labId,
+    provider: p.kind === "vms" ? p.provider : null,
+    host: p.kind === "server" ? p.host : p.kind === "cloud" ? p.account : null,
+    defaultPorts: p.kind === "docker" && p.defaultPorts,
+    perMachineVm: p.kind === "vms" || (p.kind === "cloud" && p.perMachine),
+  };
+}
+const rawLaunchArgs = (calls: Call[]) => flatLaunch(calls.find((x) => x.cmd === "lab_launch"));
+const launchArgs = (calls: Call[]) => {
+  const flat = rawLaunchArgs(calls);
+  if (!flat) return undefined;
+  const { labId, provider, host, defaultPorts } = flat;
   return { labId, provider, host, defaultPorts };
 };
-// The dev mock's machine is an arm64 Mac; most tests here want an x86 one, where the VM labs run natively.
-const readyReport = () => ({ ...armReport(), arch: "x86_64" });
+/** What the launch asked the backend's rule (`lab_placement`) for. */
+const choiceSent = (calls: Call[]) => calls.find((x) => x.cmd === "lab_placement")?.args?.choice;
 const logsOf = (id: string) => {
   return getDeploySnapshot().runs[id]?.logs ?? [];
 };
 
-function setup(overrides: Parameters<typeof installTauri>[0] = {}, hosts: ServerHost[] = []) {
+function setup(overrides: Parameters<typeof installTauri>[0] = {}) {
   const calls = installTauri(overrides);
   const refresh = vi.fn();
-  const hook = renderHook(() => useLabActions(refresh, hosts));
+  const hook = renderHook(() => useLabActions(refresh));
   return { calls, refresh, hook };
 }
-
-/** A saved host `id` on `provider`. */
-const savedHost = (id: string, provider: ServerHost["provider"]) => ({ id, name: id, provider }) as ServerHost;
 
 /** Starts launching `lab` here (a dialog may then ask the player): the launch, to await once
  *  answered. */
@@ -108,17 +116,14 @@ const REFUSED: CommandError = {
 describe("useLabActions: launch", () => {
   it("starts a cloud lab on the cloud account picked, without an attack box, and says the backend's refusal without one", async () => {
     const cloudLab: Lab = { ...dockerLab, id: "act-cloud", slug: "act-cloud", runtime: { runtime: "CLOUD", architectures: [], providers: ["aws"] } };
-    const { calls, hook } = setup({
-      lab_launch: (a) => {
-        if (!a?.host) rejectWith({ code: "pickCloudAccount", message: "pick one" });
-        return null;
-      },
-    });
+    const { calls, hook } = setup();
+    // No account picked: the rule refuses it, and nothing is launched.
     await act(() => hook.result.current.launch(cloudLab, null, undefined));
-    expect(launchArgs(calls)).toEqual({ labId: "act-cloud", provider: null, host: null, defaultPorts: false });
+    expect(choiceSent(calls)).toMatchObject({ host: null });
+    expect(commands(calls)).not.toContain("lab_launch");
     expect(logsOf("act-cloud").at(-1)).toMatch(/^✗ .*pick one of your cloud accounts/);
     await act(() => hook.result.current.launch(cloudLab, "aws1", undefined));
-    expect(launchArgs(calls.slice(1))).toEqual({ labId: "act-cloud", provider: null, host: "aws1", defaultPorts: false });
+    expect(rawLaunchArgs(calls)).toEqual({ labId: "act-cloud", provider: null, host: "aws1", defaultPorts: false, perMachineVm: false });
     expect(logsOf("act-cloud").at(-1)).toBe("✓ Lab is running");
   });
 
@@ -240,7 +245,7 @@ describe("useLabActions: launch", () => {
   describe("on a Proxmox server reached through its node", () => {
     /** A launch of the VM lab as `id` on the server "pve", whose node's keys `keys` answers. */
     async function onPve(id: string, keys: Handler) {
-      const { calls, hook } = setup({ server_node_host_keys: keys }, [savedHost("pve", "proxmox")]);
+      const { calls, hook } = setup({ server_node_host_keys: keys });
       const user = userEvent.setup();
       render(<NodeKeysPrompt />);
       const done = startInAct(() => hook.result.current.launch({ ...vmLab, id }, "pve", undefined));
@@ -286,14 +291,14 @@ describe("useLabActions: launch", () => {
     });
   });
 
-  it("says a container lab is ready on the server or in the cloud account it runs on", async () => {
+  it("says a lab is ready on the server or in the cloud account its placement names", async () => {
     // Regression: a container lab on an AWS account was announced as "running on your server".
-    const { hook } = setup({}, [savedHost("pve", "proxmox"), savedHost("aws1", "aws")]);
+    const { hook } = setup();
     notified.mockClear();
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-cloud" }, "aws1", undefined));
     expect(notified).toHaveBeenLastCalledWith("Lab ready", "Invoice portal API is running in your cloud account.");
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-on-pve" }, "pve", undefined));
-    expect(notified).toHaveBeenLastCalledWith("Lab ready", "Invoice portal API is running on your server.");
+    await act(() => hook.result.current.launch({ ...vmLab, id: "act-on-pve" }, "pve", undefined));
+    expect(notified).toHaveBeenLastCalledWith("Lab ready", "GOAD Light is running on your server.");
   });
 
   it("runs a container lab given a hypervisor here as one VM per machine there, never its containers in a VM", async () => {
@@ -329,78 +334,59 @@ describe("useLabActions: launch", () => {
     expect(args.host).toBe("aws1");
   });
 
-  it("runs a VM lab picked here on the hypervisor the backend picks for it there", async () => {
-    const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false, hypervisor: "parallels" }) });
+  it("runs a VM lab picked here where the backend's rule places it, sending that placement as it is", async () => {
+    const { calls, hook } = setup({ lab_placement: () => ({ kind: "vms", provider: "parallels" }) });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, null, undefined));
-    expect(launchArgs(calls)).toEqual({ labId: "act-vm-here", provider: "parallels", host: null, defaultPorts: false });
+    // This machine picked, its hypervisor left to the rule (the saved one, else the first ready).
+    expect(calls.find((c) => c.cmd === "lab_placement")?.args).toEqual({
+      id: "act-vm-here",
+      runtime: "VM",
+      source: { repository: "CyberCTF/goad", commit: SHA },
+      choice: { here: true, host: null, provider: null, perMachineVm: false, engine: null, defaultPorts: null },
+    });
+    expect(rawLaunchArgs(calls)).toEqual({ labId: "act-vm-here", provider: "parallels", host: null, defaultPorts: false, perMachineVm: true });
+    expect(calls.find((c) => c.cmd === "lab_launch")?.args?.placement).toEqual({ kind: "vms", provider: "parallels" });
   });
 
-  it("runs a VM lab started again here on the hypervisor it ran on, without asking the backend", async () => {
+  it("runs a VM lab started again here on the hypervisor it ran on", async () => {
     const { calls, hook } = setup();
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-again" }, null, { provider: "libvirt" }));
-    expect(commands(calls)).not.toContain("lab_default_place");
+    expect(choiceSent(calls)).toMatchObject({ here: true, provider: "libvirt" });
     expect(launchArgs(calls)).toMatchObject({ provider: "libvirt", host: null });
   });
 
-  it("starts a VM lab with no place picked on the server the backend picks for it", async () => {
-    const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false, hypervisor: null }) });
+  it("starts a lab with nothing picked where the saved preference places it", async () => {
+    const { calls, hook } = setup({ lab_placement: () => ({ kind: "server", host: "pve" }) });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-def" }, undefined, undefined));
-    expect(calls.find((c) => c.cmd === "lab_default_place")?.args).toEqual({
-      id: "act-vm-def",
-      runtime: "VM",
-      source: { repository: "CyberCTF/goad", commit: SHA },
-      preferred: null,
-    });
+    expect(choiceSent(calls)).toEqual({ here: false, host: null, provider: null, perMachineVm: false, engine: null, defaultPorts: null });
     expect(launchArgs(calls)).toMatchObject({ provider: null, host: "pve" });
   });
 
-  it("runs a VM lab here on the hypervisor the backend picks, with the Settings choice for it to weigh", async () => {
-    // Regression: the backend's hypervisor was dropped for a VM lab and the webview picked its
-    // own (the Settings choice first). Two hypervisors ready and the Settings choice not the
-    // backend's: only the backend's pick passes.
-    setVmProvider("virtualbox");
-    const report = readyReport();
-    report.readyHypervisors = ["virtualbox", "parallels"];
-    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: "parallels", perMachineVm: false, hypervisor: "parallels" }) });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, undefined, undefined));
-    expect(calls.find((c) => c.cmd === "lab_default_place")?.args?.preferred).toBe("virtualbox");
-    expect(launchArgs(calls)).toMatchObject({ provider: "parallels", host: null });
+  it("asks the rule for a lab with no source known, which then reads the catalogue's", async () => {
+    const { calls, hook } = setup();
+    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-unsourced" }, "pve", undefined));
+    expect(calls.find((c) => c.cmd === "lab_placement")?.args?.source).toBeNull();
+    expect(launchArgs(calls)).toMatchObject({ host: "pve" });
   });
 
-  it("fails the start, rather than guess, when the default server can't be decided", async () => {
-    const { calls, hook } = setup({ lab_default_place: () => rejectWith("couldn't read the lab's spec: HTTP 404") });
+  it("fails the start, rather than guess, when the rule can't place the lab", async () => {
+    const { calls, hook } = setup({ lab_placement: () => rejectWith("couldn't read the lab's spec: HTTP 404") });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-nospec" }, undefined, undefined));
     expect(commands(calls)).not.toContain("lab_launch");
     expect(logsOf("act-vm-nospec").at(-1)).toContain("couldn't read the lab's spec");
   });
 
-  it("starts a container lab with no place picked where the backend says it last ran", async () => {
-    // Regression: Home's "start again" ran a container lab on Docker here whatever the lab last
-    // ran on, where the lab page's Reset takes it back there.
-    const sourced = { ...sourcedVmLab, id: "act-web-again", runtime: { ...must(sourcedVmLab.runtime), runtime: "DOCKER" as const } };
-    const asVms = setup({ lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: true }) });
-    await act(() => asVms.hook.result.current.launch(sourced, undefined, undefined, { ports: "random" }));
-    expect(launchArgs(asVms.calls)).toMatchObject({ provider: "virtualbox", host: null });
-    expect(rawLaunchArgs(asVms.calls)?.perMachineVm).toBe(true);
-    const onServer = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false }) });
-    await act(() => onServer.hook.result.current.launch({ ...sourced, id: "act-web-pve" }, undefined, undefined, { ports: "random" }));
-    expect(launchArgs(onServer.calls)).toMatchObject({ provider: null, host: "pve" });
-  });
-
-  it("asks for no default place when a place is picked", async () => {
+  it("sends a container lab's engine and ports picked here for the rule to keep", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-picked" }, "pve", undefined));
-    expect(commands(calls)).not.toContain("lab_default_place");
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-engine" }, null, undefined, { ports: "default", engine: "colima" }));
+    expect(choiceSent(calls)).toMatchObject({ here: true, engine: "colima", defaultPorts: true });
+    expect(calls.find((c) => c.cmd === "lab_launch")?.args?.placement).toEqual({ kind: "docker", engine: "colima", defaultPorts: true });
   });
 
-  it("leaves a VM lab with no hypervisor here to the backend, and says its refusal", async () => {
-    // The backend's rule (`check_destination`), not one of the webview's own.
-    const { calls, hook } = setup({
-      lab_default_place: () => ({ host: null, provider: null, perMachineVm: false, hypervisor: null }),
-      lab_launch: rejects({ code: "noHypervisor", message: "No hypervisor ready on this machine runs this lab." }),
-    });
+  it("says the rule's refusal of a VM lab with no hypervisor here, and launches nothing", async () => {
+    const { calls, hook } = setup({ lab_placement: rejects({ code: "noHypervisor", message: "No hypervisor ready on this machine runs this lab." }) });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-none" }, null, undefined));
-    expect(launchArgs(calls)).toMatchObject({ provider: null, host: null });
+    expect(commands(calls)).not.toContain("lab_launch");
     expect(logsOf("act-vm-none").at(-1)).toMatch(/^✗ No hypervisor ready on this machine runs this lab\. Install one from the Machine page/);
   });
 
@@ -461,7 +447,7 @@ describe("useLabActions: operations on a built lab", () => {
     installTauri();
     let release!: () => void;
     const refresh = vi.fn(() => new Promise<void>((r) => (release = r)));
-    const hook = renderHook(() => useLabActions(refresh, []));
+    const hook = renderHook(() => useLabActions(refresh));
     let done!: Promise<unknown>;
     act(() => {
       done = hook.result.current.stop({ ...vmLab, id: "act-settle" });

@@ -29,8 +29,6 @@ function useMonthSpend(budgeted: { host: ServerHost }[]) {
   return spend;
 }
 
-const NO_HOSTS: ServerHost[] = [];
-
 /** The Cloud page's state and actions: the accounts, their tests and spend, the labs running on them. */
 export function useCloudPage() {
   const t = useT();
@@ -45,7 +43,7 @@ export function useCloudPage() {
   const { labs, error: labsError, statuses, refreshStatus } = useLabs();
   // Through the shared lab actions: the lab reads busy everywhere (this list, Labs, its page)
   // until its status after the stop is read, so Stop can't be pressed twice.
-  const { runs, stop } = useLabActions(refreshStatus, allHosts ?? NO_HOSTS);
+  const { runs, stop } = useLabActions(refreshStatus);
   const fail = (e: unknown) => {
     setError(describeError(e));
   };

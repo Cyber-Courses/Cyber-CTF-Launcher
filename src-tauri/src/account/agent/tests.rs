@@ -46,12 +46,17 @@ fn a_launch_goes_to_the_target_picked_on_the_website_while_it_is_set_up() {
 }
 
 #[tokio::test]
-async fn a_launch_runs_on_its_picked_host_else_here() {
+async fn a_launch_runs_on_its_picked_host_else_as_the_saved_preference_says() {
+    use crate::runtime::placement::Placement;
     let t = crate::testing::test_app::TestApp::new();
-    let az = t.host("az1", "azure", json!({}));
-    let on_az = Claim { target: Some(az), ..claim_of("web") };
-    assert_eq!(launch_place(&t.dirs(), &on_az).await.unwrap().host.as_deref(), Some("az1"));
-    assert_eq!(launch_place(&t.dirs(), &claim_of("web")).await.unwrap(), StartPlace::default(), "here");
+    // The claimed commit installed: its spec is read from there, nothing downloaded.
+    let spec = "version: 1\nname: web\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { networks: { lab: 10 }, app: { image: nginx:1.27 } }\n";
+    t.lab("web", &[("isoloom.yml", spec), (crate::runtime::lab::COMMIT_MARKER, COMMIT)]);
+    let aws = t.host("aws1", "aws", json!({ "useCliCreds": true }));
+    let on_aws = Claim { target: Some(aws), ..claim_of("web") };
+    assert_eq!(launch_place(&t.dirs(), &on_aws).await.unwrap(), Placement::Cloud { account: "aws1".into(), per_machine: false });
+    let here = Placement::Docker { engine: None, default_ports: false };
+    assert_eq!(launch_place(&t.dirs(), &claim_of("web")).await.unwrap(), here, "here, on free ports");
 }
 
 #[tokio::test]
@@ -94,7 +99,8 @@ async fn a_refused_website_launch_leaves_the_lab_running_on_the_players_account(
     let tools = crate::runtime::providers::testing::no_tools();
     crate::testing::service::serve_silent(&crate::runtime::paths::runner_home(&dirs).unwrap());
     assert!(crate::runtime::lab_present(&dirs, id).await);
-    let err = run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
+    let err =
+        run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &Placement::Docker { engine: None, default_ports: false }, false).await.unwrap_err();
     assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
     assert!(tools.made("terraform").is_empty(), "nothing torn down: {:?}", tools.lines());
     assert_eq!(crate::runtime::recorded::Recorded::of(&dirs, id).await.unwrap().host(), Some("aws1"));

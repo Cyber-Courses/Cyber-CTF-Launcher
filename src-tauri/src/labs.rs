@@ -10,7 +10,7 @@ use serde_json::json;
 
 use crate::account::api;
 use crate::error::{Error, Result};
-use crate::runtime::{self, Runtime, providers::Provider};
+use crate::runtime::{self, Runtime};
 
 mod archive;
 pub(crate) mod ctf;
@@ -379,51 +379,59 @@ async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(
     }
 }
 
-/// What the player asked to start, and how.
+/// The backend's catalogue entry of a lab: the runtime it declares and its source, read without
+/// starting it (what a placement is chosen from before the launch is asked for).
+const CATALOGUE_SOURCE: &str = "query ($id: ID!) { labs(where: { id: { eq: $id } }) { runtime { runtime repository commit } } }";
+
+/// A lab's runtime and source, as the catalogue lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct CatalogueSource {
+    /// The runtime the lab declares.
+    pub(crate) runtime: Runtime,
+    /// The CyberCTF repository it comes from.
+    pub(crate) repository: String,
+    /// The commit the catalogue pins.
+    pub(crate) commit: String,
+}
+
+impl CatalogueSource {
+    /// Its source, with the catalogue's rule for which repositories may be fetched.
+    pub(crate) fn source(&self) -> runtime::lab::Source<'_> {
+        source(&self.repository, &self.commit)
+    }
+}
+
+/// Lab `lab_id`'s runtime and source as the catalogue lists it; when the backend can't be reached,
+/// the source of its last launch online (kept for an offline start) when the player asked for an
+/// offline start (`offline`), as [`launch_spec`] falls back.
+pub(crate) async fn catalogue_source(dirs: &AppDirs, lab_id: &str, offline: bool) -> Result<CatalogueSource> {
+    runtime::validate_id(lab_id)?;
+    let listed = async {
+        let data = api::graphql_signed_in(CATALOGUE_SOURCE, json!({ "id": lab_id })).await?;
+        let entry = data["labs"].get(0).map(|l| l["runtime"].clone()).filter(|r| !r.is_null());
+        let entry = entry.ok_or_else(|| Error::Invalid(format!("the catalogue has no lab `{lab_id}`")))?;
+        serde_json::from_value::<CatalogueSource>(entry).map_err(|e| Error::Invalid(format!("the catalogue's entry of `{lab_id}` is incomplete: {e}")))
+    };
+    match listed.await {
+        Ok(listed) => Ok(listed),
+        Err(failed) => {
+            let user = crate::account::auth::signed_in_user().await.ok().flatten();
+            let kept = offline::instead_of(failed, dirs.data()?, lab_id, user.as_deref(), offline)?;
+            Ok(CatalogueSource { runtime: kept.runtime, repository: kept.repository, commit: kept.commit })
+        }
+    }
+}
+
+/// What the player asked to start, and where.
 #[derive(Debug, Clone)]
 pub struct LaunchRequest {
     /// The lab.
     pub lab_id: String,
-    /// The Vagrant provider a VM lab, or a container lab run as one VM per machine, runs on (when
-    /// None: the player's saved hypervisor, else this machine's default). A container lab given
-    /// one runs as one VM per machine on it.
-    pub provider: Option<Provider>,
-    /// The saved server or cloud account it runs on (this machine when None).
-    pub host: Option<String>,
-    /// A container lab's services published on their own ports instead of random free ones (when
-    /// None: as the player's saved port mode says, else random ones).
-    pub default_ports: Option<bool>,
+    /// Where and how it runs, as picked ([`runtime::placement::choose`]): taken as it is.
+    pub placement: runtime::placement::Placement,
     /// The installed lab started without the backend when it can't be reached (no progress
     /// saved): the player's answer to a launch that failed with `Code::OfflineReady`.
     pub offline: bool,
-    /// A container lab whose spec has VM recipes too, run on this machine as one VM per machine
-    /// (the form of a VM lab) on `provider`, instead of as containers.
-    pub per_machine_vm: bool,
-    /// The container engine a container lab here runs on, when the player chose one other than the
-    /// current context (`docker-desktop`, `orbstack`, …), else the player's saved engine. Resolved
-    /// to its Docker context at launch.
-    pub docker_engine: Option<String>,
-}
-
-impl LaunchRequest {
-    /// The request for a `runtime` lab with what it leaves open taken from the player's settings
-    /// `saved`, as the window would have filled it: on this machine, the container engine and the
-    /// port mode they saved, and the hypervisor when the lab runs as VMs (a VM lab, or
-    /// `per_machine_vm`): a container lab given a provider runs as VMs, so the saved one must not
-    /// turn a Start on Docker into one. A launch on a server or a cloud account takes none of
-    /// them. So a start from the command line runs where and how one from the window does.
-    fn with_saved(self, saved: &crate::settings::Settings, runtime: Runtime) -> LaunchRequest {
-        if self.host.is_some() {
-            return self;
-        }
-        let runs_as_vms = runtime == Runtime::Vm || self.per_machine_vm;
-        LaunchRequest {
-            provider: self.provider.or(saved.vm_provider.filter(|_| runs_as_vms)),
-            docker_engine: self.docker_engine.or_else(|| saved.docker_engine.map(|e| e.id().to_owned())),
-            default_ports: self.default_ports.or_else(|| saved.port_mode.map(|m| m == crate::settings::PortMode::Default)),
-            ..self
-        }
-    }
 }
 
 /// A launch ready to run: the lab, its `startLab` spec, and where and how it runs (the Docker
@@ -432,31 +440,27 @@ pub(crate) struct PreparedLaunch {
     /// Its `startLab` spec.
     pub(crate) launch: Launch,
     /// Where it runs and how.
-    pub(crate) place: runtime::Placement,
+    pub(crate) place: runtime::Placed,
 }
 
 /// Prepares `request`'s launch: resolves the `startLab` spec (the backend's, kept for a later
 /// offline start, or the installed lab's when the backend can't be reached and the player asked)
-/// and the engine it runs on. The deploy itself runs next ([`run`]), its run's operations in the
-/// runner service (so quitting the app never cuts them short); `log` carries the one "starting
-/// offline" line the preparation may emit.
+/// and the Docker context of the engine it runs on. The deploy itself runs next ([`run`]), its
+/// run's operations in the runner service (so quitting the app never cuts them short); `log`
+/// carries the one "starting offline" line the preparation may emit.
 pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
-    let saved = crate::settings::settings_get(dirs)?;
-    // The saved settings fill in once the lab's runtime is known: the hypervisor only for VMs.
     let launch = launch_spec(dirs, &request.lab_id, request.offline, log).await?;
-    let LaunchRequest { provider, host, default_ports, per_machine_vm, docker_engine, .. } = request.with_saved(&saved, launch.runtime);
-    let default_ports = default_ports.unwrap_or(false);
-    let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
-    Ok(PreparedLaunch { launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
+    let docker_context = pinned_context(&request.placement).await?;
+    Ok(PreparedLaunch { launch, place: runtime::Placed { placement: request.placement, docker_context } })
 }
 
 /// The Docker context a container lab here is pinned to, resolved now (on the main process, where
-/// Docker answers) from the engine the player chose (`engine`); none without one, or on a server
-/// (`host`). An engine with no context here is an error: starting on the current context would
+/// Docker answers) from the engine its placement names; none without one, or elsewhere than on
+/// Docker here. An engine with no context here is an error: starting on the current context would
 /// run the lab on another engine than the one picked.
-async fn pinned_context(engine: Option<&str>, host: Option<&str>) -> Result<Option<String>> {
-    match (engine, host) {
-        (Some(engine), None) => crate::machine::system::docker::engine_context(engine).await.map(Some),
+pub(crate) async fn pinned_context(placement: &runtime::placement::Placement) -> Result<Option<String>> {
+    match placement {
+        runtime::placement::Placement::Docker { engine: Some(engine), .. } => crate::machine::system::docker::engine_context(engine.id()).await.map(Some),
         _ => Ok(None),
     }
 }
@@ -507,7 +511,9 @@ pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: imp
     runtime::validate_id(lab_id)?;
     let dir = install_local(dirs, lab_id, src, &log).await?;
     let lab = runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker };
-    runtime::start_locked(dirs, lab, runtime::Destination::default(), &[], log).await?;
+    // An imported lab runs here: a container lab on the current context, on free ports.
+    let here = runtime::placement::Placement::Docker { engine: None, default_ports: false };
+    runtime::start_locked(dirs, lab, runtime::Destination::at(&here), &[], log).await?;
     Ok(runtime::primary_url(dirs, &dir, lab_id, Runtime::Docker).await)
 }
 
@@ -738,80 +744,18 @@ mod tests {
     async fn a_chosen_engine_with_no_context_here_fails_the_launch_rather_than_use_another() {
         // Regression: an engine whose context couldn't be found pinned nothing, and the lab
         // started on the current context: another engine than the one the player picked.
+        use crate::machine::system::docker::Engine;
+        use crate::runtime::placement::Placement;
         use isothrum_runner::fake::{FakeProcesses, Reply};
         let contexts = FakeProcesses::script().allow("docker context ls", Reply::ok("default *\ncolima-dev\n")).build();
         let host = crate::runtime::providers::testing::host(std::path::Path::new("/nonexistent/cyberctf-test-machine"));
         let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::new(contexts), host);
-        assert_eq!(pinned_context(Some("colima"), None).await.unwrap().as_deref(), Some("colima-dev"));
-        assert_eq!(pinned_context(Some("orbstack"), None).await.unwrap_err().to_string(), "no Docker context for orbstack");
-        // On a server, or with no engine chosen, nothing is pinned.
-        assert_eq!(pinned_context(Some("orbstack"), Some("pve")).await.unwrap(), None);
-        assert_eq!(pinned_context(None, None).await.unwrap(), None);
-    }
-
-    #[test]
-    fn a_launch_leaves_to_the_saved_settings_only_what_it_doesnt_say_and_only_here() {
-        use crate::settings::{PortMode, Settings};
-        let saved = Settings {
-            vm_provider: Some(Provider::Libvirt),
-            docker_engine: Some(crate::machine::system::docker::Engine::Orbstack),
-            port_mode: Some(PortMode::Default),
-            ..Settings::default()
-        };
-        let open = LaunchRequest {
-            lab_id: "invoice".into(),
-            provider: None,
-            host: None,
-            default_ports: None,
-            offline: false,
-            per_machine_vm: false,
-            docker_engine: None,
-        };
-        // As the command line asks: the saved hypervisor, engine and port mode.
-        let filled = open.clone().with_saved(&saved, Runtime::Vm);
-        assert_eq!((filled.provider, filled.docker_engine.as_deref(), filled.default_ports), (Some(Provider::Libvirt), Some("orbstack"), Some(true)));
-        // What the request says wins.
-        let said = LaunchRequest { provider: Some(Provider::Virtualbox), docker_engine: Some("colima".into()), default_ports: Some(false), ..open.clone() };
-        let kept = said.with_saved(&saved, Runtime::Vm);
-        assert_eq!((kept.provider, kept.docker_engine.as_deref(), kept.default_ports), (Some(Provider::Virtualbox), Some("colima"), Some(false)));
-        // On a server, nothing of this machine's.
-        let there = LaunchRequest { host: Some("pve".into()), ..open.clone() }.with_saved(&saved, Runtime::Vm);
-        assert_eq!((there.provider, there.docker_engine, there.default_ports), (None, None, None));
-        // Nothing saved: nothing filled.
-        let none = open.with_saved(&Settings::default(), Runtime::Vm);
-        assert_eq!((none.provider, none.docker_engine, none.default_ports), (None, None, None));
-    }
-
-    #[test]
-    fn the_saved_hypervisor_fills_in_only_when_the_lab_runs_as_vms() {
-        // Regression: the saved hypervisor filled every launch here, and a container lab given a
-        // provider runs as one VM per machine: Start on a container lab (no provider, no
-        // per-machine VM, as the window sends it) left Docker for VMs.
-        let saved = crate::settings::Settings {
-            vm_provider: Some(Provider::Virtualbox),
-            docker_engine: Some(crate::machine::system::docker::Engine::Orbstack),
-            ..crate::settings::Settings::default()
-        };
-        let open = LaunchRequest {
-            lab_id: "invoice".into(),
-            provider: None,
-            host: None,
-            default_ports: None,
-            offline: false,
-            per_machine_vm: false,
-            docker_engine: None,
-        };
-        // A container lab stays on Docker, on the saved engine.
-        let containers = open.clone().with_saved(&saved, Runtime::Docker);
-        assert_eq!((containers.provider, containers.docker_engine.as_deref()), (None, Some("orbstack")));
-        // A VM lab runs on the saved hypervisor.
-        assert_eq!(open.clone().with_saved(&saved, Runtime::Vm).provider, Some(Provider::Virtualbox));
-        // A container lab asked as one VM per machine runs on it too.
-        let per_machine = LaunchRequest { per_machine_vm: true, ..open.clone() }.with_saved(&saved, Runtime::Docker);
-        assert_eq!(per_machine.provider, Some(Provider::Virtualbox));
-        // A provider the request names is kept whatever the runtime: the player chose VMs.
-        let chosen = LaunchRequest { provider: Some(Provider::Qemu), ..open }.with_saved(&saved, Runtime::Docker);
-        assert_eq!(chosen.provider, Some(Provider::Qemu));
+        let docker = |engine| Placement::Docker { engine, default_ports: false };
+        assert_eq!(pinned_context(&docker(Some(Engine::Colima))).await.unwrap().as_deref(), Some("colima-dev"));
+        assert_eq!(pinned_context(&docker(Some(Engine::Orbstack))).await.unwrap_err().to_string(), "no Docker context for orbstack");
+        // Elsewhere than on Docker here, or with no engine chosen, nothing is pinned.
+        assert_eq!(pinned_context(&Placement::Server { host: "pve".into() }).await.unwrap(), None);
+        assert_eq!(pinned_context(&docker(None)).await.unwrap(), None);
     }
 
     #[test]

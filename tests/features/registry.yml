@@ -207,7 +207,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/account/agent/confirm.rs
-            - src-tauri/src/account/agent/tests.rs > a_launch_runs_on_its_picked_host_else_here
+            - src-tauri/src/account/agent/tests.rs > a_launch_runs_on_its_picked_host_else_as_the_saved_preference_says
             - src-tauri/src/account/agent/tests.rs > a_refused_website_launch_leaves_the_lab_running_on_the_players_account
             - src-tauri/src/account/agent/tests.rs > only_a_start_that_brought_something_up_is_undone
             - src/features/app/launch-confirm.test.tsx
@@ -499,7 +499,7 @@ areas:
           unit:
             - src-tauri/src/runtime/isothrum/tests.rs > a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id
             - src-tauri/src/runtime/isothrum/tests.rs > a_second_start_of_a_running_lab_is_refused_and_a_down_removes_it_all
-            - src-tauri/src/runtime/launch/tests.rs > a_local_run_follows_the_runtime_and_the_hypervisor
+            - src-tauri/src/runtime/launch/tests.rs > a_start_with_nowhere_to_run_is_refused_by_its_code_before_anything_is_downloaded
             - src/features/labs/lab-detail/lab-detail.test.tsx > offers to start a stopped Docker lab and starts it
             - src/features/labs/use-lab-actions.test.tsx > stops a lab with its runtime
           web:
@@ -546,7 +546,7 @@ areas:
             - src-tauri/src/runtime/isothrum/vm_tests.rs > a_vm_lab_goes_up_on_its_hypervisor_through_the_runner
             - src-tauri/src/runtime/isothrum/vm_tests.rs > the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_process
             - src-tauri/src/runtime/launch/tests.rs > qemu_emulates_only_the_vms_built_for_another_cpu
-            - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here on the hypervisor the backend picks for it there
+            - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here where the backend's rule places it, sending that placement as it is
           web:
             - "vm-labs.spec.ts > on this machine: up, pause, resume, provision one machine again, stop"
             - "vm-labs.spec.ts > on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops"
@@ -577,7 +577,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/launch/tests.rs > a_container_lab_picked_as_one_vm_per_machine_runs_as_a_vm_lab
+            - src-tauri/src/runtime/placement/tests.rs > the_choice_then_the_saved_preference_then_what_isoloom_allows_and_is_ready_decide
             - src-tauri/src/runtime/launch/tests.rs > a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_follows
             - src-tauri/src/runtime/launch/tests.rs > one_vm_per_machine_is_refused_on_a_server
             - src-tauri/src/runtime/launch/tests.rs > one_vm_per_machine_runs_on_every_cloud_and_on_no_server
@@ -871,15 +871,18 @@ areas:
           integration: no scenario provokes a real port clash; lsof/ss parsing only unit-tested on canned output, Windows holder lookup untested
 
       - id: lab-run.where-it-runs
-        what: Choose where a lab runs (this machine, as VMs, per machine, a server, a cloud) in the run-on dialog, with its default place.
+        what: Choose where a lab runs (this machine, as VMs, per machine, a server, a cloud) in the run-on dialog; what isn't picked, the saved preference decides among what the lab's spec allows and is ready here, by one rule shared with the command line and the website's launches, and the launch sends that placement as it is.
         host: false
         commands:
-          - lab_default_place
+          - lab_placement
           - lab_run_options
         tests:
           unit:
-            - src-tauri/src/runtime/start_place/tests.rs > a_lab_starts_again_where_it_last_ran
-            - src-tauri/src/runtime/start_place/tests.rs > a_vm_lab_starts_here_on_the_preferred_hypervisor_when_it_is_ready_and_runs_it
+            - src-tauri/src/runtime/placement/tests.rs > the_choice_then_the_saved_preference_then_what_isoloom_allows_and_is_ready_decide
+            - src-tauri/src/runtime/placement/tests.rs > what_the_spec_cant_do_or_isnt_ready_is_refused_never_replaced
+            - src-tauri/src/commands/labs.rs > a_lab_is_placed_by_its_spec_the_choice_and_the_saved_preference_never_on_the_default_server_for_containers
+            - src-tauri/src/cli/labs.rs > the_flags_pick_what_they_say_and_leave_the_rest_to_the_saved_preference
+            - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here where the backend's rule places it, sending that placement as it is
             - src-tauri/src/runtime/lab/run_options/tests.rs > a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow
             - src/features/labs/lab-detail/use-run-target.test.tsx
             - src/features/labs/lab-parts.test.tsx > lists this machine, servers and cloud accounts as platforms
@@ -3756,7 +3759,7 @@ areas:
             - src/lib/hooks.test.tsx > tell sends an OS notification otherwise
             - src/lib/hooks.test.tsx > notify asks for permission and never throws
             - src-tauri/src/app.rs > a_notification_that_cant_be_shown_is_logged
-            - src/features/labs/use-lab-actions.test.tsx > says a container lab is ready on the server or in the cloud account it runs on
+            - src/features/labs/use-lab-actions.test.tsx > says a lab is ready on the server or in the cloud account its placement names
           web:
             - signed-out.spec.ts > the wait shows what to do and the ways out
             - coded-errors.spec.ts > the toast, and the previous run kept

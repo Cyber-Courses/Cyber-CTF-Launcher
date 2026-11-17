@@ -1,6 +1,6 @@
 import {
-  labDefaultPlace,
   labLaunch,
+  labPlacement,
   labPark,
   labProvision,
   labResume,
@@ -8,13 +8,14 @@ import {
   labStop,
   type ActiveOperation,
   type DockerEngine,
-  type LabStartPlace,
+  type LabPlacement,
+  type LabPlacementChoice,
   type LabStatus,
   type Park,
   type Provider,
   type Runtime,
 } from "@/lib/tauri";
-import { getVmProvider, type PortMode } from "@/lib/settings";
+import type { PortMode } from "@/lib/settings";
 import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import { getLabState } from "@/features/labs/lab-store";
@@ -121,33 +122,47 @@ export async function runOperation(
   }
 }
 
+/** Where lab `lab` runs for `choice`, by the backend's one rule (`labPlacement`): what its spec
+ *  allows and what is ready here, then the choice, else the player's saved preference. */
+const placementFor = (lab: Lab, rt: LabRuntimeInfo, choice: LabPlacementChoice) =>
+  labPlacement(lab.id, rt.runtime, rt.repository && rt.commit ? { repository: rt.repository, commit: rt.commit } : null, choice);
+
+/** Where a lab (declared `runtime`) starts with nothing picked (the rule's answer for an empty
+ *  choice), for the Start dialog's first row; null when it starts nowhere yet (no hypervisor
+ *  ready for a VM lab, say): the dialog then offers what there is. */
+export const askStartPlacement = (id: string, runtime: Runtime, repository: string, commit: string): Promise<LabPlacement | null> =>
+  labPlacement(id, runtime, { repository, commit }, NOTHING_PICKED).catch(() => null);
+
+/** A choice with nothing picked: the saved preference decides. */
+const NOTHING_PICKED: LabPlacementChoice = { here: false, host: null, provider: null, perMachineVm: false, engine: null, defaultPorts: null };
+
+/** Starts lab `lab` where `placement` says, as it is: the node's keys confirmed first on a
+ *  server, the start offered offline when Cyber CTF can't be reached, then the ready notice. */
+async function launchAt(lab: Lab, placement: LabPlacement, log: (line: string) => void) {
+  if (placement.kind === "server") await nodeKeysConfirmed(placement.host);
+  await launchOrOfferOffline(lab.title, (offline) => labLaunch({ labId: lab.id, placement, offline }, log));
+  log(translate("labs.actions.labRunning"));
+  setLastRun(lab.id);
+  void notify(translate("labs.actions.labReady"), translate(readyKey(placement), { title: lab.title }));
+}
+
 /** A cloud lab, created in the cloud account `host`. No attack box: the player works from
- *  their own machine. */
+ *  their own machine. Without an account the backend refuses it, saying so (`pickCloudAccount`). */
 export const cloudLaunch =
   (lab: Lab, host: string | null | undefined): OperationBody =>
-  async (log) => {
-    // Without an account the backend refuses it, saying so (`pickCloudAccount`).
-    await labLaunch({ labId: lab.id, provider: null, host: host ?? null, defaultPorts: false }, log);
-    log(translate("labs.actions.labRunning"));
-    setLastRun(lab.id);
-    void notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
+  async (log, rt) => {
+    await launchAt(lab, await placementFor(lab, rt, { ...NOTHING_PICKED, host: host ?? null }), log);
   };
-
-/** The hypervisor a VM lab starts on here: the one picked (`picked`: where Reset starts it again,
- *  its status's), else the backend's (`place.hypervisor`: where it last ran here, the Settings
- *  choice, the first ready one that runs it). None when no hypervisor here runs it: the backend
- *  refuses the launch, saying so (`noHypervisor`). */
-const vmHypervisor = (picked: Provider | undefined, place: LabStartPlace | null): Provider | null => picked ?? place?.hypervisor ?? null;
 
 /** How a container lab runs beyond plain containers: as one VM per machine (`perMachine`) — its
  *  VM recipes, as a VM lab runs — here on hypervisor `provider`, or on a cloud account (cloud-vm,
  *  no local `provider`). The launcher never runs its containers inside a VM. */
 export type LocalVmPick = { provider?: Provider; perMachine?: boolean };
 
-/** Where a (non-cloud) lab starts: on the server `host`; here in Docker or, a VM lab, on the
- *  hypervisor `vmProvider` (none: the backend's, `vmHypervisor`); or, a container lab with VM
- *  recipes (`perMachineVm`, or any hypervisor picked for it), as one VM per machine on `vmProvider`. `host` omitted (undefined): nothing was picked, and the backend
- *  says where (`defaultPlace`). `ports` = the host ports of a container lab here. */
+/** What the player picked for a (non-cloud) lab: the server or cloud account `host` (null: this
+ *  machine; omitted: nothing picked, the saved preference decides); the hypervisor `vmProvider`
+ *  here; a container lab as one VM per machine (`perMachineVm`); a container lab's host ports
+ *  (`ports`) and engine (`engine`, null: the current context) here. */
 export type LocalWhere = {
   host?: string | null;
   vmProvider?: Provider;
@@ -155,76 +170,31 @@ export type LocalWhere = {
   perMachineVm?: boolean;
   /** The container engine a lab here runs on (null: the current context). */
   engine?: DockerEngine | null;
-  /** `host` is a cloud account (its ready notification says so), not a server. */
-  inCloud?: boolean;
 };
 
-/** Where a lab with no place picked starts, by the backend's one rule (`labDefaultPlace`: where
- *  it last ran, else a hypervisor ready here for a VM lab, the Settings choice first, else the
- *  default server the lab's spec runs on), read from its spec at the catalogue's commit. */
-export const askDefaultPlace = (id: string, runtime: Runtime, repository: string, commit: string) =>
-  labDefaultPlace(id, runtime, repository, commit, getVmProvider());
-
-/** [`askDefaultPlace`] for a lab; without its source known, here (and no hypervisor). */
-async function defaultPlace(id: string, rt: LabRuntimeInfo): Promise<LabStartPlace> {
-  if (!rt.repository || !rt.commit) return { host: null, provider: null, perMachineVm: false, hypervisor: null };
-  return askDefaultPlace(id, rt.runtime, rt.repository, rt.commit);
+/** `where` as the backend's rule reads a choice: what is unpicked is left to the saved preference. */
+function choiceOf(where: LocalWhere): LabPlacementChoice {
+  return {
+    here: where.host === null,
+    host: where.host ?? null,
+    provider: where.vmProvider ?? null,
+    perMachineVm: where.perMachineVm ?? false,
+    engine: where.engine ?? null,
+    defaultPorts: where.ports === null ? null : where.ports === "default",
+  };
 }
 
-/** Where a lab starts, as picked (`where`) or, with nothing picked (Home's "start again", a Start
- *  with no choice), the backend's place in the form it says. A VM lab here asks it for its
- *  hypervisor too (`place`), unless one was picked. */
-async function resolveWhere(lab: Lab, rt: LabRuntimeInfo, where: LocalWhere) {
-  let { host, vmProvider, perMachineVm = false } = where;
-  const isVmLab = rt.runtime === "VM";
-  const place = host === undefined || (isVmLab && host === null && !vmProvider) ? await defaultPlace(lab.id, rt) : null;
-  if (place && host === undefined) {
-    host = place.host;
-    if (place.provider) [vmProvider, perMachineVm] = [place.provider, !isVmLab && place.perMachineVm];
-  }
-  return { host, vmProvider, perMachineVm, place, isVmLab };
-}
-
-/** A VM or container lab, started where `where` says. */
+/** A VM or container lab, started where `where` says (the rule fills what it leaves unpicked). */
 export const localLaunch =
   (lab: Lab, where: LocalWhere): OperationBody =>
   async (log, rt) => {
-    const { ports, engine } = where;
-    const { host, vmProvider, perMachineVm, place, isVmLab } = await resolveWhere(lab, rt, where);
-    // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`. A
-    // container lab given a hypervisor here runs that way (never its containers inside a VM).
-    const asVms = !isVmLab && !!vmProvider && host == null;
-    // On a cloud account, one VM per machine is cloud-vm: no local hypervisor, the host carries it.
-    const cloudPerMachine = perMachineVm && host != null;
-    const vm = isVmLab || asVms;
-    const remote = host != null;
-    // Here: a VM lab on its hypervisor, a container lab's VM form on the one picked for it.
-    const provider = remote ? null : isVmLab ? vmHypervisor(vmProvider, place) : (vmProvider ?? null);
-    if (!where.inCloud) await nodeKeysConfirmed(host);
-    await launchOrOfferOffline(lab.title, (offline) =>
-      labLaunch(
-        {
-          labId: lab.id,
-          provider,
-          host: host ?? null,
-          defaultPorts: ports === "default",
-          offline,
-          perMachineVm: asVms || cloudPerMachine,
-          // The chosen engine pins a plain container lab here; never for a VM form or a server.
-          dockerEngine: vm || remote ? null : (engine ?? null),
-        },
-        log,
-      ),
-    );
-    log(translate("labs.actions.labRunning"));
-    setLastRun(lab.id);
-    void notify(translate("labs.actions.labReady"), translate(readyKey(remote, where.inCloud ?? false), { title: lab.title }));
+    await launchAt(lab, await placementFor(lab, rt, choiceOf(where)), log);
   };
 
-/** The ready notification's text for a lab started on a `remote` host (a cloud account when
- *  `inCloud`), else here. */
-function readyKey(remote: boolean, inCloud: boolean): MessageKey {
-  if (remote) return inCloud ? "labs.actions.readyInCloud" : "labs.actions.readyOnServer";
+/** The ready notification's text for a lab started at `placement`. */
+function readyKey(placement: LabPlacement): MessageKey {
+  if (placement.kind === "cloud") return "labs.actions.readyInCloud";
+  if (placement.kind === "server") return "labs.actions.readyOnServer";
   return "labs.actions.readyHere";
 }
 
