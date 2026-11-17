@@ -13,7 +13,7 @@ use isothrum_runner::{Format, RunOptions};
 use super::cloud_runs::CloudPlace;
 use super::server::{self, ServerPlace};
 use super::tunnel::Tunnel;
-use super::{EsxiPlace, Inputs, errors, old_engine, remote, run_name, runner_provider, start_options, with_claim};
+use super::{EsxiPlace, Inputs, errors, old_engine, remote, run_name, runner_provider, start_options};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::host::Failed;
@@ -278,12 +278,13 @@ impl Deployment {
 
     /// `opts` for a run here or on ESXi: the run's key under the name Isoloom's Vagrantfiles read
     /// it ([`super::super::lab::ISOLOOM_KEY`]), so the lab's VMs, networks and libvirt domains are
-    /// named for this copy and no other; the evidence claim's values every lab is given, empty
-    /// when `opts` has none ([`with_claim`]); on ESXi, its id, its settings (as the environment
+    /// named for this copy and no other; on ESXi, its id, its settings (as the environment
     /// Isoloom's Vagrantfiles read) and its password (a secret, beside the launch's); and the
-    /// engine an earlier version noted for a container lab, unless `opts` names one.
+    /// engine an earlier version noted for a container lab, unless `opts` names one. The lab gets
+    /// the values its launch gave and nothing else: an input given none is its spec's default
+    /// (Isoloom's `inputs.*.default`), which is how a lab starts without a launch.
     pub(super) fn placed(&self, opts: RunOptions) -> RunOptions {
-        let opts = with_claim(opts).with_env(super::super::lab::ISOLOOM_KEY, isothrum_runner::copy_key(&self.served.home, &self.served.name));
+        let opts = opts.with_env(super::super::lab::ISOLOOM_KEY, isothrum_runner::copy_key(&self.served.home, &self.served.name));
         match &self.site {
             Site::Here { noted_engine: Some(context) } if opts.docker_context.is_none() => opts.with_docker_context(context.clone()),
             Site::Esxi(place) => place.onto(opts),

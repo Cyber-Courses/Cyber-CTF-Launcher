@@ -18,7 +18,6 @@
 //! here opens the runner's store or runs a runner of its own.
 
 mod checks;
-mod claim;
 mod cloud_runs;
 mod deployment;
 mod described;
@@ -36,8 +35,6 @@ mod tunnel;
 mod view;
 mod web;
 
-pub(crate) use claim::CLAIM;
-use claim::with_claim;
 pub(crate) use cloud_runs::{CloudPlace, destroy_expired, expired_clouds};
 #[cfg(test)]
 use deployment::Kind;

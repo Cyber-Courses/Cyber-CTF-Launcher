@@ -11,7 +11,7 @@ use crate::platform::exec::fake::Tools;
 use crate::runtime::{Park, Place, Runtime, lab};
 use isothrum_runner::HostPort;
 
-const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
+const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: { CTF_LAUNCH_TOKEN: { default: dev-launch-token } }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
 
 /// Where the fake project's containers are, and the host port its web port got.
 #[derive(Debug, Default)]
@@ -302,21 +302,23 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
     run.resume(&mut |_| {}).await.unwrap();
     let start = last_compose(&f, "up", Some("--no-recreate")).expect("a resume starts what exists as it is");
-    // Set, as Compose requires of a secret's variable, and empty: never the launch's value.
-    assert_eq!(start.env("CTF_LAUNCH_TOKEN"), Some(""), "no launch value reaches a resume");
+    assert_eq!(start.env("CTF_LAUNCH_TOKEN"), None, "no launch value reaches a resume, not even an empty one");
 }
 
-/// Regression: a lab imported from a folder starts with no launch values, and Compose refused to
-/// create its services (`environment variable "CTF_LAUNCH_TOKEN" required by secret … is not
-/// set`), since a sensitive input is a Compose secret read from that variable. The claim's values
-/// are now given empty, so the lab starts and uses its development evidence.
+/// A lab imported from a folder starts with no launch values: the launcher gives it none, not
+/// even empty ones. The lab's spec gives its inputs a default, which its generated files fall
+/// back to (a Compose secret's variable can't be left unset, so the token's file is a config
+/// filled from it or from the default).
 #[tokio::test]
-async fn a_lab_started_without_launch_values_gets_the_claims_values_empty() {
+async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_defaults() {
     let f = Fixture::new();
     let _tools = Tools::strict_rules(&[]);
     f.run().up(Inputs::default(), None, &mut |_| {}).await.unwrap();
     let up = last_compose(&f, "up", None).expect("the lab goes up");
-    assert_eq!(up.env("CTF_LAUNCH_TOKEN"), Some(""), "{}", up.line());
+    assert_eq!(up.env("CTF_LAUNCH_TOKEN"), None, "{}", up.line());
+    assert_eq!(up.env("CTF_API_URL"), None, "{}", up.line());
+    let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
+    assert!(compose.contains("content: ${CTF_LAUNCH_TOKEN:-dev-launch-token}"), "{compose}");
 }
 
 /// Regression (docs/contributing/testing/resilience.md M4): a container stopped outside the app (`docker stop`,
@@ -401,10 +403,10 @@ async fn the_labs_checks_run_through_the_runner() {
     assert!(c.available && c.ok, "{}", c.output);
     assert_eq!(c.results.iter().map(|r| (r.name.as_str(), r.ok)).collect::<Vec<_>>(), [("http://web/", true)]);
     assert!(c.output.contains("isoloom-check: END 1 passed, 0 failed"), "{}", c.output);
-    // The checks' run starts what they depend on, which reads the lab's secrets: the claim's
-    // values are set, empty, as no launch value reaches them.
+    // The checks' run starts what they depend on: no launch value reaches it, the lab's defaults
+    // stand in.
     let checks = last_compose(&f, "run", None).expect("the checks run in Compose");
-    assert_eq!(checks.env("CTF_LAUNCH_TOKEN"), Some(""), "{}", checks.line());
+    assert_eq!(checks.env("CTF_LAUNCH_TOKEN"), None, "{}", checks.line());
 }
 
 #[tokio::test]
@@ -465,23 +467,6 @@ fn a_start_gives_the_launch_values_as_secrets_and_the_ports_choice_as_a_value() 
         assert!(runner_provider(p.id()).is_ok(), "{}", p.id());
     }
     assert!(runner_provider("nonsense").is_err());
-}
-
-#[test]
-fn every_run_gets_the_claims_values_empty_unless_the_launch_gives_them() {
-    let values = [("CTF_LAUNCH_TOKEN".to_owned(), "t0k".to_owned()), ("CTF_FLAG_MAIN".to_owned(), "flag{x}".to_owned())];
-    let opts = with_claim(start_options(Inputs::values(&values), None));
-    let given = |name: &str| opts.secrets.get(name).map(SecretValue::expose);
-    assert_eq!(given("CTF_LAUNCH_TOKEN"), Some("t0k"), "the launch's value stays");
-    assert_eq!(given("CTF_API_URL"), Some(""), "a claim value the launch doesn't give is empty, never unset");
-    assert_eq!(given("CTF_FLAG_MAIN"), Some("flag{x}"));
-    assert_eq!(opts.secrets.iter().count(), 3, "nothing else is added");
-    let plain = with_claim(RunOptions::new().with_env("CTF_API_URL", "https://api"));
-    assert_eq!(
-        (plain.secrets.get("CTF_API_URL").map(SecretValue::expose), plain.env.get("CTF_API_URL").map(String::as_str)),
-        (None, Some("https://api")),
-        "a value given as the environment stays"
-    );
 }
 
 /// The lab's attack box as the launcher places it on this machine: a container added to the
