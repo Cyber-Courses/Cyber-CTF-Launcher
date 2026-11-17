@@ -209,7 +209,7 @@ mod tests {
         use crate::runtime::isothrum::Site;
         use crate::runtime::isothrum::test_lab::prelude::*;
         use crate::runtime::{Runtime, lab};
-        use crate::testing::https::{Request, Server};
+        use isothrum_runner::fake_https::{Request, Server, fingerprint};
 
         const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.32.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n  db:\n    os: debian@12\n    networks: { lab: 11 }\n";
 
@@ -246,13 +246,15 @@ mod tests {
             (200, listing.to_owned())
         }
 
-        /// The lab's fake tools answered by `answer`, and the saved server: the fake Proxmox API
-        /// on the loopback, its self-signed certificate pinned as a player confirmed it.
-        fn served(home: &str, spec: &str, answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, ServerPlace) {
+        /// The lab's fake tools answered by `answer`, the saved server, and the fake Proxmox API
+        /// it names: on the loopback, its self-signed certificate pinned as a player confirmed it,
+        /// serving until it drops.
+        async fn served(home: &str, spec: &str, answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, ServerPlace, Server) {
             let f = Scripted::answered_by(Home::new(home, spec, &[], lab::Target::Proxmox), answer);
             let model = f.shared_model();
-            let server = Server::start(move |request| proxmox(&model, request));
-            (f, place(&server))
+            let server = Server::start(move |request| proxmox(&model, request)).await.unwrap();
+            let place = place(&server);
+            (f, place, server)
         }
 
         /// The fake Terraform's reads of the run's state: its two VMs (104 and 105) and their ids
@@ -273,13 +275,13 @@ mod tests {
 
         /// A Proxmox VM lab whose run is up (its record and Terraform state as an `up` leaves
         /// them), on fake tools.
-        fn up() -> (Scripted<Api>, Deployment) {
-            up_answered_by(answer)
+        async fn up() -> (Scripted<Api>, Deployment, Server) {
+            up_answered_by(answer).await
         }
 
         /// [`up`], its tools answered by `answer`.
-        fn up_answered_by(answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, Deployment) {
-            let (f, place) = served("-pve", SPEC, answer);
+        async fn up_answered_by(answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, Deployment, Server) {
+            let (f, place, api) = served("-pve", SPEC, answer).await;
             let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm, place).unwrap();
             let state = f.home.runner().join("runs").join("cyberctf-web");
             std::fs::create_dir_all(&state).unwrap();
@@ -293,14 +295,14 @@ mod tests {
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
             });
             crate::testing::runner::save_run(&f.home.runner(), &record);
-            (f, run)
+            (f, run, api)
         }
 
         fn place(server: &Server) -> ServerPlace {
             let vars = [
                 ("proxmox_endpoint", format!("{}/", server.endpoint)),
                 ("proxmox_api_token", "root@pam!cyberctf=sec".to_owned()),
-                (lab::TLS_PIN, server.fingerprint.clone()),
+                (lab::TLS_PIN, fingerprint().to_string()),
             ];
             ServerPlace {
                 label: "pve-1".into(),
@@ -327,7 +329,7 @@ mod tests {
 
         #[tokio::test]
         async fn on_a_bridge_internal_to_the_node_terraform_goes_through_a_tunnel_to_it() {
-            let (f, run) = up();
+            let (f, run, _api) = up().await;
             let tools = tunnel_tools();
             let Site::Server(place) = run.site() else { unreachable!("a server's run") };
             let jumped = ServerPlace { jump: Some("root@node.lab".into()), ..place.clone() };
@@ -347,7 +349,7 @@ mod tests {
 
         #[tokio::test]
         async fn a_bridge_the_launcher_reaches_needs_no_tunnel() {
-            let (f, run) = up();
+            let (f, run, _api) = up().await;
             let tools = crate::testing::tools::Tools::script().build();
             let _ = run.update(&mut |_| {}).await;
             assert!(tools.calls().is_empty(), "no ssh");
@@ -357,18 +359,19 @@ mod tests {
 
         /// A lab with a web port its module publishes at its router, `web/site` at
         /// 192.0.2.10:8080, its run up on fake tools.
-        fn published_lab(home: &str) -> (Scripted<Api>, Deployment) {
+        async fn published_lab(home: &str) -> (Scripted<Api>, Deployment, Server) {
             const WEB: &str = "version: 1\nname: t\nnetworks:\n  app: { cidr: 10.80.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { app: 10 }\n    ports: { site: { port: 80, protocol: http, publish: 8080 } }\n";
-            let (f, place) = served(home, WEB, |api, call| match (call.program.as_str(), call.args.first().map(String::as_str)) {
+            let (f, place, server) = served(home, WEB, |api, call| match (call.program.as_str(), call.args.first().map(String::as_str)) {
                 ("terraform", Some("output")) => Reply::ok(r#"{"vm_id_web":{"value":104},"published":{"value":{"web/site":"192.0.2.10:8080"}}}"#),
                 _ => answer(api, call),
-            });
+            })
+            .await;
             let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm, place).unwrap();
             let state = f.home.runner().join("runs").join(format!("cyberctf-{home}"));
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"vm_id_web":{"value":104}},"resources":[{"instances":[{}]}]}"#).unwrap();
             record_through_the_node(&f, &run, &format!("cyberctf-{home}"));
-            (f, run)
+            (f, run, server)
         }
 
         /// Records run `name` of `run` up, through the node `root@node.lab` (as its start keeps it).
@@ -389,7 +392,7 @@ mod tests {
 
         #[tokio::test]
         async fn a_lab_reached_directly_is_linked_where_its_module_publishes_it() {
-            let (f, run) = published_lab("pve-direct");
+            let (f, run, _api) = published_lab("pve-direct").await;
             let record = serde_json::json!({
                 "version": 0, "name": "cyberctf-pve-direct", "project": run.project(), "format": "terraform",
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
@@ -419,7 +422,7 @@ mod tests {
 
         #[tokio::test]
         async fn a_server_labs_checks_run_in_its_machines_through_the_runner_through_the_node_first() {
-            let (f, run) = up_answered_by(checked);
+            let (f, run, _api) = up_answered_by(checked).await;
             record_through_the_node(&f, &run, "cyberctf-web");
             let scripts = run.project().join("checks");
             std::fs::create_dir_all(&scripts).unwrap();
@@ -440,14 +443,14 @@ mod tests {
 
         #[tokio::test]
         async fn a_server_lab_whose_module_names_no_check_has_none_available() {
-            let (_f, run) = up();
+            let (_f, run, _api) = up().await;
             let check = run.check().await.unwrap();
             assert!(!check.available && check.results.is_empty(), "{check:?}");
         }
 
         #[tokio::test]
         async fn a_vm_missing_from_the_listing_still_reads_and_a_revoked_token_says_to_update_it() {
-            let (f, run) = up();
+            let (f, run, _api) = up().await;
             let shown = run.status().await.unwrap();
             assert_eq!((shown.running, web(&shown).as_str()), (true, "running"));
             // A VM missing from Proxmox's listing isn't read as removed (the runner's rule: a

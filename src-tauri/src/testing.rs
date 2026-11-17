@@ -3,7 +3,6 @@
 //! from the command structs, and the scripted tools ([`tools`]).
 
 mod guardrails;
-pub mod https;
 pub mod logs;
 pub mod proptest_support;
 pub mod runner;
