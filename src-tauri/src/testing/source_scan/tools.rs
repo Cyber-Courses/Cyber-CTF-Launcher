@@ -20,10 +20,6 @@ const ALLOWED: &[(&str, &str)] = &[
     ("machine/tools/install.rs", "L-14: tool and hypervisor installs move to isothrum-machine (I-14)"),
     ("platform/exec/elevate.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
     ("platform/exec/vagrant.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
-    (
-        "runtime/server/gcp.rs",
-        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
-    ),
 ];
 
 /// A tool started in `code`: the first argument of a call that starts or finds a program, the

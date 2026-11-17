@@ -4,27 +4,19 @@
 //! refuses past that limit ("billing quota exceeded"); one project needs a single free slot,
 //! checked here with a clear message instead of a failed launch.
 
-use crate::platform::tool_output::gcloud as gcloud_said;
-use std::time::Duration;
+use isothrum_machine::cloud::gcp::{self, ProjectState};
+use isothrum_machine::{Failure, Refusal};
 
 use crate::platform::AppDirs;
 
 use super::profile::HostProfile;
 use super::store::{find, load, update};
+use crate::cloud_cli::{machine, tool_error};
 use crate::error::{Error, Result};
-use crate::platform::exec::{CLI_TIMEOUT, run_env_timed};
 use crate::platform::random_hex;
 
-/// How long creating the project, linking it to billing or enabling Compute Engine may take.
-const PROJECT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-
-/// What gcloud says of a saved labs project.
-#[derive(Debug, PartialEq)]
-enum Project {
-    Active,
-    /// Deleted (or being deleted): a new one is made.
-    Gone,
-}
+/// What the labs project is called in the Google Cloud console.
+const PROJECT_NAME: &str = "Cyber CTF labs";
 
 /// The account's labs project, created (with Compute Engine enabled) when it doesn't exist yet
 /// or was deleted. A project gcloud can't tell about (offline, signed out, signed in as someone
@@ -43,7 +35,7 @@ pub async fn labs_project(dirs: &AppDirs, id: &str) -> Result<String> {
     // store may have been edited meanwhile).
     let host = find(&load(dirs)?, id)?;
     if let Some(p) = host.gcp_project.as_deref()
-        && project_state(p).await? == Project::Active
+        && project_state(p).await? == ProjectState::Active
     {
         return Ok(p.to_string());
     }
@@ -66,22 +58,16 @@ fn creating_lock(dirs: &AppDirs) -> Result<std::path::PathBuf> {
     Ok(dir.join("gcp-project.lock"))
 }
 
-/// A gcloud call given up after `limit`.
-async fn gcloud(args: &[&str], limit: Duration) -> Result<String> {
-    run_env_timed("gcloud", args, None, &[], limit).await
-}
-
-/// Whether the saved project `p` is active or gone. Gone only when gcloud says so plainly: it is
-/// being deleted, or `NOT_FOUND`. "No permission (or it may not exist)" is also what another
-/// signed-in Google account gets: an error that says to check the sign-in, never a new project.
-async fn project_state(p: &str) -> Result<Project> {
-    match gcloud(&["projects", "describe", p, "--format", "value(lifecycleState)"], CLI_TIMEOUT).await {
-        Ok(state) => match state.trim() {
-            "ACTIVE" => Ok(Project::Active),
-            "DELETE_REQUESTED" | "DELETE_IN_PROGRESS" => Ok(Project::Gone),
-            other => Err(Error::Invalid(format!("the Cyber CTF labs project {p} is {other}, so labs can't run in it. Check it in the Google Cloud console."))),
-        },
-        Err(Error::CommandFailed { stderr, .. }) if gcloud_said::not_found(&stderr) => Ok(Project::Gone),
+/// Whether the saved project `p` is active or gone ([`gcp::project_state`]). Gone only when
+/// Google says so plainly: it is being deleted, or `NOT_FOUND`. "No permission (or it may not
+/// exist)" is also what another signed-in Google account gets: an error that says to check the
+/// sign-in, never a new project.
+async fn project_state(p: &str) -> Result<ProjectState> {
+    match gcp::project_state(&machine(), p).await {
+        Ok(ProjectState::Other(other)) => {
+            Err(Error::Invalid(format!("the Cyber CTF labs project {p} is {other}, so labs can't run in it. Check it in the Google Cloud console.")))
+        }
+        Ok(state) => Ok(state),
         Err(e) => Err(Error::Invalid(format!(
             "couldn't check the Cyber CTF labs project {p}: {}. Check your connection and that gcloud is signed in as the account that owns it (gcloud auth login), then try again.",
             last_error_line(&e)
@@ -94,8 +80,7 @@ async fn project_state(p: &str) -> Result<Project> {
 /// that fails, the error names it, to delete by hand (it is never saved half set up).
 async fn create_project(dirs: &AppDirs, host: &HostProfile) -> Result<String> {
     let project = format!("cyberctf-labs-{}", random_hex(3));
-    let org = host.gcp_org().map(|o| format!("--organization={o}"));
-    gcloud(&create_args(&project, org.as_deref()), PROJECT_TIMEOUT)
+    gcp::create_project(&machine(), &project, PROJECT_NAME, host.gcp_org())
         .await
         .map_err(|e| Error::Invalid(format!("couldn't create the Cyber CTF labs project: {}", last_error_line(&e))))?;
     if let Err(why) = set_up(&project, host.cloud_account().unwrap_or_default()).await {
@@ -107,19 +92,19 @@ async fn create_project(dirs: &AppDirs, host: &HostProfile) -> Result<String> {
 
 /// Links a new project to `billing` and enables Compute Engine on it; why it failed.
 async fn set_up(project: &str, billing: &str) -> std::result::Result<(), String> {
-    if let Err(e) = gcloud(&["billing", "projects", "link", project, "--billing-account", billing], PROJECT_TIMEOUT).await {
-        return Err(link_failure(billing, &last_error_line(&e)));
+    let cx = machine();
+    if let Err(e) = gcp::link_billing(&cx, project, billing).await {
+        return Err(link_failure(billing, &e));
     }
-    gcloud(&["services", "enable", "compute.googleapis.com", "--project", project], PROJECT_TIMEOUT)
+    gcp::enable_service(&cx, project, "compute.googleapis.com")
         .await
-        .map(|_| ())
         .map_err(|e| format!("couldn't enable Compute Engine on the labs project {project}: {}", last_error_line(&e)))
 }
 
 /// Deletes a project whose setup failed (`why`), freeing its billing slot; the error to give.
 async fn discard(project: &str, why: String) -> Error {
-    match gcloud(&["projects", "delete", project, "--quiet"], PROJECT_TIMEOUT).await {
-        Ok(_) => Error::Invalid(why),
+    match gcp::delete_project(&machine(), project).await {
+        Ok(()) => Error::Invalid(why),
         Err(_) => {
             Error::Invalid(format!("{why} The project {project} couldn't be deleted either: delete it in the Google Cloud console to free its billing slot."))
         }
@@ -136,37 +121,33 @@ fn save_project(dirs: &AppDirs, id: &str, project: &str) -> Result<()> {
     })
 }
 
-/// `gcloud projects create` for the labs project, under the organization flag when one is set.
-fn create_args<'a>(project: &'a str, org: Option<&'a str>) -> Vec<&'a str> {
-    let mut create = vec!["projects", "create", project, "--name", "Cyber CTF labs"];
-    if let Some(o) = org {
-        create.push(o);
-    }
-    create
-}
-
 /// Why the labs project couldn't be linked to `billing`: no free project slot (said plainly,
 /// with the way out), or gcloud's own reason.
-fn link_failure(billing: &str, why: &str) -> String {
-    if gcloud_said::no_project_slot(why) {
+fn link_failure(billing: &str, failure: &Failure) -> String {
+    if failure.refusal() == Some(Refusal::QuotaExceeded) {
         format!(
             "No free project slot on billing account {billing}: Google allows only a few projects per billing account. Unlink one you don't use (gcloud billing projects unlink <project>) or request an increase at https://support.google.com/code/contact/billing_quota_increase"
         )
     } else {
-        format!("couldn't link the labs project to billing account {billing}: {why}")
+        format!("couldn't link the labs project to billing account {billing}: {}", last_error_line(failure))
     }
 }
 
-/// The last non-blank line of a failed gcloud's stderr (its error), else the error itself.
-fn last_error_line(e: &Error) -> String {
-    match e {
-        Error::CommandFailed { stderr, .. } => stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or_default().trim().to_string(),
-        other => other.to_string(),
+/// A failed gcloud's error: the last non-blank line it printed, else the launcher's error.
+fn last_error_line(failure: &Failure) -> String {
+    match failure {
+        Failure::Refused { said, .. } => said.clone(),
+        other => match tool_error(other) {
+            Error::CommandFailed { stderr, .. } => stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or_default().trim().to_string(),
+            e => e.to_string(),
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::platform::exec::fake::{Tools, fail, ok};
     use crate::testing::test_app::TestApp;
@@ -246,14 +227,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_project_being_deleted_is_replaced_one_that_isnt_active_is_said() {
-        assert_eq!(state_of(ok("DELETE_REQUESTED")).await.unwrap(), Project::Gone);
-        assert_eq!(state_of(ok("ACTIVE")).await.unwrap(), Project::Active);
+        assert_eq!(state_of(ok("DELETE_REQUESTED")).await.unwrap(), ProjectState::Gone);
+        assert_eq!(state_of(ok("ACTIVE")).await.unwrap(), ProjectState::Active);
         let err = state_of(ok("SUSPENDED")).await.unwrap_err().to_string();
         assert!(err.contains("is SUSPENDED"), "{err}");
     }
 
     /// What `project_state` makes of a `describe` answering `describe`.
-    async fn state_of(describe: Option<crate::platform::exec::fake::Reply>) -> Result<Project> {
+    async fn state_of(describe: Option<crate::platform::exec::fake::Reply>) -> Result<ProjectState> {
         let _tools = Tools::strict_rules(&[("projects describe", describe)]);
         project_state("p").await
     }
@@ -290,27 +271,35 @@ mod tests {
         assert_eq!(saved_project(&t), None);
     }
 
-    #[test]
-    fn the_labs_project_is_created_under_the_organization_when_set() {
-        assert_eq!(create_args("cyberctf-labs-abc", None), ["projects", "create", "cyberctf-labs-abc", "--name", "Cyber CTF labs"]);
-        assert_eq!(create_args("p", Some("--organization=42")).last(), Some(&"--organization=42"));
+    #[tokio::test]
+    async fn the_labs_project_is_created_under_the_organization_when_set() {
+        let t = TestApp::new();
+        let id = t.host("gcp1", "gcp", serde_json::json!({ "username": "0X0X0X-0X0X0X-0X0X0X", "node": "42" }));
+        let tools = Tools::strict_rules(&[("projects create", ok("")), ("projects link", ok("")), ("services enable", ok(""))]);
+        let made = labs_project(&t.dirs(), &id).await.unwrap();
+        assert!(tools.called(&format!("gcloud projects create {made} --name Cyber CTF labs --organization=42")), "{:?}", tools.calls());
+    }
+
+    /// gcloud refusing, saying `said`, read as isothrum-machine reads it.
+    fn refused(said: &str) -> Failure {
+        let last = said.lines().rev().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default();
+        Failure::Refused { program: "gcloud".into(), refusal: gcp::refusal(said), said: last.into() }
     }
 
     #[test]
     fn a_full_billing_account_is_explained() {
         for why in ["ERROR: Cloud billing quota exceeded", "FAILED_PRECONDITION: Precondition check failed."] {
-            let msg = link_failure("0X0X0X-0X0X0X-0X0X0X", why);
+            let msg = link_failure("0X0X0X-0X0X0X-0X0X0X", &refused(why));
             assert!(msg.starts_with("No free project slot on billing account 0X0X0X-0X0X0X-0X0X0X"), "{msg}");
         }
-        assert_eq!(link_failure("B", "permission denied"), "couldn't link the labs project to billing account B: permission denied");
+        assert_eq!(link_failure("B", &refused("ERROR: permission denied")), "couldn't link the labs project to billing account B: ERROR: permission denied");
     }
 
     #[test]
-    fn last_error_line_skips_trailing_blank_lines() {
-        let e = Error::CommandFailed { command: "gcloud".into(), stderr: "WARNING: x\nERROR: quota exceeded\n\n  \n".into() };
-        assert_eq!(last_error_line(&e), "ERROR: quota exceeded");
-        let e = Error::CommandFailed { command: "gcloud".into(), stderr: String::new() };
-        assert_eq!(last_error_line(&e), "");
-        assert_eq!(last_error_line(&Error::Invalid("boom".into())), "boom");
+    fn last_error_line_is_what_gcloud_said_last_else_the_launchers_error() {
+        assert_eq!(last_error_line(&refused("WARNING: x\nERROR: quota exceeded\n\n  \n")), "ERROR: quota exceeded");
+        let stuck = Failure::TimedOut { program: "gcloud".into(), limit: std::time::Duration::from_secs(300) };
+        assert!(last_error_line(&stuck).starts_with("timed out after 300s"), "{}", last_error_line(&stuck));
+        assert_ne!(last_error_line(&Failure::Missing { program: "gcloud".into() }), "");
     }
 }

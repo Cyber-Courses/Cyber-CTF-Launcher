@@ -9,7 +9,6 @@
 //! `runtime::terraform::state` and Proxmox's API by `runtime::proxmox::api`.
 
 pub mod apple_events;
-pub mod gcloud;
 pub mod ping;
 pub mod text;
 pub mod vboxmanage;
