@@ -113,6 +113,7 @@ const COMMANDS: &[&str] = &[
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     emit_engine_versions()?;
+    link_cli_with_lld()?;
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
     tauri_build::try_build(with_windows_manifest(attributes)?)?;
     Ok(())
@@ -189,6 +190,39 @@ fn isoloom_versions(lock: &str) -> Vec<(String, String)> {
         }
     }
     out
+}
+
+/// On Linux, the command line (`cyberctf`) links with lld, the linker Rust ships
+/// (`<sysroot>/lib/rustlib/<host>/bin/gcc-ld/ld.lld`), so it links no GTK nor web view
+/// (`tests/cli.rs`'s `it_links_no_gui_library`).
+///
+/// It is built from the app's library, so every library Tauri's window and web view need is on its
+/// link line, each `--as-needed`: kept only if the executable uses it. lld decides that after
+/// dropping the code nothing reaches, so none is kept. GNU ld decides it on every archive member it
+/// pulled in, reached or not, and a debug build's shared generics pull in Tauri's, tao's and wry's:
+/// on x86_64 Rust links with lld by default, on aarch64 with the system's (GNU ld), whose `cyberctf`
+/// needed GTK, GDK, Pango, Cairo and WebKitGTK, and wouldn't start where they aren't installed.
+fn link_cli_with_lld() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("linux") || std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("gnu") {
+        return Ok(());
+    }
+    let rustc = std::env::var_os("RUSTC").ok_or("cargo didn't set RUSTC")?;
+    let host = std::env::var("HOST")?;
+    #[expect(clippy::disallowed_methods, reason = "a build script, which has no platform::exec: it asks rustc for its sysroot")]
+    let sysroot = std::process::Command::new(&rustc).args(["--print", "sysroot"]).output()?;
+    if !sysroot.status.success() {
+        return Err(format!("rustc --print sysroot failed ({})", sysroot.status).into());
+    }
+    let gcc_ld = std::path::Path::new(String::from_utf8(sysroot.stdout)?.trim()).join("lib").join("rustlib").join(host).join("bin").join("gcc-ld");
+    if !gcc_ld.join("ld.lld").is_file() {
+        // A Rust without its lld (a distribution's package): the default linker, and the test says
+        // what it linked.
+        println!("cargo:warning={} has no ld.lld: cyberctf links with the default linker, which may keep GTK", gcc_ld.display());
+        return Ok(());
+    }
+    println!("cargo:rustc-link-arg-bin=cyberctf=-B{}", gcc_ld.display());
+    println!("cargo:rustc-link-arg-bin=cyberctf=-fuse-ld=lld");
+    Ok(())
 }
 
 /// On Windows, tauri-build embeds the app manifest (Common Controls v6) in the app binary only,
