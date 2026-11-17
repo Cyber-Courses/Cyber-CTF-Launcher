@@ -260,8 +260,8 @@ fn write_selftest_steps(dir: &Path) {
 const SELFTEST_STEPS: &str = "SelfTestSteps";
 
 /// The file of how the launcher's own deploy-log lines start, by the step the lab page files them
-/// under ([`runtime::deploy_log`]), which the page's step parser reads (not a type: imported by
-/// its path, not from the index).
+/// under ([`runtime::deploy_log`]), and of the runner's step ids, which the page's steps read (not
+/// a type: imported by its path, not from the index).
 fn write_deploy_log(dir: &Path) {
     use runtime::deploy_log::{DONE_MARK, FAILED_CODE, FAILED_MARK, FETCH, PREPARE};
     let listed = |starts: &[&str]| starts.iter().map(|s| serde_json::to_string(s).unwrap()).collect::<Vec<_>>().join(", ");
@@ -274,10 +274,13 @@ fn write_deploy_log(dir: &Path) {
         serde_json::to_string(FAILED_CODE.1).unwrap(),
         serde_json::to_string(DONE_MARK).unwrap(),
     );
+    let doc_steps =
+        "/** Every step id the runner says, in the order a format goes through its own (Rust's `deploy_log::step_ids`): the lab\n *  page names each. */";
     let text = format!(
-        "{HEADER}\n{marks}\n{doc_fetch}\nexport const FETCH_LINES: readonly string[] = [{}];\n\n{doc_prepare}\nexport const PREPARE_LINES: readonly string[] = [{}];\n",
+        "{HEADER}\n{marks}\n{doc_fetch}\nexport const FETCH_LINES: readonly string[] = [{}];\n\n{doc_prepare}\nexport const PREPARE_LINES: readonly string[] = [{}];\n\n{doc_steps}\nexport const STEP_IDS = [{}] as const;\n",
         listed(&FETCH),
         listed(&PREPARE),
+        listed(&runtime::deploy_log::step_ids()),
     );
     fs::write(dir.join(format!("{DEPLOY_LOG}.ts")), text).unwrap();
 }

@@ -131,16 +131,16 @@
       "boxes": "Get boxes",
       "create": "Create the network and containers",
       "start": "Start the containers",
-      "health": "Wait until healthy"
+      "health": "Wait until healthy",
+      "up": "Start the machine",
+      "provision": "Set up the machine",
+      "init": "Set up Terraform",
+      "apply": "Create the infrastructure",
+      "ready": "Install and start the lab"
     },
     "steps": {
       "download": "Download the lab",
       "prepareMachine": "Prepare this machine",
-      "start": "Start",
-      "tfInit": "Set up Terraform",
-      "tfApply": "Create the infrastructure",
-      "tfReady": "Install and start the lab",
-      "prepareLab": "Prepare the lab",
       "preparing": "Preparing",
       "attackBox": "Add the attack box",
       "afterReady": "Change the running lab"

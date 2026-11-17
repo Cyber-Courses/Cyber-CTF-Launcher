@@ -7,7 +7,9 @@
 use std::path::Path;
 
 mod steps;
-pub(crate) use steps::{DeployStep, DeployStepState, StepCount, Steps, tell, telling};
+#[cfg(test)]
+pub(crate) use steps::step_ids;
+pub(crate) use steps::{DeployStep, DeployStepState, StepCount, Steps, carried, tell, telling};
 
 /// How a failed run's closing line starts (the lab page marks a run failed by it, read from the
 /// webview's `DeployLog.ts`, which `ts_bindings` writes).

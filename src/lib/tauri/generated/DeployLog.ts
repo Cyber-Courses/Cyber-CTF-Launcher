@@ -15,3 +15,7 @@ export const FETCH_LINES: readonly string[] = ["Downloading ", "Lab installed", 
 /** How the launcher's lines start while it readies this machine for a lab's VMs: the "Prepare this machine" step when one
  *  comes first (Rust's `deploy_log::PREPARE`). */
 export const PREPARE_LINES: readonly string[] = ["This lab's VMs ask for about ", "Emulating ", "Opening UTM and waiting for it to answer…", "Clearing a previous, stopped run…", "Docker kept something of an earlier run: clearing it, then starting again…"];
+
+/** Every step id the runner says, in the order a format goes through its own (Rust's `deploy_log::step_ids`): the lab
+ *  page names each. */
+export const STEP_IDS = ["images", "create", "start", "health", "boxes", "up", "provision", "init", "apply", "ready"] as const;

@@ -131,16 +131,16 @@
       "boxes": "Obtener boxes",
       "create": "Crear la red y los contenedores",
       "start": "Iniciar los contenedores",
-      "health": "Esperar a que estén operativos"
+      "health": "Esperar a que estén operativos",
+      "up": "Iniciar la máquina",
+      "provision": "Configurar la máquina",
+      "init": "Configurar Terraform",
+      "apply": "Crear la infraestructura",
+      "ready": "Instalar e iniciar el lab"
     },
     "steps": {
       "download": "Descargar el lab",
       "prepareMachine": "Preparar esta máquina",
-      "start": "Iniciar",
-      "tfInit": "Configurar Terraform",
-      "tfApply": "Crear la infraestructura",
-      "tfReady": "Instalar e iniciar el lab",
-      "prepareLab": "Preparar el lab",
       "preparing": "Preparando",
       "attackBox": "Añadir la máquina de ataque",
       "afterReady": "Modificar el laboratorio en marcha"

@@ -4,7 +4,8 @@ import { useSyncExternalStore } from "react";
 import { commandError, describeError, errorCode, type ErrorCode } from "@/lib/errors";
 import { registerReset } from "@/lib/module-state";
 import { failedLine, failureOf } from "@/lib/log-marks";
-import { operationOf } from "@/lib/tauri/run-events";
+import { onFollowedStep, operationOf, type SaidStep } from "@/lib/tauri/run-events";
+import type { DeployStep } from "@/lib/tauri/generated";
 import type { LabOperation } from "@/features/labs/runs/operations";
 
 // The live state of lab start/stop, kept outside the React tree so it survives navigating away
@@ -21,6 +22,8 @@ export type DeployRun = {
   /** The arrival time (ms) of each log line, parallel to `logs`, so step timings survive
    *  leaving and returning to the lab page. */
   times: number[];
+  /** The steps the runner said, each placed among `logs` (none before it said one). */
+  marks?: SaidStep[];
   /** What the run is (launch, stop, shutdown…), so a list row can say "Starting…" or
    *  "Stopping…" instead of guessing from the lab's status. */
   op?: LabOperation;
@@ -57,7 +60,7 @@ function setRun(labId: string, run: DeployRun) {
 // and copying a run's logs and re-rendering every reader per line was most of a busy page's work.
 // They are added together about every 100 ms (a timer, not an animation frame: frames stop in a
 // hidden window, and a deploy finishing in the background must still end with all its lines).
-const pending = new Map<string, { lines: string[]; times: number[] }>();
+const pending = new Map<string, { lines: string[]; times: number[]; marks: SaidStep[] }>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_MS = 100;
 
@@ -76,11 +79,11 @@ function flushDeployLogs() {
   flushTimer = null;
   if (pending.size === 0) return;
   const runs = { ...state.runs };
-  for (const [labId, { lines, times }] of pending) {
+  for (const [labId, { lines, times, marks }] of pending) {
     const prev = runs[labId] ?? EMPTY_RUN;
     // `busy` is begin/end's to set: a channel's last line can arrive after the command returned,
     // and turned a finished run back into a "Starting…" that nothing ended.
-    runs[labId] = { ...prev, logs: [...prev.logs, ...lines], times: [...prev.times, ...times] };
+    runs[labId] = { ...prev, logs: [...prev.logs, ...lines], times: [...prev.times, ...times], marks: [...(prev.marks ?? []), ...marks] };
   }
   pending.clear();
   state = { runs };
@@ -90,7 +93,7 @@ function flushDeployLogs() {
 /** Begin a run (`op`) for `labId`: clears that lab's previous logs, leaves other labs untouched. */
 export function beginDeploy(labId: string, op?: LabOperation) {
   flushDeployLogs();
-  setRun(labId, { busy: true, logs: [], times: [], op, startedAt: Date.now() });
+  setRun(labId, { busy: true, logs: [], times: [], marks: [], op, startedAt: Date.now() });
 }
 
 /** Ends `labId`'s log on the error it failed with: a ✗ line in the player's language, and the
@@ -117,14 +120,31 @@ export function runFailure(run: DeployRun | undefined): string | null {
 /** Whether a lab's last run was a start (a launch) that failed. */
 export const startFailed = (run: DeployRun | undefined) => run?.op === "launch" && runFailure(run) !== null;
 
-/** Append a log line to `labId`'s run, timestamped on arrival (shown with the next batch). */
-export function appendDeployLog(labId: string, line: string) {
-  const batch = pending.get(labId) ?? { lines: [], times: [] };
-  batch.lines.push(line);
-  batch.times.push(Date.now());
+/** `labId`'s batch of lines and steps waiting to be added, made when there is none. */
+function batchOf(labId: string) {
+  const batch = pending.get(labId) ?? { lines: [], times: [], marks: [] };
   pending.set(labId, batch);
   if (flushTimer === null) flushTimer = setTimeout(flushDeployLogs, FLUSH_MS);
+  return batch;
 }
+
+/** Append a log line to `labId`'s run, timestamped on arrival (shown with the next batch). */
+export function appendDeployLog(labId: string, line: string) {
+  const batch = batchOf(labId);
+  batch.lines.push(line);
+  batch.times.push(Date.now());
+}
+
+/** Append a step the runner said to `labId`'s run, after the lines in so far (shown with the next
+ *  batch). */
+export function appendDeployStep(labId: string, step: DeployStep) {
+  const before = state.runs[labId]?.logs.length ?? 0;
+  const batch = batchOf(labId);
+  batch.marks.push({ step, at: Date.now(), line: before + batch.lines.length });
+}
+
+// The steps of the operations this window follows come with their lines (`awaitOperation`).
+onFollowedStep(appendDeployStep);
 
 /** End `labId`'s run (keeps its logs so the console stays readable). */
 export function endDeploy(labId: string) {

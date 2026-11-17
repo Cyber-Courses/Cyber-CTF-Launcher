@@ -131,16 +131,16 @@
       "boxes": "Box を取得",
       "create": "ネットワークとコンテナを作成",
       "start": "コンテナを起動",
-      "health": "正常になるまで待機"
+      "health": "正常になるまで待機",
+      "up": "マシンを起動",
+      "provision": "マシンをセットアップ",
+      "init": "Terraform をセットアップ",
+      "apply": "インフラを作成",
+      "ready": "ラボをインストールして起動"
     },
     "steps": {
       "download": "ラボをダウンロード",
       "prepareMachine": "このマシンを準備",
-      "start": "起動",
-      "tfInit": "Terraform をセットアップ",
-      "tfApply": "インフラを作成",
-      "tfReady": "ラボをインストールして起動",
-      "prepareLab": "ラボを準備",
       "preparing": "準備中",
       "attackBox": "攻撃用マシンを追加",
       "afterReady": "実行中のラボを変更"
