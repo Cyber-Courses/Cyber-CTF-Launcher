@@ -766,10 +766,12 @@ describe.skipIf(!unix)("run.mjs and the runner services the apps leave", () => {
     // A spec whose app left three detached services: its own (one deaf to SIGTERM), the signed-out
     // run's, and one of another home that must outlive the run.
     const leaves = `import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 const root = process.env.CYBERCTF_WDIO_ROOT;
 const serve = (name, home, deaf) => {
-  const keep = (deaf ? 'process.on("SIGTERM", () => {});' : "") + "setInterval(() => {}, 1000);";
+  // Ready (its SIGTERM handler in place) once it has written ready-<name>.
+  const ready = JSON.stringify(${JSON.stringify(pids)} + "/ready-" + name);
+  const keep = (deaf ? 'process.on("SIGTERM", () => {});' : "") + "require('fs').writeFileSync(" + ready + ", ''); setInterval(() => {}, 1000);";
   const p = spawn(process.execPath, ["-e", keep, "serve", "--home", home, "--detach"], { detached: true, stdio: "ignore" });
   p.unref();
   writeFileSync(${JSON.stringify(pids)} + "/" + name, String(p.pid));
@@ -778,7 +780,10 @@ const serve = (name, home, deaf) => {
 serve("own", root + "/app/isothrum", true);
 serve("signed-out", root + "/signed-out/app/isothrum", false);
 serve("other", ${JSON.stringify(join(other, "isothrum"))}, false);
-await new Promise((r) => setTimeout(r, 300));
+// The three up, each with its handler in place: a bounded look for their ready files.
+const up = () => ["own", "signed-out", "other"].every((n) => existsSync(${JSON.stringify(pids)} + "/ready-" + n));
+for (let i = 0; i < 200 && !up(); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+if (!up()) { console.log("FAILED: left (10s) the services never said they were up"); process.exit(1); }
 console.log("ok: left (0s) three services"); process.exit(0);`;
     const r = runRunner(fakePlan({ a: { body: leaves } }), ["--all"]);
     expect(r.status, r.out).toBe(0);
