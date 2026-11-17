@@ -285,10 +285,11 @@ mod tests {
         let target = lab::terraform(&dir, Runtime::Docker, "aws").1;
         lab::prepare(&dir, target).unwrap();
         let home = dir.join("home");
+        let runner_home = crate::runtime::paths::runner_home_in(&home);
         // Terraform, whose sign-in to AWS runs out once the lab is up.
         let expired = Arc::new(AtomicBool::new(false));
         let fake = Arc::new(signing_out(Arc::clone(&expired)));
-        let mut config = isothrum_runner::RunnerConfig::new(crate::runtime::paths::runner_home_in(&home));
+        let mut config = isothrum_runner::RunnerConfig::new(runner_home.clone());
         config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
         let place = isothrum::CloudPlace { region: Some("eu-west-3".into()), allowed_cidr: Some("203.0.113.7/32".into()), ..isothrum::CloudPlace::default() };
         let run = isothrum::Deployment::in_cloud_with(config, &dir, "t", (Runtime::Docker, "aws"), place).unwrap();
@@ -312,9 +313,11 @@ mod tests {
         assert!(!super::super::added(&dir).unwrap(), "the box is out of the lab's spec again");
         assert!(!dir.join(lab::overlay::FILE).exists(), "and the launcher's layer gone");
         assert_eq!(module(&dir, "aws"), before, "the lab's files as they were");
-        // The runner's store (`state.db` in its home) and the app's (read for the shared folder)
-        // are open files in the lab's folder, which Windows won't remove while they are.
+        // The runner's store (`state.db` in its home, held by its service until it ends) and the
+        // app's (read for the shared folder) are open files in the lab's folder, which Windows
+        // won't remove while they are.
         drop(placed);
+        isothrum::stop_service(&runner_home).await;
         crate::store::forget(dirs.data().unwrap());
         std::fs::remove_dir_all(&dir).unwrap();
     }
