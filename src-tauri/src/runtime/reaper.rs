@@ -13,7 +13,6 @@
 
 use std::collections::BTreeSet;
 
-use super::inflight::try_lock_lab;
 use super::{isothrum, server};
 use std::path::Path;
 
@@ -44,10 +43,11 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
             None
         }
     };
-    // Each destroy under the lab's per-lab lock, like `hand_to_runner`: a user Stop or install of
-    // the lab can't race the reaper's Terraform destroy over the same state.
-    let lock = |id: &str| try_lock_lab(dirs, id).ok().flatten();
-    let failures = match sweep(&home, account, lock).await {
+    // A lab an operation of this process acts on (a Stop, an install) is left for a later sweep;
+    // the runner service refuses the destroy itself while another process's runs on the run.
+    let service = crate::run_service::LocalRunService::of(dirs).ok();
+    let busy = |id: &str| service.as_ref().is_some_and(|s| s.is_busy(id));
+    let failures = match sweep(&home, account, busy).await {
         Ok(failures) => failures,
         Err(e) => {
             // No sweep happened: said once, as the runner's, not as a lab that couldn't be destroyed.
@@ -61,25 +61,26 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
 }
 
 /// Destroys every cloud run the runner service lists as past its expiry, with the account's
-/// credentials resolved by `account` (a recorded account id to its Terraform environment), each
-/// under the lab's lock (`lock`, `None` while another operation holds it). Returns the runs it
-/// couldn't destroy, with why; a run whose account can't be resolved, or whose lab is busy, is
-/// left for a later sweep. `Err` when the runs can't even be listed: no sweep happened.
-async fn sweep<F, L, G>(home: &Path, account: F, lock: L) -> Result<Vec<(String, Error)>>
+/// credentials resolved by `account` (a recorded account id to its Terraform environment), but
+/// those of a lab `busy` says an operation of this process acts on. Returns the runs it couldn't
+/// destroy, with why; a run whose account can't be resolved, whose lab is busy, or whose destroy
+/// the runner service refuses because another operation holds the run, is left for a later
+/// sweep. `Err` when the runs can't even be listed: no sweep happened.
+async fn sweep<F, B>(home: &Path, account: F, busy: B) -> Result<Vec<(String, Error)>>
 where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
-    L: Fn(&str) -> Option<G>,
+    B: Fn(&str) -> bool,
 {
     let mut failed = Vec::new();
     for record in isothrum::expired_clouds(home).await? {
         let name = record.name.to_string();
         let id = super::docker::lab_of_project(&name).unwrap_or(&name).to_owned();
-        // Busy: another operation holds the lab, so it is left for a later sweep rather than
-        // destroyed over it (not a failure). Held across the destroy.
-        let Some(_held) = lock(&id) else {
-            log::debug!("auto-stop: {name} is busy (an operation holds its lab lock); left for a later sweep");
+        // Busy: another operation acts on the lab, so it is left for a later sweep rather than
+        // destroyed under it (not a failure).
+        if busy(&id) {
+            log::debug!("auto-stop: {name} is busy (an operation acts on its lab); left for a later sweep");
             continue;
-        };
+        }
         let Some(host) = record.host_label.as_deref() else {
             failed.push((name, Error::coded(Code::ReapNoHost)));
             continue;
@@ -92,8 +93,10 @@ where
         if let Err(e) = super::paths::lab_dir_in(home, &id) {
             log::warn!("auto-stop: {name}'s lab isn't installed any more ({e}); destroying it with the module its run kept");
         }
-        if let Err(e) = isothrum::destroy_expired(home, &record, &tf_env).await {
-            failed.push((name, e));
+        match isothrum::destroy_expired(home, &record, &tf_env).await {
+            Err(e) if e.code() == Code::AlreadyInProgress => log::debug!("auto-stop: {name} is busy in the runner service; left for a later sweep"),
+            Err(e) => failed.push((name, e)),
+            Ok(()) => {}
         }
     }
     Ok(failed)

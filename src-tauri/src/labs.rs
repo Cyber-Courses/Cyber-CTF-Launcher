@@ -174,7 +174,7 @@ async fn clear_parked(dirs: &AppDirs, lab: runtime::LabRef<'_>, log: &impl Fn(St
 }
 
 /// The folder an install of lab `lab_id` fills under `labs` before it is swapped in: one per lab,
-/// which two installs of it share (they hold the lab's lock).
+/// never two installs of it at once (the run service admits one operation per lab).
 fn staging_dir(labs: &Path, lab_id: &str) -> PathBuf {
     labs.join(format!(".{lab_id}.staging"))
 }
@@ -295,10 +295,6 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
     runtime::validate_id(&launch.lab_id)?;
     // Nowhere to start it, or a start the policy turns off: said before the download.
     runtime::check_destination(dirs, launch.runtime, &to)?;
-    // The lab is this launch's from the download on: two installs of one lab share its staging
-    // folder, and a stop must not run while the new version is swapped in. Shared with the
-    // deploy worker's own hold on it (same process), so a worker runs on.
-    let _lock = runtime::lock_lab(dirs, &launch.lab_id).await?;
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit, runtime: launch.runtime };
     let dir = install(dirs, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment. The token and
@@ -509,7 +505,6 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
 /// Returns its local URL.
 pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: impl Fn(String)) -> Result<Option<String>> {
     runtime::validate_id(lab_id)?;
-    let _lock = runtime::lock_lab(dirs, lab_id).await?;
     let dir = install_local(dirs, lab_id, src, &log).await?;
     let lab = runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker };
     runtime::start_locked(dirs, lab, runtime::Destination::default(), &[], log).await?;
@@ -737,28 +732,6 @@ mod tests {
         assert!(err.to_string().starts_with("A parked copy of this lab is here and couldn't be removed"), "{err}");
         assert!(runtime::lab::installed_at(&dir, SHA), "the parked copy's folder was replaced");
         assert!(!t.data().join("labs").join(".invoice.staging").exists());
-    }
-
-    #[tokio::test]
-    async fn a_launch_waits_for_the_lab_lock_before_installing_anything() {
-        // Regression: the install (download, staging, swap) ran before the lock was taken, so
-        // two installs of one lab shared its staging folder and a stop could run mid-swap.
-        use crate::runtime::providers::testing::no_tools;
-        let t = crate::testing::test_app::TestApp::new();
-        let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (runtime::lab::COMMIT_MARKER, SHA)]);
-        let tools = no_tools();
-        let held = runtime::lock_lab(&t.dirs(), "invoice").await.unwrap();
-        let launch =
-            parse_launch(serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] })).unwrap();
-        let waiting =
-            tokio::time::timeout(std::time::Duration::from_millis(300), run(&t.dirs(), launch.clone(), runtime::Destination::default(), |_| {})).await;
-        assert!(waiting.is_err(), "the launch waits while another operation holds the lab");
-        assert!(tools.lines().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.lines());
-        assert!(!dir.join(runtime::lab::INSTANCE_MARKER).exists());
-        // Once the lock is free the launch may proceed (its install and the runner start are
-        // covered by the runner's own tests and the integration tests).
-        drop(held);
-        let _ = launch;
     }
 
     #[tokio::test]

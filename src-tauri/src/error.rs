@@ -342,9 +342,9 @@ pub enum Error {
         /// What the command wrote to its standard error.
         stderr: String,
     },
-    /// A lab's lock couldn't be taken (its file can't be opened or locked): the operation stops
-    /// there rather than run unlocked.
-    #[error("Couldn't lock the lab: {0}")]
+    /// A lock across processes couldn't be taken (its file can't be opened or locked): what it
+    /// guards stops there rather than run unlocked.
+    #[error("Couldn't take a lock: {0}")]
     LockUnavailable(#[source] std::io::Error),
     /// An I/O failure, with the system's message.
     #[error(transparent)]

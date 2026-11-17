@@ -169,6 +169,83 @@ async fn a_second_operation_on_a_busy_lab_is_refused_and_a_panicking_one_still_e
     assert!(!service.is_busy("web"));
 }
 
+/// Operation `id`'s end as `service` tells it, if it ended yet.
+fn ended_yet(service: &super::LocalRunService, id: &OperationId) -> Option<std::result::Result<(), Wire>> {
+    service.events().since(None).into_iter().find_map(|e| match e.event {
+        RunEvent::Ended { operation, error, .. } if operation == *id => Some(error.map_or(Ok(()), Err)),
+        _ => None,
+    })
+}
+
+#[tokio::test]
+async fn two_starts_of_a_lab_one_is_refused_and_a_start_during_a_stop_is_refused_too() {
+    let t = TestApp::new();
+    let _tools = crate::runtime::providers::testing::no_tools();
+    t.lab("web", &[]);
+    let service = std::sync::Arc::new(super::LocalRunService::new(t.dirs()));
+    let resume = || Request::Resume { lab_id: "web".into(), runtime: Runtime::Docker };
+    // A start under way (held here), and a second start of the lab: refused, never begun.
+    let start = service.hold("web", Operation::Launch);
+    assert_eq!(service.start(resume()).unwrap_err().code(), crate::error::Code::AlreadyInProgress);
+    drop(start);
+    // A stop under way: a start meanwhile is refused as well.
+    let stop = service.hold("web", Operation::Stop);
+    assert_eq!(service.start(resume()).unwrap_err().code(), crate::error::Code::AlreadyInProgress);
+    drop(stop);
+    // Free again: the next one is taken.
+    let id = service.start(resume()).unwrap();
+    let _ = service.events().ended(&id).await;
+}
+
+#[tokio::test]
+async fn a_stop_waits_for_the_operation_asked_before_it_then_runs() {
+    let t = TestApp::new();
+    let _tools = crate::runtime::providers::testing::no_tools();
+    t.lab("web", &[]);
+    let service = super::LocalRunService::new(t.dirs());
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let launch = OperationId::new();
+    let started =
+        RunEvent::Started { operation: launch.clone(), lab_id: "web".into(), op: Operation::Launch, machine: None, runtime: None, deploying: true, at: 0 };
+    service
+        .begin(started, true, |_| {
+            Box::pin(async move {
+                let _ = released.await;
+                Ok(())
+            })
+        })
+        .unwrap();
+    // Asked while the launch runs (still downloading, say): taken, never refused, but it waits.
+    let stop = service.start(Request::Stop { lab_id: "web".into(), runtime: Runtime::Docker }).unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(ended_yet(&service, &stop).is_none(), "the stop runs after the launch, never beside it");
+    release.send(()).unwrap();
+    assert_eq!(service.events().ended(&launch).await, Ok(()));
+    service.events().ended(&stop).await.unwrap();
+    assert!(!service.is_busy("web"));
+}
+
+#[tokio::test]
+async fn an_operation_cut_off_with_its_process_leaves_nothing_holding_the_lab() {
+    let t = TestApp::new();
+    let _tools = crate::runtime::providers::testing::no_tools();
+    // A process that died mid-operation: its account went with it, and no lock file stayed.
+    let dead = std::sync::Arc::new(super::LocalRunService::new(t.dirs()));
+    std::mem::forget(dead.hold("web", Operation::Launch));
+    let next = super::LocalRunService::new(t.dirs());
+    let id = next.start(Request::Resume { lab_id: "web".into(), runtime: Runtime::Docker }).unwrap();
+    let outcome = next.events().ended(&id).await;
+    assert_ne!(outcome.unwrap_err().code, crate::error::Code::AlreadyInProgress, "not held by the dead one");
+    let locks: Vec<_> = walk(t.data()).into_iter().filter(|p| p.extension().is_some_and(|e| e == "lock")).collect();
+    assert!(locks.is_empty(), "no lab lock file: {locks:?}");
+}
+
+/// Every file under `dir`.
+fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    entries.flatten().flat_map(|e| if e.path().is_dir() { walk(&e.path()) } else { vec![e.path()] }).collect()
+}
+
 #[tokio::test]
 async fn an_operation_run_outside_a_request_is_told_like_the_others() {
     let t = TestApp::new();

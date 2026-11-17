@@ -7,9 +7,8 @@
 //!
 //! Nothing outside the app's data folder is touched. An imported lab's own folder, the one it was
 //! imported from, is the player's: the copy keeps no link out of itself (`TreeLinks`), and a
-//! removal deletes a link, never what it points at. Two things stay: the lab's lock file, which
-//! every operation on the lab shares (deleting it would let two of them run at once), and the
-//! images and boxes a start downloaded, which Storage removes once no lab uses them.
+//! removal deletes a link, never what it points at. The images and boxes a start downloaded stay:
+//! Storage removes them once no lab uses them.
 //!
 //! Refused while anything of the lab is up, anywhere ([`runtime::status::still_up`]), parked
 //! included, and while an operation runs on it: the run's manifest and what it bind-mounts are in
@@ -18,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{blocking, rename_retrying};
-use crate::error::{Code, Error, Result};
+use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::fs::{remove_dir_if_present, remove_if_present};
 use crate::runtime::{self, paths};
@@ -54,12 +53,9 @@ pub struct Leftover {
 /// move aside.
 pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
     runtime::validate_id(id)?;
-    // Held to the end: a start or a stop waits.
-    let busy = || Error::coded(Code::AlreadyInProgress);
-    if crate::run_service::LocalRunService::of(dirs)?.stopping(id) {
-        return Err(busy());
-    }
-    let _lock = runtime::try_lock_lab(dirs, id)?.ok_or_else(busy)?;
+    // Refused while an operation of this process acts on the lab (the runner service's are
+    // asked by the command, `commands::labs::remove_in`); held to the end: a start is refused.
+    let _held = crate::run_service::LocalRunService::of(dirs)?.claim(id)?;
     let dir = paths::lab_dir(dirs, id)?;
     runtime::forget_gone(dirs, id, &mut |l| log::info!("{id}: {l}")).await?;
     if let Some(up) = runtime::status::still_up(dirs, id).await? {

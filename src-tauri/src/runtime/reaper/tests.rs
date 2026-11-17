@@ -115,7 +115,7 @@ impl Expired {
 async fn an_expired_cloud_run_is_destroyed_through_the_service_with_its_accounts_credentials() {
     let x = Expired::new(&[("web", Some("aws1"))]);
     let account = |host: &str| (host == "aws1").then(|| vec![("AWS_ACCESS_KEY_ID".to_owned(), "AKIA-KEYCHAIN".to_owned())]);
-    let failed = sweep(&x.home, account, |_| Some(())).await.unwrap();
+    let failed = sweep(&x.home, account, |_| false).await.unwrap();
     assert!(failed.is_empty(), "{failed:?}");
     let destroys = x.destroys();
     assert!(!destroys.is_empty(), "terraform destroyed it: {:?}", x.fake.calls().iter().map(isothrum_runner::fake::Call::line).collect::<Vec<_>>());
@@ -125,7 +125,7 @@ async fn an_expired_cloud_run_is_destroyed_through_the_service_with_its_accounts
     );
     let state = crate::testing::runner::run_state(&x.home, "cyberctf-web");
     assert_eq!(state, Some(isothrum_runner::RunState::Absent), "the runner records it gone");
-    assert!(sweep(&x.home, |_: &str| None, |_| Some(())).await.unwrap().is_empty(), "nothing left to sweep");
+    assert!(sweep(&x.home, |_: &str| None, |_| false).await.unwrap().is_empty(), "nothing left to sweep");
     drop(x.root);
 }
 
@@ -140,8 +140,8 @@ async fn a_sweep_skips_a_gone_account_and_a_busy_lab_and_reports_a_run_with_no_a
         asked.lock().unwrap().push(host.to_owned());
         (host == "aws1").then(|| vec![("AWS_ACCESS_KEY_ID".to_owned(), "AKIA".to_owned())])
     };
-    let lock = |id: &str| (id != "busy").then_some(());
-    let failed = sweep(&x.home, account, lock).await.unwrap();
+    let busy = |id: &str| id == "busy";
+    let failed = sweep(&x.home, account, busy).await.unwrap();
     let codes: Vec<(&str, Code)> = failed.iter().map(|(name, e)| (name.as_str(), e.code())).collect();
     assert_eq!(codes, [("cyberctf-nohost", Code::ReapNoHost)]);
     assert_eq!(asked.into_inner().unwrap(), ["gone1", "aws1"], "every free run's account, never the busy one's");

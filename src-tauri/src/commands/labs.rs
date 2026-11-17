@@ -433,8 +433,8 @@ mod tests {
         assert!(lab_installed(app(), "../x".into()).await.is_err());
         let dir = t.lab("local-t", &[("isoloom.yml", SPEC)]);
         assert!(lab_installed(app(), "local-t".into()).await.unwrap());
-        // An operation holds the lab (its lock, as a start or a stop takes it): refused, nothing deleted.
-        let held = crate::runtime::try_lock_lab(&t.dirs(), "local-t").unwrap().expect("the lab's lock");
+        // An operation acts on the lab (a start or a stop under way): refused, nothing deleted.
+        let held = crate::run_service::LocalRunService::of(&t.dirs()).unwrap().claim("local-t").unwrap();
         assert_eq!(lab_remove(app(), "local-t".into()).await.unwrap_err().code(), crate::error::Code::AlreadyInProgress);
         assert!(dir.is_dir());
         // Released: the lab goes.

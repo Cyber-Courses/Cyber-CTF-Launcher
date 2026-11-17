@@ -15,7 +15,8 @@ const FOLLOW_AGAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The app's run service: made on first use, the same for the rest of the app's life. A program
 /// without the app (the command line) makes its own with [`LocalRunService::new`] over the same
-/// folders: the same store, workers and lab locks, so it is safe beside the open app.
+/// folders: the same store and the same runner service, which refuses a second operation on a
+/// lab's run, so it is safe beside the open app.
 pub(crate) fn of(app: &AppHandle) -> Arc<dyn RunService> {
     if let Some(service) = app.try_state::<Arc<dyn RunService>>() {
         return Arc::clone(&service);

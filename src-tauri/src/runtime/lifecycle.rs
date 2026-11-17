@@ -6,7 +6,6 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::host::{self, Host};
-use super::inflight::lock_lab;
 use super::launch::policy_allows;
 use super::paths::lab_dir;
 use super::recorded::Recorded;
@@ -16,8 +15,7 @@ use crate::error::{Error, Result};
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
 /// that took an hour to build comes back in seconds (paused) or a boot (shut down), not a rebuild.
 async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
-    let LabRef { id, runtime, .. } = lab;
-    let _lock = lock_lab(dirs, id).await?;
+    let LabRef { runtime, .. } = lab;
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
     let run = local_run(dirs, lab, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.").await?;
@@ -112,8 +110,7 @@ fn parked_message(mode: Park) -> &'static str {
 /// come back. A resume boots the lab's machines again, so the administrator's policy is asked
 /// first, as for a start ([`policy_allows`]).
 async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) -> Result<()> {
-    let LabRef { dir, id, runtime } = lab;
-    let _lock = lock_lab(dirs, id).await?;
+    let LabRef { dir, runtime, .. } = lab;
     refuse_cloud_park(runtime)?;
     policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     let run = local_run(dirs, lab, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.").await?;
@@ -136,7 +133,6 @@ async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut l
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
-    let _lock = lock_lab(dirs, id).await?;
     // Through the runner: a VM lab on this machine, or on an ESXi host. Proxmox and the clouds
     // aren't re-provisioned in place yet.
     let Some(Host { run, .. }) = host::locate(dirs, dir, id, runtime).await?.filter(|h| h.is_here() || h.on_esxi()) else {
@@ -166,14 +162,7 @@ fn provision_target(status: &super::LabStatus, machine: Option<&str>) -> Result<
 }
 
 /// Stops a lab wherever it runs, destroying remote VMs so the next start is clean.
-async fn stop(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(dirs, lab.id).await?;
-    stop_locked(dirs, lab, log).await
-}
-
-/// The body of `stop`, for a caller already holding the lab lock (the lock is not reentrant, so
-/// it must not call `stop`, which would deadlock): the integration tests.
-pub(crate) async fn stop_locked(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut(String)) -> Result<()> {
+pub(crate) async fn stop(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     // Wherever it runs, through the runner (its attack box, a machine of it, goes with it): on
     // this machine, or on a server host or cloud account, destroyed there with the parameters it
@@ -260,7 +249,7 @@ pub async fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runti
 /// and the website's co-location check, which has nothing left to vouch for) runs first, while
 /// the page and the quit guard see a stop and no attack box may be added, so the teardown never
 /// races a `vagrant up` or `compose up` that would recreate what it removes; then the lab is torn
-/// down under its lock.
+/// down.
 pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_first: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     end_first.await;

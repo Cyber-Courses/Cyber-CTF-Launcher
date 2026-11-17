@@ -200,8 +200,7 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
             }
         },
         async |f: &mut Vec<String>| {
-            let stopped =
-                lifecycle::stop_locked(&dirs, crate::runtime::LabRef { dir: &dir, id: &id, runtime: crate::runtime::Runtime::Docker }, log(&id)).await;
+            let stopped = lifecycle::stop(&dirs, crate::runtime::LabRef { dir: &dir, id: &id, runtime: crate::runtime::Runtime::Docker }, log(&id)).await;
             check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), f);
             let left = left_in_aws(&region, &name).await;
             check(left.is_empty(), format!("nothing of it is left in AWS ({left})"), f);

@@ -133,7 +133,6 @@ the app or not:
   it last saw, Vagrant's state of it);
 - the Terraform deployments an older launcher left in `<app data>/deployments/<lab id>/` (none of
   them still holding resources: that counts as the lab still being up);
-- its deploy worker's job, logs and verdicts in `<app data>/deploys/`;
 - a catalogue lab's source kept for an offline start, `<app data>/offline/<lab id>.json`;
 - the password kept for its attack box (the OS keychain's `attack-box:<lab id>`), once the rest is
   gone. A keychain that refuses (locked) leaves it, listed with why, and the lab is removed all the
@@ -141,8 +140,7 @@ the app or not:
 
 The copy is first moved aside whole: a file in it held open (Windows) refuses the removal with
 nothing deleted. What can't be deleted after that is listed with why; the lab is gone from the app
-either way. The lab's empty lock file in `deploys/` stays (every operation on the lab shares it, so
-deleting it could let two run at once). The folder an imported lab came from is never touched: the
+either way. The folder an imported lab came from is never touched: the
 copy keeps no link out of itself, and a removal deletes a link, never what it points at.
 
 ## How the player reaches a lab

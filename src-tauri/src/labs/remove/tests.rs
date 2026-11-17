@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::error::Code;
 use crate::runtime::paths::runner_home_in;
 use crate::runtime::providers::testing::no_tools;
 use crate::runtime::test_support::record_run;
@@ -44,8 +45,8 @@ fn source() -> PathBuf {
     src
 }
 
-// Each test that removes through `remove` names its lab its own way: the lab's lock is this
-// process's, by id, so two tests on one id running at once would find each other's lab held.
+// Each test that removes through `remove` names its lab its own way: a removal holds the lab in
+// its data folder's run service, by id, so two tests on one id would find each other's lab held.
 
 /// Lab `id`'s records under the app data folder `base`, beside its copy: the runner's run (taken
 /// down: `absent`), a kept offline source and leftover copies. Returns the files a removal
@@ -142,7 +143,7 @@ async fn a_removal_is_refused_while_the_lab_is_up_anywhere_parked_or_busy() {
     assert_eq!(refused("ready", Some("esxi1")).await.code(), Code::LabRunningOn { host: "esxi1".into() });
     record_run(t.data(), "local-refused", None, "docker", "absent");
     // Another operation holds it.
-    let held = runtime::lock_lab(&t.dirs(), "local-refused").await.unwrap();
+    let held = crate::run_service::LocalRunService::of(&t.dirs()).unwrap().claim("local-refused").unwrap();
     assert_eq!(remove(&t.dirs(), "local-refused").await.unwrap_err().code(), Code::AlreadyInProgress);
     drop(held);
     // Through every refusal, the lab and its run's record stayed.
