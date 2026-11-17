@@ -3,11 +3,12 @@
 //! which a test binary isn't. A test that scripts the runner's tools serves the home itself
 //! ([`serve_home`], [`serve`]: a runner of its own config), on the test's own runtime, so a test on
 //! Tokio's paused clock runs its service on that clock too; any other home is served on demand,
-//! on this host's tools as the app's service is ([`client`]), and stops once idle.
+//! on this host's tools as the app's service is ([`client`]), and stops once idle or once its
+//! home's folder is gone (the test's temporary folder dropped).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use isothrum_client::Client;
@@ -78,7 +79,7 @@ pub async fn client(home: &Path) -> Result<Arc<Client>> {
     }
     std::fs::create_dir_all(home).map_err(|e| Error::Invalid(format!("{}: {e}", home.display())))?;
     let processes = SystemProcesses::default();
-    let serving = start(crate::run_service::host::runner_config(home, &processes), Some(IDLE), None, Here::OwnThread);
+    let serving = start(crate::run_service::host::runner_config(home, &processes), Some(IDLE), None, Here::Services);
     answering(home, Some(&serving)).await.map(Arc::new)
 }
 
@@ -99,55 +100,106 @@ async fn answering(home: &Path, serving: Option<&Serving>) -> Result<Client> {
     }
 }
 
-/// A service started for a test: on the test's runtime, or on a thread of its own.
-enum Serving {
-    /// A task of the test's runtime.
-    Task(tokio::task::JoinHandle<()>),
-    /// A thread of its own (no runtime to run it on).
-    Thread(std::thread::JoinHandle<()>),
-}
-
-impl Serving {
-    /// Whether it ended.
-    fn is_finished(&self) -> bool {
-        match self {
-            Serving::Task(task) => task.is_finished(),
-            Serving::Thread(thread) => thread.is_finished(),
-        }
-    }
-}
+/// A service started for a test: a task of the test's runtime or of the services' one.
+type Serving = tokio::task::JoinHandle<()>;
 
 /// Where a test's service runs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Here {
-    /// On the test's own runtime (a thread of its own when it has none): a scripted runner's, on
+    /// On the test's own runtime (the services' one when it has none): a scripted runner's, on
     /// the test's clock (Tokio's paused one included).
     TestRuntime,
-    /// On a thread of its own: one on this host's tools, which the test's runtime may block while
-    /// it waits on them (a lock, a tool).
-    OwnThread,
+    /// On the services' runtime: one on this host's tools, which the test's runtime may block
+    /// while it waits on them (a lock, a tool).
+    Services,
+}
+
+/// What ends a service a test started: its stop firing (or its sender dropping), and for one on
+/// the services' runtime its test's runtime ending or its home's folder going too.
+type Until = std::pin::Pin<Box<dyn Future<Output = ()> + Send>>;
+
+/// How often a service on the services' runtime looks whether its home's folder is still there.
+const GONE_EVERY: Duration = Duration::from_millis(50);
+
+/// The runtime of the services that don't run on their test's: one for the process. A runtime
+/// (and a thread) of each one's own held two kqueues as long as it served, and the tests running
+/// at once then came near macOS's 256 open files.
+fn services_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| tokio::runtime::Builder::new_multi_thread().worker_threads(4).thread_name("test-services").enable_all().build().unwrap())
 }
 
 /// Serves `config.home` `here` until `stopped` fires or its sender drops, or once `idle` passed
-/// with no client; a home another service holds for good is left to it.
+/// with no client; a home another service holds for good is left to it. One on the test's
+/// runtime ends with it; one on the services' runtime ends with the runtime it was started from
+/// (the test's), or once its home's folder is gone (the test's temporary folder dropped, for one
+/// started from the app's runtime, which runs for the whole run): it would hold its store and its
+/// socket open for the rest of the run otherwise.
 fn start(config: RunnerConfig, idle: Option<Duration>, stopped: Option<tokio::sync::oneshot::Receiver<()>>, here: Here) -> Serving {
-    let serving = run(config, idle, stopped);
-    match tokio::runtime::Handle::try_current() {
-        Ok(runtime) if here == Here::TestRuntime => Serving::Task(runtime.spawn(serving)),
-        _ => Serving::Thread(std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(serving);
-        })),
+    let waits = stopped.is_some();
+    let stopped = async move {
+        match stopped {
+            Some(rx) => drop(rx.await),
+            None => std::future::pending::<()>().await,
+        }
+    };
+    let runtime = tokio::runtime::Handle::try_current();
+    match runtime {
+        Ok(runtime) if here == Here::TestRuntime => runtime.spawn(run(config, idle, waits, Box::pin(stopped))),
+        _ => {
+            let (ended, gone) = (ended(runtime.ok()), gone(config.home.clone()));
+            let until: Until = Box::pin(async move {
+                tokio::select! {
+                    () = stopped => {}
+                    () = ended => {}
+                    () = gone => {}
+                }
+            });
+            services_runtime().spawn(run(config, idle, waits, until))
+        }
     }
 }
 
+/// Once `runtime` (the test's) has ended: a task of it holds what this waits on, dropped with
+/// it. Never, with no runtime.
+fn ended(runtime: Option<tokio::runtime::Handle>) -> impl Future<Output = ()> + Send {
+    let ended = runtime.map(|runtime| {
+        let (held, ended) = tokio::sync::oneshot::channel::<()>();
+        drop(runtime.spawn(async move {
+            let _held = held;
+            std::future::pending::<()>().await;
+        }));
+        ended
+    });
+    async move {
+        match ended {
+            Some(ended) => drop(ended.await),
+            None => std::future::pending::<()>().await,
+        }
+    }
+}
+
+/// Once `home`'s folder is gone.
+async fn gone(home: PathBuf) {
+    while home.exists() {
+        tokio::time::sleep(GONE_EVERY).await;
+    }
+}
+
+/// Whether `home`'s folder is still there: a test's connection to a home that's gone is
+/// forgotten (`runtime::isothrum::remote`), its service ended.
+pub fn kept(home: &Path) -> bool {
+    home.exists()
+}
+
 /// Serves `config.home` (see [`start`]).
-async fn run(config: RunnerConfig, idle: Option<Duration>, stopped: Option<tokio::sync::oneshot::Receiver<()>>) {
+async fn run(config: RunnerConfig, idle: Option<Duration>, waits: bool, until: Until) {
     // A service of this home that is still stopping holds it a moment longer.
     let mut looks = 0;
     let service = loop {
         match Service::hold(config.home.clone()) {
             Ok(service) => break service,
-            Err(_) if stopped.is_some() && looks < LOOKS => {
+            Err(_) if waits && looks < LOOKS => {
                 looks += 1;
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -155,21 +207,55 @@ async fn run(config: RunnerConfig, idle: Option<Duration>, stopped: Option<tokio
         }
     };
     let Ok(runner) = Runner::new(config) else { return };
-    let mut stopped = stopped;
-    let stop: StopSignal = Box::new(move || {
-        let once = stopped.take();
-        Box::pin(async move {
-            match once {
-                Some(rx) => drop(rx.await),
-                None => std::future::pending::<()>().await,
-            }
-        })
-    });
+    let mut until = Some(until);
+    let stop: StopSignal = Box::new(move || until.take().unwrap_or_else(|| Box::pin(std::future::pending())));
     let mut options = ServeOptions::new(Arc::new(RunnerEngine::new(Arc::new(runner))), stop);
     options.idle = idle;
     // The app reaps its own expired labs, with the accounts' credentials.
     options.reap_every = None;
     if let Err(e) = service.serve(options).await {
         log::warn!("a test's runner service ended: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// How many looks, a moment each, a service of a test that ended may take to go: well before
+    /// it would idle.
+    const LOOKS_BEFORE_IDLE: usize = 300;
+
+    /// Waits for the service `answers` asks to stop answering.
+    async fn stops_answering(answers: impl AsyncFn() -> bool) {
+        let mut looks = 0;
+        while answers().await {
+            assert!(looks < LOOKS_BEFORE_IDLE, "the service of a test that ended still answers");
+            looks += 1;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    // A service a test left serving keeps its store and its socket open for the rest of the run:
+    // a full run's then outgrew macOS's 256 open files.
+
+    #[tokio::test]
+    async fn a_service_started_on_demand_ends_with_its_homes_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        // Asked on the connection made before: the service's address was in the folder.
+        let client = client(&dir.path().join("isothrum")).await.unwrap();
+        drop(dir);
+        stops_answering(async || client.list().await.is_ok()).await;
+    }
+
+    #[test]
+    fn a_service_started_on_demand_ends_with_the_tests_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("isothrum");
+        let test = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        drop(test.block_on(client(&home)).unwrap());
+        drop(test);
+        let after = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        after.block_on(stops_answering(async || Client::connect_running(&home).await.is_ok()));
     }
 }
