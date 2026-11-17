@@ -121,9 +121,9 @@ reqwest = { version = "0.13", features = ["json", "form"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
-# layered crates, the 3.0 line. Only `src/runtime/lab/` and what a lab says of itself
-# (`src/runtime/isothrum/described.rs`) call them: the spec (`isoloom-spec`), the backends'
-# registry and the resolved snapshot (`isoloom-targets`).
+# layered crates, the 3.0 line. Only `src/runtime/lab` calls them (`lab.rs` and `lab/`, its
+# `lab::isolooms_spec_and_generators_are_used_here_alone` test says so): the spec (`isoloom-spec`),
+# the backends' registry, the resolved snapshot and the message filled from it (`isoloom-targets`).
 isoloom-spec = "3.0.0"
 isoloom-targets = "3.0.0"
 # The Isothrum runner: runs the native project Isoloom writes (a Compose file, a Vagrantfile, a
