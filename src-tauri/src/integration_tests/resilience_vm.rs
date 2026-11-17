@@ -21,7 +21,7 @@ use super::support::lab::{Run, every_machine_runs, vm_inputs};
 use super::support::{Wait, check, eventually, knob, log, refused_by_launcher, scenario};
 use crate::platform::exec::run_env;
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Runtime, docker, isothrum, lab, launch, lifecycle};
+use crate::runtime::{LabStatus, docker, isothrum, lab, launch, lifecycle};
 
 /// The hypervisor under test (`CYBERCTF_TEST_VM_PROVIDER`, default QEMU, as the runner's).
 fn provider() -> Provider {

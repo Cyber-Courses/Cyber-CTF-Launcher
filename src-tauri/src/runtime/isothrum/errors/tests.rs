@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use super::*;
-use isothrum_runner::Error as RunnerError;
 
 /// The runner's report, as the service and the event stream carry it: code `code`, message `m`,
 /// `step` and `detail` (its fields, version 2) when given.
