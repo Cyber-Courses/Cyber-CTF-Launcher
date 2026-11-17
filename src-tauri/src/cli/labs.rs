@@ -120,7 +120,8 @@ fn launch_request(s: StartArgs) -> Result<Request, Failure> {
         lab_id: s.id,
         provider,
         host: s.host,
-        default_ports: s.default_ports,
+        // Unset, the player's saved port mode decides, as in the window.
+        default_ports: s.default_ports.then_some(true),
         offline: s.offline,
         per_machine_vm: s.per_machine_vm,
         docker_engine: s.docker_engine,
