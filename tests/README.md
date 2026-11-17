@@ -76,6 +76,20 @@ kebab-case.
 lists the integration scenarios and what each guards against, and the settings that name the
 Proxmox and ESXi hosts of their server tier.
 
+### Contract tests between the layers
+
+A unit test fakes the other side of a seam, so a change on that side passes it and breaks a lab
+instead. The contract tests are unit tests that drive both sides of one seam for real, Isothrum's
+fake processes the only fake:
+
+- `runtime/isothrum/tests/contract/service.rs`, the launcher and Isothrum's runner service: each
+  operation goes from the launcher's client path to a real service in the test's process, which
+  journals it as asked; the launch's values reach the tool; the service's refusals (`locked`) and
+  error reports read through the launcher's one mapper (`runtime/isothrum/errors.rs`).
+
+`cargo test --manifest-path src-tauri/Cargo.toml --lib isothrum::tests::contract` runs them. The workspace's `./ws tips`
+runs them, with the launcher's other tests, against Isothrum's and Isoloom's `dev`.
+
 ## Knobs
 
 Every knob is `CYBERCTF_TEST_<AREA>_<WHAT>`: the area is the scenario, spec or shared resource

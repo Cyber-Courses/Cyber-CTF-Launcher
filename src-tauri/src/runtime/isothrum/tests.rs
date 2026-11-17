@@ -11,6 +11,8 @@ use crate::runtime::providers::testing::{Faked, no_tools};
 use crate::runtime::{Park, Place, Runtime, lab};
 use isothrum_runner::HostPort;
 
+mod contract;
+
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: { CTF_LAUNCH_TOKEN: { default: dev-launch-token } }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
 
 /// Where the fake project's containers are, and the host port its web port got.
@@ -22,6 +24,8 @@ struct Engine {
     failing_up: bool,
     /// `compose pull` fails (the registry's refusal) from now on.
     failing_pull: bool,
+    /// `compose up` is told here as it begins, then runs until it is cut short (a long download).
+    held_up: Option<std::sync::Arc<tokio::sync::Notify>>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +90,12 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
             Reply::ok("")
         }
         "up" if e.failing_up => Reply::fail(1, "Error response from daemon: pull access denied"),
+        "up" if e.held_up.is_some() => {
+            e.held_up.iter().for_each(|began| began.notify_one());
+            let mut held = Reply::ok("");
+            held.delay = std::time::Duration::from_secs(3600);
+            held
+        }
         "up" => {
             e.containers = Containers::Up;
             e.host_port = if call.env("ISOLOOM_PUBLISH_FIXED").is_some() { 8080 } else { 41873 };
