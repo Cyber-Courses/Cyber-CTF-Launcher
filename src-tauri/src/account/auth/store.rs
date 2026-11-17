@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::platform::keychain;
+#[cfg(test)]
+use crate::platform::keychain::pieces::{CHUNKS_PREFIX, WINDOWS_CHUNK_UNITS};
+use crate::platform::keychain::pieces::{MAX_CHUNKS, join as join_chunks};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub(super) struct Session {
@@ -34,61 +37,21 @@ const SESSION: &str = "session";
 
 /// The keychain entry of the session's piece `i` (1-based).
 fn piece_name(i: usize) -> String {
-    format!("session.{i}")
+    keychain::pieces::name(SESSION, i)
 }
-
-/// The most a Windows keychain entry holds, in UTF-16 units: the Credential Manager caps a
-/// credential at 2560 bytes (1280 UTF-16 units). A session (a JWT access token, a refresh token,
-/// the profile) can be longer, and saving it failed, so it was never kept. On Windows a longer
-/// session is split across `session.1`, `session.2`… with `session` holding how many there are.
-const WINDOWS_CHUNK_UNITS: usize = 1200;
-/// The most a keychain entry holds on this system. Only Windows caps it: elsewhere the session is
-/// one entry, so reading it is one keychain access, and one unlock prompt where the keychain asks
-/// (macOS asks once per entry for a build it doesn't know, three times for a split session). A
-/// session split by an earlier version is still read, and saving it again keeps it whole.
-const CHUNK_UNITS: usize = if cfg!(windows) { WINDOWS_CHUNK_UNITS } else { usize::MAX };
-/// At most this many pieces (a session is a few KiB; some identity providers issue tokens of
-/// several KiB each). A longer one is refused at save, never half-saved and read as signed out.
-const MAX_CHUNKS: usize = 32;
-const CHUNKS_PREFIX: &str = "cyberctf-chunks:";
 
 /// What goes in the `session` entry and, for a session too long for one entry here, the pieces
-/// for `session.1`….
+/// for `session.1`… ([`keychain::pieces`]: only Windows splits it).
 fn split_chunks(raw: &str) -> Result<(String, Vec<String>)> {
-    split_chunks_at(raw, CHUNK_UNITS)
+    split_chunks_at(raw, keychain::pieces::UNITS)
 }
 
-/// [`split_chunks`] for entries of at most `max_units` UTF-16 units.
+/// [`split_chunks`] for entries of at most `max_units` UTF-16 units. A session of more pieces
+/// than are read back is refused at save, never half-saved and read as signed out.
 fn split_chunks_at(raw: &str, max_units: usize) -> Result<(String, Vec<String>)> {
-    if raw.encode_utf16().count() <= max_units {
-        return Ok((raw.to_string(), Vec::new()));
-    }
-    let mut parts = vec![String::new()];
-    let mut units = 0;
-    for c in raw.chars() {
-        if units + c.len_utf16() > max_units {
-            parts.push(String::new());
-            units = 0;
-        }
-        units += c.len_utf16();
-        if let Some(p) = parts.last_mut() {
-            p.push(c);
-        }
-    }
-    if parts.len() > MAX_CHUNKS {
-        return Err(Error::Invalid(
-            "Your session is too large to keep in the system keychain. Sign in again; if this keeps happening, contact support.".into(),
-        ));
-    }
-    Ok((format!("{CHUNKS_PREFIX}{}", parts.len()), parts))
-}
-
-/// The session's JSON from the `session` entry's value, reading the pieces with `piece(i)`
-/// (1-based) when it was split. None when a piece is missing.
-fn join_chunks(head: String, mut piece: impl FnMut(usize) -> Option<String>) -> Option<String> {
-    let Some(n) = head.strip_prefix(CHUNKS_PREFIX) else { return Some(head) };
-    let n: usize = n.parse().ok().filter(|n| (1..=MAX_CHUNKS).contains(n))?;
-    (1..=n).map(&mut piece).collect()
+    keychain::pieces::split(raw, max_units).ok_or_else(|| {
+        Error::Invalid("Your session is too large to keep in the system keychain. Sign in again; if this keeps happening, contact support.".into())
+    })
 }
 
 /// The session a keychain `head` holds: joined from its pieces (`piece(i)`, 1-based: `Ok(None)`

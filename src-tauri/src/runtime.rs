@@ -17,6 +17,7 @@ mod inflight;
 pub(crate) mod isothrum;
 pub mod lab;
 pub(crate) mod launch;
+pub(crate) mod launch_values;
 pub(crate) mod lifecycle;
 mod model;
 pub(crate) mod paths;

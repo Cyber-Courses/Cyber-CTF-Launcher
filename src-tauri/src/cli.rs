@@ -175,7 +175,7 @@ async fn dispatch(command: Command, ctx: &Context, out: &mut Output<'_>) -> Exit
         Command::Doctor => machine::doctor(ctx, out).await,
         Command::Servers(c) => account::servers(c, ctx, out).await,
         Command::Cloud(c) => account::cloud(c, out).await,
-        Command::Account(c) => account::account(c, out).await,
+        Command::Account(c) => account::account(c, ctx, out).await,
         Command::Version => out.finish(Ok(version()), |v| format!("cyberctf {}", v["version"].as_str().unwrap_or_default())),
         Command::Completions { shell } => {
             let mut script = Vec::new();

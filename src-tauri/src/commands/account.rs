@@ -52,10 +52,13 @@ pub async fn auth_status() -> AuthStatus {
     auth::auth_status().await
 }
 
-/// Signs out; fails when the keychain still holds the session.
+/// Signs out; fails when the keychain still holds the session. The values the account's runs
+/// were launched with go too (`runtime::launch_values`).
 #[tauri::command]
-pub async fn auth_logout() -> Result<()> {
-    auth::auth_logout().await
+pub async fn auth_logout(app: AppHandle) -> Result<()> {
+    auth::auth_logout().await?;
+    crate::runtime::launch_values::forget_all(&AppDirs::from(&app));
+    Ok(())
 }
 
 /// One of the backend's known queries, with the player's token (see [`api::api_query`]).

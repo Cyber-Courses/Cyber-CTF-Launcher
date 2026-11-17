@@ -156,9 +156,10 @@ the app or not:
 - the Terraform deployments an older launcher left in `<app data>/deployments/<lab id>/` (none of
   them still holding resources: that counts as the lab still being up);
 - a catalogue lab's source kept for an offline start, `<app data>/offline/<lab id>.json`;
-- the password kept for its attack box (the OS keychain's `attack-box:<lab id>`), once the rest is
-  gone. A keychain that refuses (locked) leaves it, listed with why, and the lab is removed all the
-  same; no keychain at all (Linux without a Secret Service) has nothing to delete.
+- the password kept for its attack box (the OS keychain's `attack-box:<lab id>`), and the values its
+  run was launched with (`launch-values:cyberctf-<lab id>`), once the rest is gone. A keychain that
+  refuses (locked) leaves them, listed with why, and the lab is removed all the same; no keychain at
+  all (Linux without a Secret Service) has nothing to delete.
 
 The copy is first moved aside whole: a file in it held open (Windows) refuses the removal with
 nothing deleted. What can't be deleted after that is listed with why; the lab is gone from the app
