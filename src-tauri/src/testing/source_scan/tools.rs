@@ -11,7 +11,7 @@
 const TOOLS: &str = r"docker|vagrant|terraform|tofu|VBoxManage|vboxmanage|prlctl|vmrun|utmctl|virsh|qemu-[a-z0-9_.-]+|aws|az|gcloud|doctl|linode-cli|oci";
 
 /// The files allowed to start one of [`TOOLS`] until the migration step named removes them.
-const ALLOWED: &[(&str, &str)] = &[("machine/tools/install.rs", "L-14: tool and hypervisor installs move to isothrum-machine (I-14)")];
+const ALLOWED: &[(&str, &str)] = &[];
 
 /// A tool started in `code`: the first argument of a call that starts or finds a program, the
 /// head of a (program, args) pair, or a `&str` constant.

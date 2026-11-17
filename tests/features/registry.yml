@@ -2359,7 +2359,7 @@ areas:
           - install_vagrant_plugin
         tests:
           unit:
-            - src-tauri/src/machine/tools/install/tests.rs > only_vagrant_plugin_names_are_installed
+            - src-tauri/src/machine/tools/install/tests.rs > an_invalid_plugin_is_refused_before_running_anything
             - src/features/machine/setup-steps/setup-steps.test.tsx > installs Vagrant, then the hypervisor
             - src/features/machine/setup-steps/setup-steps.test.tsx > shows a failed plugin install, on its row too
             - src/features/settings/settings-rows.test.tsx > installs a missing Vagrant add-on, streaming its log, then re-checks

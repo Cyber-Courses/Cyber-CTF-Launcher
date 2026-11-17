@@ -2,11 +2,11 @@
 import type { DockerEngine } from "./DockerEngine";
 import type { EngineOption } from "./EngineOption";
 import type { HypervisorOption } from "./HypervisorOption";
-import type { Provider } from "./Provider";
 import type { SetupAction } from "./SetupAction";
+import type { VagrantProvider } from "./VagrantProvider";
 
 /**
- * What each choice of the setup window takes on this machine (part of the machine check).
+ * What each choice of a setup takes on this computer.
  */
 export type SetupOptions = { 
 /**
@@ -14,11 +14,11 @@ export type SetupOptions = {
  */
 wsl: Array<SetupAction>, 
 /**
- * The engine the setup installs in one click on this OS.
+ * The engine a setup installs in one click on this OS.
  */
 recommendedEngine: DockerEngine, 
 /**
- * The engine the setup works on until the player picks one: the one in use, else the
+ * The engine a setup works on until its user picks one: the one in use, else the
  * recommended one.
  */
 engine: DockerEngine, 
@@ -28,10 +28,10 @@ engine: DockerEngine,
  */
 engines: Array<EngineOption>, 
 /**
- * The hypervisor the setup works on until the player picks one: an installed one that can
- * run labs, else an installed one, else the first the setup installs, else the first.
+ * The hypervisor a setup works on until its user picks one: an installed one that can run
+ * VMs, else an installed one, else the first a setup installs, else the first.
  */
-hypervisor: Provider | null, 
+hypervisor: VagrantProvider | null, 
 /**
  * The local hypervisors offered here, in the machine check's order.
  */

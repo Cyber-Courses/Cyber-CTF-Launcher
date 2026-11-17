@@ -1,12 +1,19 @@
 use super::shapes::{self, bare};
 use super::*;
 use crate::machine::system::Tool;
+use crate::machine::system::wsl::WslState;
 use crate::runtime::providers::{Unavailable, UtilityState};
+use isothrum_machine::providers::Provider;
 
 const BOTH: [SetupPath; 2] = [SetupPath::Docker, SetupPath::Vm];
 
 fn wanted(paths: &[SetupPath], hypervisors: &[Provider]) -> Wanted {
     Wanted { paths: paths.to_vec(), engine: None, hypervisors: hypervisors.to_vec() }
+}
+
+/// Why each wanted hypervisor isn't set up, as the command line says it.
+fn passed(p: &Plan) -> Vec<(Provider, String)> {
+    p.passed_over.iter().map(|(provider, why)| (*provider, passed_over_said(*provider, why))).collect()
 }
 
 fn plan_of(r: &SystemReport, w: &Wanted) -> Plan {
@@ -44,7 +51,7 @@ fn a_bare_windows_turns_wsl_on_installs_docker_desktop_virtualbox_and_vagrant_an
     assert_eq!(steps(&p), ["wsl: install wsl", "docker: install docker", "virtualbox: install virtualbox", "vagrant: install vagrant"]);
     assert_eq!(p.hypervisor, Some(Provider::Virtualbox));
     assert_eq!(
-        p.passed_over,
+        passed(&p),
         [
             (Provider::Hyperv, "not needed: VirtualBox is set up".to_owned()),
             (Provider::VmwareDesktop, "links out: https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion".to_owned()),
@@ -91,7 +98,7 @@ fn a_bare_debian_installs_docker_engine_libvirt_vagrant_and_its_plugin() {
     let p = plan_of(&r, &wanted(&BOTH, &[Provider::Libvirt, Provider::Virtualbox, Provider::VmwareDesktop]));
     assert_eq!(steps(&p), ["docker: install docker", "libvirt: install libvirt", "vagrant: install vagrant", "plugin:vagrant-libvirt: plugin vagrant-libvirt"]);
     assert_eq!(p.hypervisor, Some(Provider::Libvirt));
-    assert_eq!(p.passed_over[0], (Provider::Virtualbox, "not needed: libvirt is set up".to_owned()));
+    assert_eq!(passed(&p)[0], (Provider::Virtualbox, "not needed: libvirt is set up".to_owned()));
     assert_eq!(p.items, ["docker", "engine:docker-engine", "vagrant", "libvirt", "plugin:vagrant-libvirt"]);
     // Without a choice: the setup window's own, the first hypervisor it installs.
     assert_eq!(plan_of(&r, &wanted(&[SetupPath::Vm], &[])).hypervisor, Some(Provider::Virtualbox));
@@ -113,7 +120,7 @@ fn installed_libvirt_needs_only_its_plugin_and_one_that_cant_run_is_passed_over(
     assert!(matches!(get_of(&r, Provider::Libvirt).as_slice(), [Action::Blocked { reason }] if *reason == crate::runtime::providers::Unavailable::NoKvm));
     let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Libvirt, Provider::Virtualbox]));
     assert_eq!(p.hypervisor, Some(Provider::Virtualbox));
-    assert!(p.passed_over[0].1.starts_with("can't run here: KVM isn't available"), "{:?}", p.passed_over);
+    assert!(passed(&p)[0].1.starts_with("can't run here: KVM isn't available"), "{:?}", passed(&p));
     assert_eq!(steps(&p), ["virtualbox: install virtualbox"]);
 }
 
@@ -142,7 +149,7 @@ fn installed_again(r: &SystemReport, provider: Provider, dependency: Dependency,
     assert_eq!(steps(&p), [format!("{0}: install {0}", provider.id())]);
     let status = r.vm_providers.iter().find(|s| s.provider == provider).unwrap();
     assert_eq!(status.reason.as_ref(), Some(reason));
-    assert!(!r.ready_hypervisors.contains(&provider));
+    assert!(!r.ready_hypervisors.contains(&crate::runtime::providers::Provider::from(provider)));
 }
 
 #[test]
@@ -197,7 +204,7 @@ fn virtualboxs_driver_waiting_for_the_newer_kernel_ends_the_pass_with_a_restart(
     stuck.setup = options(&stuck, false);
     assert!(!get_of(&stuck, Provider::Virtualbox)[0].ends_pass());
     let p = plan_of(&stuck, &wanted(&[SetupPath::Vm], &[Provider::Virtualbox, Provider::Libvirt]));
-    assert!(p.passed_over[0].1.starts_with("can't run here: VirtualBox's kernel driver (vboxdrv) isn't loaded"), "{:?}", p.passed_over);
+    assert!(passed(&p)[0].1.starts_with("can't run here: VirtualBox's kernel driver (vboxdrv) isn't loaded"), "{:?}", passed(&p));
 }
 
 /// `r` with VirtualBox's status reading `reason` (installed or not, as `r` has it), the options
@@ -218,8 +225,8 @@ fn the_setups_own_hypervisor_that_cant_run_here_gives_way_to_one_that_can() {
     let stuck = virtualbox_reads(shapes::debian_virtualbox_awaits_restart(), &Unavailable::VirtualboxDriver { kernel: "6.12.116+deb13-amd64".into() });
     assert_eq!(stuck.setup.hypervisor, Some(Provider::Virtualbox), "still the one installed, as the window shows it");
     let p = plan_of(&stuck, &wanted(&[SetupPath::Vm], &[]));
-    assert_eq!(p.hypervisor, Some(Provider::Libvirt), "{:?}", p.passed_over);
-    assert!(p.passed_over[0].0 == Provider::Virtualbox && p.passed_over[0].1.starts_with("can't run here: VirtualBox's kernel driver"), "{:?}", p.passed_over);
+    assert_eq!(p.hypervisor, Some(Provider::Libvirt), "{:?}", passed(&p));
+    assert!(passed(&p)[0].0 == Provider::Virtualbox && passed(&p)[0].1.starts_with("can't run here: VirtualBox's kernel driver"), "{:?}", passed(&p));
     assert!(steps(&p).contains(&"libvirt: install libvirt".to_owned()), "{:?}", steps(&p));
     // One named by the player is still theirs alone: no other is set up in its place.
     assert_eq!(plan_of(&stuck, &wanted(&[SetupPath::Vm], &[Provider::Virtualbox])).hypervisor, None);
@@ -297,7 +304,7 @@ fn a_linux_without_apt_or_dnf_is_told_to_install_each_tool_itself_instead_of_a_f
     assert_eq!(steps(&p), ["docker: manual Distribution"]);
     assert_eq!(p.hypervisor, None);
     assert_eq!(
-        p.passed_over,
+        passed(&p),
         [
             (Provider::Libvirt, "this distribution isn't supported by the guided setup yet: install libvirt yourself".to_owned()),
             (Provider::Virtualbox, "this distribution isn't supported by the guided setup yet: install VirtualBox yourself".to_owned()),
@@ -385,7 +392,7 @@ fn the_setups_own_hypervisor_is_an_installed_one_that_runs_else_installed_else_i
 #[test]
 fn a_hypervisor_not_offered_here_is_passed_over() {
     let p = plan_of(&shapes::bare_debian(), &wanted(&[SetupPath::Vm], &[Provider::Hyperv, Provider::Libvirt]));
-    assert_eq!(p.passed_over, [(Provider::Hyperv, "not offered on this machine".to_owned())]);
+    assert_eq!(passed(&p), [(Provider::Hyperv, "not offered on this machine".to_owned())]);
     assert_eq!(p.hypervisor, Some(Provider::Libvirt));
 }
 

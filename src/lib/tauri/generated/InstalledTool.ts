@@ -10,7 +10,7 @@ export type InstalledTool = {
  */
 dependency: Dependency, 
 /**
- * Its name on this OS ([`Dependency::name`]).
+ * Its name on this OS, as the setup names it.
  */
 name: string, 
 /**

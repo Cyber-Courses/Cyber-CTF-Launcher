@@ -6,7 +6,7 @@ import type { Unavailable } from "./Unavailable";
 import type { WindowsFeature } from "./WindowsFeature";
 
 /**
- * One thing the setup does, or leaves to the player, on this machine.
+ * One thing a setup does, or leaves to its user, on this computer.
  */
 export type SetupAction = { "kind": "install", 
 /**
@@ -30,11 +30,11 @@ engine: DockerEngine, } | { "kind": "restart",
  */
 feature: WindowsFeature, } | { "kind": "relogin" } | { "kind": "manual", 
 /**
- * Why it is the player's to get.
+ * Why it is the user's to get.
  */
 reason: ManualReason, 
 /**
- * The tool, when it is one the setup installs elsewhere.
+ * The tool, when it is one a setup installs elsewhere.
  */
 dependency: Dependency | null, 
 /**
@@ -42,6 +42,6 @@ dependency: Dependency | null,
  */
 url: string | null, } | { "kind": "blocked", 
 /**
- * Why it can't run here, as a code the webview says in the player's language.
+ * Why it can't run here, as a code a UI says in its own words.
  */
 reason: Unavailable, };

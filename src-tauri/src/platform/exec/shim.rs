@@ -95,54 +95,12 @@ mod tests {
         assert!(err.contains("`a\\nb`") && err.contains("gcloud"), "{err}");
     }
 
-    /// The argument lists `code` passes each wrapped tool as literals: `("az", &["…", …])`, or
-    /// `("az", &args)` with `let args = […]` earlier in the file.
-    fn literal_calls(code: &str) -> Vec<(&'static str, Vec<String>)> {
-        let mut calls = Vec::new();
-        for tool in super::SHIMMED {
-            for (at, quoted) in code.match_indices(&format!("\"{tool}\",")) {
-                let rest = code[at + quoted.len()..].trim_start();
-                let Some(after) = rest.strip_prefix('&') else { continue };
-                let list = if after.starts_with('[') {
-                    after
-                } else {
-                    let name: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-                    match code[..at].rfind(&format!("let {name} = ")) {
-                        Some(def) if !name.is_empty() => &code[def..],
-                        _ => continue,
-                    }
-                };
-                calls.push((*tool, crate::testing::source_scan::literal_list(list)));
-            }
-        }
-        calls
-    }
-
     #[test]
-    fn every_literal_argument_the_crate_passes_a_wrapped_tool_goes_through() {
-        // Regression: the Machine page's Azure probe passed `"azure-cli"` (quotes included) to az;
-        // the guard refused it on every OS, and az read as not installed.
-        let mut checked = 0;
-        for src in crate::testing::source_scan::crate_sources() {
-            for (tool, args) in literal_calls(&src.code) {
-                let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                assert!(check_args(tool, &args).is_ok(), "{}: {tool} {args:?} would be refused", src.path.display());
-                checked += 1;
-            }
-        }
-        // Few are left: isothrum-machine runs the cloud CLIs' account questions (its `cloud`).
-        assert!(checked >= 2, "only {checked} calls found: the scan lost them");
-    }
-
-    #[test]
-    fn literal_calls_are_found_inline_and_through_a_local_array() {
-        let code =
-            r#"run("az", &["version", "--query", "\"azure-cli\""], None); let args = ["auth", x]; run("gcloud", &args, None); run("oci", &dynamic, None);"#;
-        let calls = literal_calls(code);
-        assert_eq!(calls.len(), 2, "{calls:?}");
-        assert!(calls.contains(&("az", vec!["version".into(), "--query".into(), "\"azure-cli\"".into()])));
-        assert!(calls.contains(&("gcloud", vec!["auth".into()])));
-        assert!(check_args("az", &["version", "--query", "\"azure-cli\""]).is_err(), "what #219's probe passed");
+    fn a_quoted_query_is_refused() {
+        // Regression (#219): the Machine page's Azure probe passed `"azure-cli"` (quotes included)
+        // to az; the guard refused it on every OS, and az read as not installed. isothrum-machine
+        // asks the tools now: the launcher passes none of them a literal argument.
+        assert!(check_args("az", &["version", "--query", "\"azure-cli\""]).is_err());
     }
 
     #[tokio::test]

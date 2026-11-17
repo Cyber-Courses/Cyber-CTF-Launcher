@@ -53,8 +53,10 @@ fn wanted(paths: &[SetupFor], providers: &[String], engine: Option<&str>) -> Res
     } else {
         paths.iter().map(|p| if *p == SetupFor::Docker { SetupPath::Docker } else { SetupPath::Vm }).collect()
     };
-    let hypervisors =
-        providers.iter().map(|p| Provider::from_id(p).ok_or_else(|| Failure::usage(format!("unknown provider `{p}`")))).collect::<Result<Vec<_>, _>>()?;
+    let hypervisors = providers
+        .iter()
+        .map(|p| Provider::from_id(p).and_then(Provider::vagrant).ok_or_else(|| Failure::usage(format!("unknown provider `{p}`"))))
+        .collect::<Result<Vec<_>, _>>()?;
     let engine = engine.map(|e| by_id("Docker engine", e)).transpose()?;
     Ok(Wanted { paths, engine, hypervisors })
 }
@@ -68,10 +70,11 @@ fn plan_json(p: &Plan) -> Value {
             let does = would(&s.action).or_else(|| {
                 left_alone(&s.action).map(|o| serde_json::to_value(o).map(|v| v["note"].as_str().unwrap_or_default().to_owned()).unwrap_or_default())
             });
-            json!({ "item": s.item, "kind": crate::machine::setup::run::kind(&s.action), "action": s.action, "does": does, "endsPass": s.action.ends_pass() })
+            json!({ "item": s.item, "kind": s.action.kind(), "action": s.action, "does": does, "endsPass": s.action.ends_pass() })
         })
         .collect();
-    let passed_over: Vec<Value> = p.passed_over.iter().map(|(provider, why)| json!({ "provider": provider, "why": why })).collect();
+    let passed_over: Vec<Value> =
+        p.passed_over.iter().map(|(provider, why)| json!({ "provider": provider, "why": crate::machine::setup::passed_over_said(*provider, why) })).collect();
     json!({ "steps": steps, "hypervisor": p.hypervisor, "passedOver": passed_over, "items": p.items })
 }
 

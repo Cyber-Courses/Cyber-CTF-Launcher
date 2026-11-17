@@ -64,6 +64,7 @@ use crate::machine::system::{self, SystemReport, docker};
 use crate::platform::AppDirs;
 use crate::runtime::providers::{Provider, UtilityState};
 use crate::runtime::{isothrum, launch, lifecycle};
+use isothrum_machine::providers::Provider as Vagrant;
 
 /// What each installed item leaves on the machine, for a caller's leftover audit.
 mod leaves;
@@ -93,7 +94,9 @@ impl Knobs {
             .unwrap_or_default()
             .split(',')
             .filter(|h| !h.trim().is_empty())
-            .map(|h| Provider::from_id(h.trim()).unwrap_or_else(|| panic!("CYBERCTF_TEST_SETUP_HYPERVISORS: `{h}` is not a hypervisor")))
+            .map(|h| {
+                Provider::from_id(h.trim()).and_then(Provider::vagrant).unwrap_or_else(|| panic!("CYBERCTF_TEST_SETUP_HYPERVISORS: `{h}` is not a hypervisor"))
+            })
             .collect();
         Some(Knobs {
             wanted: Wanted { paths, engine: None, hypervisors },
@@ -402,7 +405,7 @@ async fn act(dirs: &AppDirs, out: &mut Out, wanted: &Wanted, report: SystemRepor
 /// Whether each wanted tool is ready by the machine report `r`: Docker installed and answering,
 /// Compose, WSL 2 (Windows: nothing left for it in the plan), Vagrant, the hypervisor installed and
 /// available, its plugin, VMware's utility running.
-fn readiness(r: &SystemReport, wanted: &Wanted, hypervisor: Option<Provider>) -> Vec<(String, bool, String)> {
+fn readiness(r: &SystemReport, wanted: &Wanted, hypervisor: Option<Vagrant>) -> Vec<(String, bool, String)> {
     let mut ready = Vec::new();
     if wanted.paths.contains(&SetupPath::Docker) {
         if r.os == crate::platform::host::Os::Windows {
@@ -518,7 +521,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
 /// The first plan's hypervisor, and why each other one wanted isn't set up.
 fn report_hypervisors(out: &mut Out, first: &Plan, wanted: &Wanted) {
     for (provider, why) in &first.passed_over {
-        out.line(provider.id(), Status::Skipped, 0, why);
+        out.line(provider.id(), Status::Skipped, 0, &setup::passed_over_said(*provider, why));
     }
     if wanted.paths.contains(&SetupPath::Vm) && first.hypervisor.is_none() {
         let tried: Vec<&str> = wanted.hypervisors.iter().map(|p| p.id()).collect();
@@ -585,14 +588,14 @@ async fn the_guided_setup_readies_this_machine() {
     }
     if knobs.wanted.paths.contains(&SetupPath::Vm) {
         match vm_ready {
-            Some(hypervisor) => self_test(&dirs, &mut out, Kind::Vm, Some(hypervisor)).await,
+            Some(hypervisor) => self_test(&dirs, &mut out, Kind::Vm, Some(Provider::from(hypervisor))).await,
             None => out.line("selftest:vm", Status::Skipped, 0, "no hypervisor is ready"),
         }
     }
     if let Some(lab) = &knobs.lab {
         match (docker_ready, vm_ready) {
             (true, _) => example_lab(&mut out, lab, LabPlace::Docker).await,
-            (false, Some(hypervisor)) => example_lab(&mut out, lab, LabPlace::Vm(hypervisor)).await,
+            (false, Some(hypervisor)) => example_lab(&mut out, lab, LabPlace::Vm(Provider::from(hypervisor))).await,
             (false, None) => out.line(&lab_item(lab), Status::Skipped, 0, "nothing to run it on"),
         }
     }
@@ -672,7 +675,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cyberctf-setup-check-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();
         let knobs = Knobs {
-            wanted: Wanted { paths: vec![SetupPath::Docker, SetupPath::Vm], engine: None, hypervisors: vec![Provider::Libvirt, Provider::Virtualbox] },
+            wanted: Wanted { paths: vec![SetupPath::Docker, SetupPath::Vm], engine: None, hypervisors: vec![Vagrant::Libvirt, Vagrant::Virtualbox] },
             results: Some(dir.join("setup.jsonl")),
             report: Some(dir.join("setup.report")),
             logs: dir.clone(),
@@ -718,7 +721,10 @@ mod tests {
         };
         assert_eq!(reason("docker").unwrap().0, "skip");
         assert!(reason("docker").unwrap().1.starts_with("check-only: would install"), "{:?}", reason("docker"));
-        assert_eq!(reason("vagrant").unwrap().1, format!("check-only: would install {}", crate::machine::tools::install::Dependency::Vagrant.name()));
+        assert_eq!(
+            reason("vagrant").unwrap().1,
+            format!("check-only: would install {}", crate::machine::tools::install::name(crate::machine::tools::install::Dependency::Vagrant))
+        );
         assert!(reason("ready:docker").unwrap().1.starts_with("check-only: would be ready once set up"), "{:?}", reason("ready:docker"));
         assert_eq!(reason("selftest:docker").unwrap(), ("skip".to_owned(), "check-only: would run the Docker self-test".to_owned()));
         assert_eq!(reason("lab:hello-stack").unwrap(), ("skip".to_owned(), "check-only: would start and stop it in containers".to_owned()));
@@ -726,9 +732,9 @@ mod tests {
 
     #[test]
     fn readiness_names_each_wanted_tool_as_the_rig_reads_it() {
-        let wanted = Wanted { paths: vec![SetupPath::Docker, SetupPath::Vm], engine: None, hypervisors: vec![Provider::Libvirt] };
+        let wanted = Wanted { paths: vec![SetupPath::Docker, SetupPath::Vm], engine: None, hypervisors: vec![Vagrant::Libvirt] };
         let r = crate::machine::setup::shapes::debian_libvirt_without_plugin();
-        let ready: Vec<(String, bool)> = readiness(&r, &wanted, Some(Provider::Libvirt)).into_iter().map(|(t, ok, _)| (t, ok)).collect();
+        let ready: Vec<(String, bool)> = readiness(&r, &wanted, Some(Vagrant::Libvirt)).into_iter().map(|(t, ok, _)| (t, ok)).collect();
         assert_eq!(
             ready,
             [

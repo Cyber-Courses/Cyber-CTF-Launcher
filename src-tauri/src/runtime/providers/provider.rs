@@ -185,6 +185,7 @@ impl Provider {
 
     /// Where its vendor offers it, when the setup doesn't install it (behind a login, a licence,
     /// or a Windows feature the player turns on by hand).
+    #[cfg(test)]
     pub(crate) fn vendor(self) -> Option<&'static str> {
         self.row()?.vendor
     }

@@ -97,65 +97,9 @@ fn split_tests(path: &Path, src: &str) -> (String, String) {
     }
 }
 
-/// The string literals among the elements of the bracketed list `code` starts with (`[` or
-/// `vec![`), unescaped; elements that aren't literals (a variable, a `format!`) are skipped.
-pub fn literal_list(code: &str) -> Vec<String> {
-    let mut chars = code.char_indices().skip_while(|(_, c)| *c != '[').peekable();
-    let mut literals = Vec::new();
-    let mut depth = 0;
-    while let Some((at, c)) = chars.next() {
-        match c {
-            '[' | '(' | '{' => depth += 1,
-            ']' | ')' | '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    break;
-                }
-            }
-            '"' => {
-                let hashes = code[..at].len() - code[..at].trim_end_matches('#').len();
-                let raw = code[..at - hashes].ends_with('r');
-                let close = format!("\"{}", "#".repeat(hashes));
-                let mut s = String::new();
-                while let Some((i, c)) = chars.next() {
-                    match c {
-                        '"' if code[i..].starts_with(&close) => {
-                            for _ in 0..hashes {
-                                chars.next();
-                            }
-                            break;
-                        }
-                        '\\' if !raw => match chars.next().map(|(_, e)| e) {
-                            Some('n') => s.push('\n'),
-                            Some('r') => s.push('\r'),
-                            Some('t') => s.push('\t'),
-                            Some(other) => s.push(other),
-                            None => {}
-                        },
-                        _ => s.push(c),
-                    }
-                }
-                if depth == 1 {
-                    literals.push(s);
-                }
-            }
-            _ => {}
-        }
-    }
-    literals
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn literal_lists_are_read_with_their_escapes_and_nested_calls_skipped() {
-        assert_eq!(literal_list(r#"&["version", "--query", "\"azure-cli\""], None)"#), ["version", "--query", "\"azure-cli\""]);
-        assert_eq!(literal_list(r##"vec!["a", &format!("{x}", "no"), b, r"c\d", r#"q"q"#]"##), ["a", r"c\d", r#"q"q"#]);
-        assert_eq!(literal_list(r#"["x]y", "z"]; ["after"]"#), ["x]y", "z"]);
-        assert_eq!(literal_list("no list here"), [] as [&str; 0]);
-    }
 
     #[test]
     fn a_files_test_module_is_test_code() {
