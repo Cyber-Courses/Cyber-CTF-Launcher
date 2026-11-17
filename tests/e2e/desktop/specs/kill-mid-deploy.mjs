@@ -1,5 +1,6 @@
 // Resilience: killing the app mid-deploy must not corrupt it; reopening renders a coherent state
-// (the deploy worker's pidfile and status are swept, the shell comes up, no error screen).
+// (the start goes on in the runner service, the reopened app reads the lab from the runner, the
+// shell comes up, no error screen).
 import { appEnds, eventually, finish, goTo, holdsFor, invokeCmd, localLab, localLabId, mainText, openApp, results, stopApp } from "../support/app.mjs";
 
 export const needs = ["running-lab:fixture"];
@@ -25,7 +26,7 @@ try {
   ({ proc: p2, b: b2 } = await openApp());
   await goTo(b2, "Overview");
   // Rendered, not crashed: a title and the sidebar, and no error screen, on every look while the
-  // reopened app sweeps the killed deploy's pidfile and status.
+  // reopened app reads the start the killed app left under way in the runner service.
   let coherent = false;
   let noError = false;
   const sound = async () => {

@@ -557,7 +557,6 @@ mod tests {
     fn the_role_is_read_from_the_arguments_alone() {
         let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
         assert_eq!(super::Role::of(&args(&["app"])), super::Role::App);
-        assert_eq!(super::Role::of(&args(&["app", "deploy", "--job", "/d/lab.json"])), super::Role::App, "no deploy workers any more");
         #[cfg(windows)]
         assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::Interrupter(4242));
         #[cfg(not(windows))]

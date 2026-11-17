@@ -150,7 +150,7 @@ describe("the stack's processes (snapshot.ps1's $StackProcesses, snapshot.sh's S
   const VAGRANT_WINDOWS = [
     'vagrant.exe "C:\\Program Files\\Vagrant\\bin\\vagrant.exe" up --provider hyperv',
     'ruby.exe "C:\\Program Files\\Vagrant\\embedded\\mingw64\\bin\\ruby.exe" "C:\\Program Files\\Vagrant\\embedded\\gems\\gems\\vagrant-2.4.9\\bin\\vagrant" destroy -f',
-    'cyber-ctf-desktop.exe "C:\\Program Files\\Cyber CTF\\cyber-ctf-desktop.exe" deploy --job C:\\Users\\vagrant\\AppData\\Roaming\\org.cyberctf.desktop\\deploys\\a.json',
+    'cyber-ctf-desktop.exe "C:\\Program Files\\Cyber CTF\\cyber-ctf-desktop.exe" serve --home C:\\Users\\vagrant\\AppData\\Roaming\\org.cyberctf.desktop\\isothrum --detach',
   ];
   const NOT_WINDOWS = [
     'OneDrive.exe "C:\\Users\\vagrant\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe" /background',

@@ -67,19 +67,19 @@ describe("processes and listening ports", () => {
   it("dates a process from ps's elapsed time and the snapshot's now, to the minute", () => {
     expect(elapsed("02-17:21:19")).toBe(2 * 86400 + 17 * 3600 + 21 * 60 + 19);
     expect(elapsed("01:49")).toBe(109);
-    const [terraform, vagrant, worker] = parse("process", "process.ps.txt");
+    const [terraform, vagrant, service] = parse("process", "process.ps.txt");
     expect(terraform.pid).toBe(8640);
     expect(vagrant.created).toBe(Math.floor((1_794_312_000 - 109) / 60) * 60);
     // The names that tie it to a run: a Compose project, a lab's cyberctf-…; its paths.
     expect(vagrant.refs).toEqual(["hello-stack"]);
-    expect(worker.paths).toEqual(["/usr/bin/cyber-ctf-desktop", "/home/player/.local/share/org.cyberctf.desktop/deploys/hello.json"]);
+    expect(service.paths).toEqual(["/usr/bin/cyber-ctf-desktop", "/home/player/.local/share/org.cyberctf.desktop/isothrum"]);
     expect(terraform.refs).toEqual(["cyberctf-cloud"]);
   });
 
   it("reads Windows' processes from snapshot.ps1's JSON", () => {
-    const [vmwp, worker] = parse("process", "process.windows.txt");
+    const [vmwp, service] = parse("process", "process.windows.txt");
     expect(vmwp).toMatchObject({ pid: 4120, created: epoch("2026-11-11T12:00:00Z") });
-    expect(worker.paths).toContain("C:\\Users\\vagrant\\AppData\\Roaming\\org.cyberctf.desktop\\deploys\\cyberctf-hello.json");
+    expect(service.paths).toContain("C:\\Users\\vagrant\\AppData\\Roaming\\org.cyberctf.desktop\\isothrum");
   });
 
   it("reads listening sockets from lsof (once a socket), ss and Windows", () => {

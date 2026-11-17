@@ -49,28 +49,19 @@ fn source() -> PathBuf {
 // its data folder's run service, by id, so two tests on one id would find each other's lab held.
 
 /// Lab `id`'s records under the app data folder `base`, beside its copy: the runner's run (taken
-/// down: `absent`), a kept offline source and leftover copies. Returns the files a removal
-/// deletes besides them: none since the deploy workers went.
-fn records(base: &Path, id: &str) -> Vec<PathBuf> {
+/// down: `absent`), a kept offline source and leftover copies.
+fn records(base: &Path, id: &str) {
     record_run(base, id, None, "docker", "absent");
     std::fs::create_dir_all(base.join("offline")).unwrap();
     std::fs::write(base.join("offline").join(format!("{id}.json")), "{}").unwrap();
     for leftover in [format!(".{id}.staging"), format!(".{id}.old")] {
         std::fs::create_dir_all(base.join("labs").join(leftover).join("x")).unwrap();
     }
-    Vec::new()
 }
 
-/// Files of lab `id` under `base` a removal is asked to delete besides its copy (`remove_files`'s
-/// `extra`).
-fn extras(base: &Path, id: &str) -> Vec<PathBuf> {
-    let deploys = base.join("deploys");
-    std::fs::create_dir_all(&deploys).unwrap();
-    let files: Vec<PathBuf> = ["json", "log", "previous.log", "status", "launch-status"].iter().map(|ext| deploys.join(format!("{id}.{ext}"))).collect();
-    for f in &files {
-        std::fs::write(f, "x").unwrap();
-    }
-    files
+/// Lab `id`'s leftover copies under `base` (`records`).
+fn leftovers(base: &Path, id: &str) -> [PathBuf; 2] {
+    [format!(".{id}.staging"), format!(".{id}.old")].map(|name| base.join("labs").join(name))
 }
 
 #[tokio::test]
@@ -85,10 +76,10 @@ async fn a_removal_deletes_the_apps_copy_and_records_and_never_the_folder_it_was
     #[cfg(unix)]
     std::os::unix::fs::symlink(&src, dir.join("to-source")).unwrap();
     let before = tree(&src);
-    let worker = records(t.data(), "local-copy");
+    records(t.data(), "local-copy");
     // Another lab, and its records: untouched.
     let other = t.lab("local-other", &[("isoloom.yml", SPEC)]);
-    let other_worker = records(t.data(), "local-other");
+    records(t.data(), "local-other");
 
     let removal = remove(&t.dirs(), "local-copy").await.unwrap();
 
@@ -100,16 +91,13 @@ async fn a_removal_deletes_the_apps_copy_and_records_and_never_the_folder_it_was
         labs.join(".local-copy.staging"),
         labs.join(".local-copy.old"),
         t.data().join("offline").join("local-copy.json"),
-    ]
-    .iter()
-    .chain(&worker)
-    {
-        assert!(std::fs::symlink_metadata(gone).is_err(), "{} is still there", gone.display());
+    ] {
+        assert!(std::fs::symlink_metadata(&gone).is_err(), "{} is still there", gone.display());
     }
     assert_eq!(tree(&src), before, "the folder it was imported from is as it was");
     assert!(!is_recorded(&runner_home_in(t.data()), "cyberctf-local-copy"), "the runner forgot its run");
     assert!(other.join("isoloom.yml").is_file() && is_recorded(&runner_home_in(t.data()), "cyberctf-local-other"));
-    assert!(other_worker.iter().all(|f| f.is_file()) && t.data().join("offline").join("local-other.json").is_file());
+    assert!(leftovers(t.data(), "local-other").iter().all(|d| d.is_dir()) && t.data().join("offline").join("local-other.json").is_file());
     assert!(crate::labs::imported::list(&t.dirs()).unwrap().iter().all(|l| l.id != "local-copy"), "no longer listed");
     // Removed already: nothing left to remove.
     let again = remove(&t.dirs(), "local-copy").await.unwrap_err();
@@ -122,9 +110,9 @@ async fn a_catalogue_lab_is_removed_the_same_way() {
     let t = TestApp::new();
     let id = "66d71cbf-9b4e-4a78-b3cf-8208227a96b2";
     let dir = t.lab(id, &[("isoloom.yml", SPEC), (runtime::lab::COMMIT_MARKER, "0123456789abcdef0123456789abcdef01234567")]);
-    let worker = records(t.data(), id);
+    records(t.data(), id);
     assert_eq!(remove(&t.dirs(), id).await.unwrap(), Removal::default());
-    assert!(!dir.exists() && !t.data().join("offline").join(format!("{id}.json")).exists() && worker.iter().all(|f| !f.exists()));
+    assert!(!dir.exists() && !t.data().join("offline").join(format!("{id}.json")).exists() && leftovers(t.data(), id).iter().all(|d| !d.exists()));
 }
 
 #[tokio::test]
@@ -157,16 +145,15 @@ fn what_couldnt_be_deleted_is_reported_and_the_rest_goes() {
     let t = TestApp::new();
     let dir = t.lab("local-invoice", &[("isoloom.yml", SPEC)]);
     records(t.data(), "local-invoice");
-    let worker = extras(t.data(), "local-invoice");
     let run = t.data().join("offline").join("local-invoice.json");
     let held = |path: &Path| if path == run { Err(std::io::Error::other("held by another program")) } else { delete(path) };
 
-    let removal = remove_files(t.data(), "local-invoice", &worker, |a, b| std::fs::rename(a, b), held).unwrap();
+    let removal = remove_files(t.data(), "local-invoice", &[], |a, b| std::fs::rename(a, b), held).unwrap();
 
     assert_eq!(removal.left, [Leftover { path: run.display().to_string(), error: "held by another program".into() }]);
     assert!(run.is_file(), "what failed is still there");
     assert!(!dir.exists() && !t.data().join("labs").join(".local-invoice.removing").exists(), "the copy went");
-    assert!(worker.iter().all(|f| !f.exists()), "the rest went");
+    assert!(leftovers(t.data(), "local-invoice").iter().all(|d| !d.exists()), "the rest went");
 }
 
 #[test]
@@ -174,13 +161,12 @@ fn a_copy_that_wont_move_aside_refuses_the_removal_with_nothing_deleted() {
     let t = TestApp::new();
     let dir = t.lab("local-invoice", &[("isoloom.yml", SPEC)]);
     records(t.data(), "local-invoice");
-    let worker = extras(t.data(), "local-invoice");
     let denied = |_: &Path, _: &Path| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
 
-    let err = remove_files(t.data(), "local-invoice", &worker, denied, delete).unwrap_err();
+    let err = remove_files(t.data(), "local-invoice", &[], denied, delete).unwrap_err();
 
     assert!(err.is_refusal() && err.to_string().contains("is open in another program") && err.to_string().contains("nothing was deleted"), "{err}");
-    assert!(dir.join("isoloom.yml").is_file() && worker.iter().all(|f| f.is_file()));
+    assert!(dir.join("isoloom.yml").is_file() && leftovers(t.data(), "local-invoice").iter().all(|d| d.is_dir()));
     assert!(t.data().join("offline").join("local-invoice.json").is_file());
 }
 
@@ -251,10 +237,10 @@ async fn a_password_store_that_refuses_leaves_the_password_listed_and_the_lab_re
     // A secrets file that doesn't parse: the store can't delete from it (as a locked keychain can't).
     std::fs::write(&file, "{").unwrap();
     let dir = t.lab("local-store", &[("isoloom.yml", SPEC)]);
-    let worker = records(t.data(), "local-store");
+    records(t.data(), "local-store");
     let removal = remove(&t.dirs(), "local-store").await.unwrap();
     // The lab and its records went all the same.
-    assert!(!dir.exists() && worker.iter().all(|f| !f.exists()));
+    assert!(!dir.exists() && leftovers(t.data(), "local-store").iter().all(|d| !d.exists()));
     assert!(!is_recorded(&runner_home_in(t.data()), "cyberctf-local-store"));
     // What the store keeps for it alone stayed, said with why, for the player to delete.
     let [left, values] = removal.left.as_slice() else { panic!("{removal:?}") };

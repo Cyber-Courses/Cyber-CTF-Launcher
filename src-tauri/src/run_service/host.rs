@@ -126,7 +126,8 @@ mod tests {
     #[test]
     fn serve_is_asked_for_by_name_with_an_absolute_home_and_never_guesses_one() {
         assert_eq!(request(args(&[])), None, "the app itself");
-        assert_eq!(request(args(&["deploy", "--job", "x"])), None, "a deploy worker");
+        assert_eq!(request(args(&["cyberctf://lab/x"])), None, "a deep link");
+        assert_eq!(request(args(&["labs", "serve"])), None, "serve only as the first argument");
         let home = if cfg!(windows) { r"C:\data\isothrum" } else { "/data/isothrum" };
         assert_eq!(request(args(&["serve", "--home", home, "--detach"])), Some(Ok(Serve { home: PathBuf::from(home), detach: true })));
         assert_eq!(request(args(&["serve", "--home", home])), Some(Ok(Serve { home: PathBuf::from(home), detach: false })));

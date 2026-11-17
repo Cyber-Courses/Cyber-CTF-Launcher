@@ -78,17 +78,17 @@ foreach ($link in @('cyberctf://', 'cyberctf://lab/..%2F..%2Fetc', "cyberctf://l
 $app.Refresh()
 Record 'malformed cyberctf:// links do not crash the app' (-not $app.HasExited) ''
 
-# --- Deploy worker with a bad job --------------------------------------------------------
-$tmp = Join-Path $env:TEMP "cyberctf-smoke-$PID"
-New-Item -ItemType Directory -Force $tmp | Out-Null
-$missing = Start-Process -FilePath $exe -ArgumentList 'deploy', '--job', (Join-Path $tmp 'missing.json') -PassThru
-$exitedMissing = $missing.WaitForExit(15000)
-Set-Content (Join-Path $tmp 'garbage.json') '{ not json' -Encoding UTF8
-$garbage = Start-Process -FilePath $exe -ArgumentList 'deploy', '--job', (Join-Path $tmp 'garbage.json') -PassThru
-$exitedGarbage = $garbage.WaitForExit(15000)
-Record 'deploy worker with a missing/garbage job exits non-zero, no hang' ($exitedMissing -and $exitedGarbage -and $missing.ExitCode -ne 0 -and $garbage.ExitCode -ne 0) "exit $($missing.ExitCode) / $($garbage.ExitCode)"
+# --- Runner service asked wrongly ---------------------------------------------------------
+# `<exe> serve --home <home>` runs the exe as the runner service of that home (the process that
+# runs the labs' operations). Asked with no home, or a relative one, it says why and exits 2
+# before anything of the app starts: no hang, no second window, the running app untouched.
+$noHome = Start-Process -FilePath $exe -ArgumentList 'serve' -PassThru
+$exitedNoHome = $noHome.WaitForExit(15000)
+$relative = Start-Process -FilePath $exe -ArgumentList 'serve', '--home', 'isothrum' -PassThru
+$exitedRelative = $relative.WaitForExit(15000)
+Record 'runner service with no home or a relative one exits 2, no hang' ($exitedNoHome -and $exitedRelative -and $noHome.ExitCode -eq 2 -and $relative.ExitCode -eq 2) "exit $($noHome.ExitCode) / $($relative.ExitCode)"
 $app.Refresh()
-Record 'app unaffected by the failed workers' (-not $app.HasExited) ''
+Record 'app unaffected by the refused services' (-not $app.HasExited) ''
 
 # --- Killed, then relaunched -------------------------------------------------------------
 StopApp
@@ -138,7 +138,6 @@ Start-Sleep 3 # the NSIS uninstaller copies itself to %TEMP% and returns before 
 $gone = -not (Test-Path $exe)
 Record 'silent uninstall removes the app' ($un.ExitCode -eq 0 -and $gone) "exit $($un.ExitCode)"
 Record 'uninstall keeps the player''s data and logs' ((Test-Path $dataDir) -and (Test-Path $logFile)) ''
-Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
 $results | Format-Table -AutoSize
 $failed = @($results | Where-Object Result -eq 'FAIL').Count

@@ -120,7 +120,7 @@ describe("the desktop cases", () => {
       "stop-during-start",
       "double-start",
       "close-mid-deploy",
-      "kill-worker",
+      "kill-runner-service",
       "park-resume",
       "reimport-running",
     ]);
@@ -805,9 +805,9 @@ describe("the apps' logs", () => {
   it.skipIf(!unix)("are copied beside the specs' logs before the run's folder goes, the signed-out run's too, never home/", () => {
     const writes = `import { mkdirSync, writeFileSync } from "node:fs";
 const root = process.env.CYBERCTF_WDIO_ROOT;
-for (const dir of ["app/logs", "app/deploys", "signed-out/app/logs", "home/.cyberctf"]) mkdirSync(root + "/" + dir, { recursive: true });
+for (const dir of ["app/logs", "app/isothrum", "signed-out/app/logs", "home/.cyberctf"]) mkdirSync(root + "/" + dir, { recursive: true });
 writeFileSync(root + "/app/logs/cyberctf.log", "the app started\\nsession token t\\nthe lab failed\\n");
-writeFileSync(root + "/app/deploys/local-lab.log", "deploying\\n");
+writeFileSync(root + "/app/isothrum/service.log", "starting cyberctf-local-lab\\n");
 writeFileSync(root + "/signed-out/app/logs/cyberctf.log", "signed out\\n");
 writeFileSync(root + "/home/.cyberctf/secrets.log", "never copied\\n");
 console.log("FAILED: it (1s) the lab failed"); process.exit(1);`;
@@ -815,7 +815,7 @@ console.log("FAILED: it (1s) the lab failed"); process.exit(1);`;
     expect(r.status).toBe(1);
     const app = join(r.dir, "logs", "app");
     expect(readFileSync(join(app, "logs", "cyberctf.log"), "utf8")).toBe("the app started\nthe lab failed\n");
-    expect(readFileSync(join(app, "deploys", "local-lab.log"), "utf8")).toBe("deploying\n");
+    expect(readFileSync(join(app, "isothrum", "service.log"), "utf8")).toBe("starting cyberctf-local-lab\n");
     expect(readFileSync(join(app, "signed-out", "logs", "cyberctf.log"), "utf8")).toBe("signed out\n");
     expect(existsSync(join(r.dir, "logs", "home"))).toBe(false);
     expect(existsSync(join(app, "home"))).toBe(false);

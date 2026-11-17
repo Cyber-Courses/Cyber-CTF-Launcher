@@ -151,7 +151,7 @@ function Get-FileProbe {
 # program (vagrant.exe, or the `...\bin\vagrant` script its Ruby runs), never a word of a path: on a
 # machine whose account is `vagrant` everything runs under C:\Users\vagrant\ (OneDrive, Docker
 # Desktop's --user-data-dir, the Store's pwsh), and a bare `vagrant` took all of it for the stack's.
-$StackProcesses = 'cyber-ctf|cyberctf|org\.cyberctf|deploy --job|mstsc|isothrum|isoloom|^vagrant\.exe |\\bin\\vagrant(\.exe)?("| |$)|qemu-system|VBoxHeadless|VBoxNetDHCP|VBoxNetNAT|vmware-vmx|vmwp|terraform|websockify|socat|ssh(\.exe)? .*-[LRDNw]'
+$StackProcesses = 'cyber-ctf|cyberctf|org\.cyberctf|mstsc|isothrum|isoloom|^vagrant\.exe |\\bin\\vagrant(\.exe)?("| |$)|qemu-system|VBoxHeadless|VBoxNetDHCP|VBoxNetNAT|vmware-vmx|vmwp|terraform|websockify|socat|ssh(\.exe)? .*-[LRDNw]'
 
 function Get-NetworkProbe {
   Invoke-JsonProbe 'process' 'CIM' 'Get-CimInstance' {

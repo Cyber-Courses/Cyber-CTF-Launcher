@@ -193,8 +193,8 @@ never reads or changes their labs, settings, session or secrets, and it removes 
   written first): `cleanup` confirms Clean up only when every download it would remove is the
   run's, and otherwise names the others and leaves them all. The apps stopped between specs are
   the ones the run launched (`records/apps/<pid>`), everything left in the spec's process group,
-  and their deploy workers, never another copy of the same binary.
-- **Afterwards.** The apps' logs (the app's own and its labs' deploy logs, every `*.log` under
+  and their runner services (`serve --home <run's folder>…`), never another copy of the same binary.
+- **Afterwards.** The apps' logs (the app's own `cyberctf.log` and its runner service's `service.log`, every `*.log` under
   `app/`, the signed-out run's too; never `home/`, and a line naming a password, a token or a key
   left out) are copied beside the specs' logs (`tests/e2e/desktop/.state/logs/app/`), whatever the
   verdicts. Then the folder is removed when the run ends, interrupted or not (the run's labs

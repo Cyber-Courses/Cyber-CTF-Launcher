@@ -212,13 +212,13 @@ files_probes() {
 
 # --- Processes and listening ports ---------------------------------------------------------
 
-# The processes the stack starts (docs/contributing/testing/leftovers.md, "Processes"): the app, its deploy workers
+# The processes the stack starts (docs/contributing/testing/leftovers.md, "Processes"): the app, its runner service
 # and screen bridge, Isothrum, Vagrant, the hypervisors' VM processes, tunnels, Terraform. Only
 # those are recorded: the whole process table would carry other programs' arguments. Vagrant by its
 # program (the command's first word, or the `.../bin/vagrant` script its Ruby runs), never a word of
 # a path: on a machine whose account is `vagrant` (a Vagrant box) everything runs under
 # /home/vagrant/.
-STACK_PROCESSES='cyber-ctf|cyberctf|org\.cyberctf|deploy --job|isothrum|isoloom|^ *[0-9]+ +[-0-9:]+ +([^ ]*/)?vagrant( |$)|/bin/vagrant( |$)|qemu-system|VBoxHeadless|VBoxNetDHCP|VBoxNetNAT|utmctl|QEMULauncher|prl_vm_app|vmware-vmx|terraform|xfreerdp|remmina|ssh .*-[LRDNw]'
+STACK_PROCESSES='cyber-ctf|cyberctf|org\.cyberctf|isothrum|isoloom|^ *[0-9]+ +[-0-9:]+ +([^ ]*/)?vagrant( |$)|/bin/vagrant( |$)|qemu-system|VBoxHeadless|VBoxNetDHCP|VBoxNetNAT|utmctl|QEMULauncher|prl_vm_app|vmware-vmx|terraform|xfreerdp|remmina|ssh .*-[LRDNw]'
 
 process_probes() {
   # pid, its elapsed time (ps's etime: the diff dates it from the note's "now"), its command,

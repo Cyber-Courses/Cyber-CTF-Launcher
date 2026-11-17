@@ -32,7 +32,7 @@ export const RUNNER_NEEDS = {
   hypervisor: "a hypervisor (CYBERCTF_TEST_VM_PROVIDER) that answers here",
   server: "a server's settings (CYBERCTF_TEST_SERVER_ENV)",
   "own-frame": "the app draws its own window frame (Linux, Windows)",
-  unix: "a Unix signal reaches the deploy worker (not Windows)",
+  unix: "a Unix signal reaches the runner service (not Windows)",
 };
 
 /** cases.tsv's rows: each case's id, spec, form, knobs and groups (its declarations still empty).

@@ -27,7 +27,7 @@ kill-mid-deploy	kill-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 stop-during-start	stop-during-start	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 double-start	double-start	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 close-mid-deploy	close-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB	resilience
-kill-worker	kill-worker	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+kill-runner-service	kill-runner-service	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 park-resume	park-resume	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 reimport-running	reimport-running	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 machine	machine	-	CYBERCTF_TEST_VM_PROVIDER	vm

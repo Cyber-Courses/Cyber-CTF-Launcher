@@ -126,7 +126,7 @@ of what its specs need, so `launch` is in two:
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | `shell`      | smoke, title-bar, settings, onboarding, setup-screens, labs, deep-link, fail-offline, fail-badlab, fail-signedout, fail-docker, attack-on-stopped | no lab, but `labs`' import                      |
 | `lab`        | launch, restart, stop, launch-ui, attack-box, attack-shell, stop-with-box                                                                         | the fixture lab's life                          |
-| `resilience` | launch, kill-mid-deploy, stop-during-start, double-start, close-mid-deploy, kill-worker, park-resume, reimport-running                            | what breaks a start                             |
+| `resilience` | launch, kill-mid-deploy, stop-during-start, double-start, close-mid-deploy, kill-runner-service, park-resume, reimport-running                    | what breaks a start                             |
 | `vm`         | machine, lab-form-container, lab-actions, offline-start, lab-form-per-machine, lab-form-vm, screens, server-lab, cleanup                          | signed in, a hypervisor, a server; cleanup last |
 
 `--all` runs the groups in that order, each case once. A group that runs on another machine
