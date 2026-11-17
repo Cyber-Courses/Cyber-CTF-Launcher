@@ -258,7 +258,10 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     assert_eq!(lines.first(), Some(&crate::platform::redact::redact(&isothrum_machine::install::command_line(&steps[0])).into_owned()), "{lines:?}");
     assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
     assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
-    assert!(tools.last(&format!("{} {}", steps[0].program, steps[0].args.join(" "))).is_some());
+    // The step ran as planned, its program and arguments compared as they are: a call's line
+    // quotes an argument with a space (Linux's `pkexec env sh -c <script>`), so the plan's words
+    // joined by spaces are no part of it.
+    assert!(tools.calls().iter().any(|c| c.program == steps[0].program && c.args == steps[0].args), "{:?}", tools.calls());
     let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
     assert_eq!(ours, [Dependency::Terraform]);
 
