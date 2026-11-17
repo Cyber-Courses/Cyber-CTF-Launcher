@@ -1,7 +1,7 @@
 use super::*;
-use crate::machine::system::docker::Engine;
 use crate::runtime::providers::testing::{Faked, fake};
 use crate::testing::test_app::TestApp;
+use isothrum_machine::docker::Engine;
 use isothrum_runner::fake::{Call, FakeProcesses, Reply};
 use std::net::{Ipv4Addr, TcpListener};
 
