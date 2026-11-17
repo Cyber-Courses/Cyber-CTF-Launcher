@@ -91,8 +91,16 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     let LabRef { dir, id, runtime } = lab;
     let place = destination(dirs, runtime, &to)?;
     let (host, docker_context) = (to.host(), to.docker_context);
-    let inputs = Inputs { values: env, default_ports: to.placement.default_ports(), docker_context: None };
-    privileged_allowed(|| Ok(lab::is_privileged(&lab::load(dir)?)))?;
+    // The lab's spec says which values are sensitive ([`lab::plain_inputs`]): those are masked in
+    // every log from now on, wherever a tool prints them, and go to the run as secrets.
+    let spec = lab::load(dir);
+    let plain = spec.as_ref().map(lab::plain_inputs).unwrap_or_default();
+    mask_sensitive(env, &plain);
+    let inputs = Inputs { values: env, plain: &plain, default_ports: to.placement.default_ports(), docker_context: None };
+    privileged_allowed(|| match &spec {
+        Ok(spec) => Ok(lab::is_privileged(spec)),
+        Err(_) => Ok(lab::is_privileged(&lab::load(dir)?)),
+    })?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
     // lab would keep billing). A run here taken down outside the app is forgotten first.
@@ -113,6 +121,14 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
         // On a cloud account the per-machine form is cloud-vm (one instance per machine). The
         // dispatch on the provider is `start_on_server`'s to make (the connection).
         Place::Host(host, per_machine) => start_on_server(dirs, lab, (host, per_machine), inputs, &mut log).await,
+    }
+}
+
+/// Masks in every log, from now on, each of the launch's values `env` but the `plain` ones
+/// ([`lab::plain_inputs`]): a token or a flag, wherever a tool prints it.
+fn mask_sensitive(env: &[(String, String)], plain: &[String]) {
+    for (_, value) in env.iter().filter(|(name, _)| !plain.contains(name)) {
+        crate::platform::redact::register(value);
     }
 }
 

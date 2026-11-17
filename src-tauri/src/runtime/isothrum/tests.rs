@@ -192,7 +192,7 @@ fn launch_env() -> Vec<(String, String)> {
 
 /// The launch's `values`, on the lab's own host ports (the player's choice).
 fn on_own_ports(values: &[(String, String)]) -> Inputs<'_> {
-    Inputs { values, default_ports: true, docker_context: None }
+    Inputs { values, plain: &[], default_ports: true, docker_context: None }
 }
 
 /// A fixture whose lab is up and then parked with `Park::Shutdown`, the launcher tools scripted
@@ -450,13 +450,32 @@ fn the_deploy_log_shows_steps_tool_lines_and_warnings_only() {
 }
 
 #[test]
+fn the_specs_sensitive_flag_alone_decides_value_or_secret() {
+    // A spec with both kinds: a sensitive token (by its name alone), a URL marked not sensitive,
+    // and a value it doesn't declare (never trusted as plain).
+    let spec = crate::runtime::lab::parse(
+        "version: 1\nname: t\nnetworks: { lab: { cidr: 10.30.0.0/24 } }\ninputs:\n  CTF_LAUNCH_TOKEN: {}\n  CTF_API_URL: { sensitive: false }\nmachines:\n  web: { networks: { lab: 10 }, app: { image: nginx:1.27 } }\n",
+    )
+    .unwrap();
+    let plain = crate::runtime::lab::plain_inputs(&spec);
+    assert_eq!(plain, ["CTF_API_URL"]);
+    let values =
+        [("CTF_LAUNCH_TOKEN", "t0ken"), ("CTF_API_URL", "https://api.example"), ("CTF_FLAG_MAIN", "flag{x}")].map(|(n, v)| (n.to_owned(), v.to_owned()));
+    let opts = start_options(Inputs { values: &values, plain: &plain, ..Inputs::default() }, None);
+    assert_eq!(opts.env.get("CTF_API_URL").map(String::as_str), Some("https://api.example"), "plain: a value the run keeps");
+    let secrets: Vec<&str> = opts.secrets.iter().map(|(name, _)| name).collect();
+    assert_eq!(secrets, ["CTF_FLAG_MAIN", "CTF_LAUNCH_TOKEN"], "sensitive, or undeclared: secrets");
+    assert!(!opts.env.contains_key("CTF_LAUNCH_TOKEN") && !opts.env.contains_key("CTF_FLAG_MAIN"));
+}
+
+#[test]
 fn a_start_gives_the_launch_values_as_secrets_and_the_ports_choice_as_a_value() {
     let values = [("CTF_FLAG_MAIN".to_owned(), "flag{x}".to_owned())];
     let opts = start_options(Inputs::values(&values), None);
     assert_eq!(opts.secrets.get("CTF_FLAG_MAIN").map(SecretValue::expose), Some("flag{x}"));
     assert_eq!(opts.secrets.iter().count(), 1, "the launch's values only");
     assert!(opts.env.is_empty(), "random ports: no fixed publish");
-    let fixed = start_options(Inputs { values: &[], default_ports: true, docker_context: None }, None);
+    let fixed = start_options(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, None);
     assert_eq!(fixed.env.get("ISOLOOM_PUBLISH_FIXED").map(String::as_str), Some("1"));
     assert_eq!(fixed.secrets.iter().count(), 0, "the ports choice is no lab input");
     assert_eq!(opts.provider, None);

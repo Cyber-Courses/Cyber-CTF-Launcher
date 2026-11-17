@@ -155,7 +155,7 @@ async fn isoloom_examples_as_containers_join_their_run_on_the_lab_page() {
         let lab = Installed::new(id, lab::Target::Docker);
         let run = lab.run(Kind::Docker);
         let mut log = Vec::new();
-        run.up(Inputs { values: &[], default_ports: true, docker_context: None }, None, &mut |l| log.push(l)).await.unwrap();
+        run.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, None, &mut |l| log.push(l)).await.unwrap();
         let message = lab.message(lab::Target::Docker);
         assert!(log.join("\n").ends_with(message.trim_end()), "{id}: the start ends with the lab's message: {log:?}");
         let status = run.status().await.unwrap();
@@ -185,7 +185,7 @@ async fn isoloom_examples_as_vms_join_their_run_on_the_lab_page_and_keep_their_p
         let lab = Installed::new(id, lab::Target::Vagrant);
         let run = lab.run(Kind::Vm);
         let mut log = Vec::new();
-        run.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
+        run.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
         let message = lab.message(lab::Target::Vagrant);
         assert!(log.join("\n").ends_with(message.trim_end()), "{id}: the start ends with the lab's message: {log:?}");
         let status = run.status().await.unwrap();

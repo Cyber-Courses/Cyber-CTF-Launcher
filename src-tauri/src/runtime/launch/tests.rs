@@ -1,6 +1,6 @@
 use super::local::{UTM_NOT_ALLOWED, check_utm};
 use super::{Destination, LabRef, Placement, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, low_memory_warning, per_machine_runs_on};
-use super::{server, warn_if_low_memory};
+use super::{mask_sensitive, server, warn_if_low_memory};
 use crate::runtime::lab::emulated_arches;
 use crate::runtime::providers::testing::{Faked, fake, no_tools};
 use crate::runtime::recorded::Recorded;
@@ -381,4 +381,15 @@ fn a_placement_the_lab_has_no_form_for_is_refused_by_its_code_as_it_is() {
     let _policy = Override::with(&[Key::DisableCloudLaunches]);
     assert_eq!(check(Runtime::Docker, cloud("aws1", false)).unwrap_err().code(), Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() });
     assert!(check(Runtime::Vm, server("pve")).is_ok());
+}
+
+#[test]
+fn only_the_values_the_spec_marks_sensitive_are_masked_in_the_logs() {
+    use crate::platform::redact::redact;
+    let env = [("CTF_LAUNCH_TOKEN", "t0ken-masked-7f3a"), ("CTF_API_URL", "https://api.shown-7f3a.example"), ("CTF_FLAG_MAIN", "flag{masked-7f3a}")]
+        .map(|(n, v)| (n.to_owned(), v.to_owned()));
+    mask_sensitive(&env, &["CTF_API_URL".to_owned()]);
+    let line = redact("token t0ken-masked-7f3a, flag flag{masked-7f3a}, api https://api.shown-7f3a.example");
+    assert!(!line.contains("t0ken-masked-7f3a") && !line.contains("flag{masked-7f3a}"), "{line}");
+    assert!(line.contains("https://api.shown-7f3a.example"), "a plain value stays readable: {line}");
 }

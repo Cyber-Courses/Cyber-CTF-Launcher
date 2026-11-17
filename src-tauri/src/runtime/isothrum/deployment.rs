@@ -230,15 +230,15 @@ impl Deployment {
     /// values and credentials with the runner's key for the lab's instances, a later change's its
     /// credentials only (the runner replays what the start was given).
     async fn changing(&self, start: Option<Start<'_>>) -> Result<RunOptions> {
-        let values = start.map_or(&[][..], |s| s.inputs.values);
+        let inputs = start.map_or_else(Inputs::default, |s| s.inputs);
         match &self.site {
             Site::Here | Site::Esxi(_) => Ok(self.placed(start.map_or_else(RunOptions::new, |s| start_options(s.inputs, s.provider)))),
-            Site::Server(place) => Ok(server::applying(place, values, &self.key())),
+            Site::Server(place) => Ok(server::applying(place, inputs, &self.key())),
             Site::Cloud(place) if start.is_some() => {
                 // The key the lab's instances let in: a plain value the record keeps, so every
                 // later operation replays it.
                 let keys = self.key_values().await?;
-                Ok(keys.into_iter().fold(place.options(values), |o, (k, v)| o.with_env(k, v)))
+                Ok(keys.into_iter().fold(place.options(inputs), |o, (k, v)| o.with_env(k, v)))
             }
             Site::Cloud(place) => Ok(place.later_options()),
         }
@@ -250,7 +250,7 @@ impl Deployment {
     fn reading(&self) -> RunOptions {
         match &self.site {
             Site::Here | Site::Esxi(_) => self.placed(RunOptions::new()),
-            Site::Server(place) => server::options(place, &[]),
+            Site::Server(place) => server::options(place, Inputs::default()),
             Site::Cloud(_) => RunOptions::new(),
         }
     }

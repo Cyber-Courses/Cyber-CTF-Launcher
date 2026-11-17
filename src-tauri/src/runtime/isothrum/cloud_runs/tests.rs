@@ -19,19 +19,19 @@ fn place() -> CloudPlace {
 fn a_module_of_the_labs_own_gets_where_the_account_works() {
     // Regression: the cloud-services target's AWS_REGION (and Azure's subscription, Google's
     // project and region) was never given, so a module whose provider names no region had none.
-    let aws = place().options(&[]);
+    let aws = place().options(super::super::Inputs::default());
     assert_eq!(aws.env.get("AWS_REGION").map(String::as_str), Some("us-east-1"));
     let azure = CloudPlace { tf_env: vec![("ARM_SUBSCRIPTION_ID".into(), "sub-1".into())], ..CloudPlace::default() };
-    assert_eq!(azure.options(&[]).env.get("ARM_SUBSCRIPTION_ID").map(String::as_str), Some("sub-1"));
+    assert_eq!(azure.options(super::super::Inputs::default()).env.get("ARM_SUBSCRIPTION_ID").map(String::as_str), Some("sub-1"));
     let gcp = CloudPlace { region: Some("europe-west1".into()), project: Some("cyberctf-labs-1".into()), ..CloudPlace::default() };
-    let gcp = gcp.options(&[]);
+    let gcp = gcp.options(super::super::Inputs::default());
     assert_eq!(gcp.env.get("GOOGLE_PROJECT").map(String::as_str), Some("cyberctf-labs-1"));
     assert_eq!(gcp.env.get("GOOGLE_REGION").map(String::as_str), Some("europe-west1"));
 }
 
 #[test]
 fn credentials_are_connection_secrets_while_region_and_profile_are_parameters() {
-    let opts = place().options(&[("FLAG".to_owned(), "flag{x}".to_owned())]);
+    let opts = place().options(super::super::Inputs::values(&[("FLAG".to_owned(), "flag{x}".to_owned())]));
     // The account's credentials and the launch's input slots travel as secrets…
     assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("AKIA"));
     assert_eq!(opts.secrets.get("AWS_SECRET_ACCESS_KEY").map(SecretValue::expose), Some("sk"));
