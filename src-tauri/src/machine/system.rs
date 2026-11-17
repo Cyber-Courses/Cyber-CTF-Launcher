@@ -82,7 +82,7 @@ pub struct SystemReport {
 pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     let data = dirs.data().ok().map(std::path::Path::to_path_buf);
     // A tool installed since the last check (from the app or not) is found without a restart.
-    crate::platform::env_path::refresh();
+    crate::platform::env_path::refresh().await;
     let cx = providers::machine_setup().await;
     let (found, (ovftool, ovftool_location)) =
         tokio::join!(Box::pin(isothrum_machine::check::check(&cx, wsl::marks(&dirs))), crate::machine::tools::ovftool::probe(&cx, data.as_deref()));

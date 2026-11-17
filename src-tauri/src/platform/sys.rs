@@ -16,9 +16,7 @@ pub use unix::{is_root, login_name};
 #[cfg(all(windows, test))]
 pub use windows::registry_value_exists;
 #[cfg(windows)]
-pub use windows::{
-    Hive, delete_user_registry_value, is_elevated, keep_std_handles, registry_string, registry_values, send_ctrl_c, set_path, set_user_registry_string,
-};
+pub use windows::{Hive, delete_user_registry_value, is_elevated, keep_std_handles, registry_values, send_ctrl_c, set_path, set_user_registry_string};
 
 /// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.
 /// Here, not with the Windows calls, so what reads it (the policy) is tested on every OS.

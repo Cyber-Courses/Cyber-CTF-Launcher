@@ -206,7 +206,7 @@ struct Tools {
 /// `ovftool` (the machine layer's check, handed in).
 async fn tools_here(ovftool: impl Future<Output = std::result::Result<String, String>>) -> Tools {
     // A tool installed since the app started is found without a restart.
-    crate::platform::env_path::refresh();
+    crate::platform::env_path::refresh().await;
     let (status, ovftool) = tokio::join!(providers::status(Provider::VmwareEsxi), ovftool);
     let plugin = match status {
         Some(s) if s.available => Ok(()),
@@ -232,7 +232,7 @@ fn tools_ready(tools: Tools) -> Result<String> {
 /// The test on `target`, its folder `work`, each step said through `r`.
 pub(crate) async fn test(work: &Path, target: &Target, r: &Reporter) -> Result<()> {
     // A tool installed since the app started (Terraform, Vagrant) is found without a restart.
-    crate::platform::env_path::refresh();
+    crate::platform::env_path::refresh().await;
     let cx = providers::machine_selftest();
     let vm = TestVm::new(&target.words.vm, HOSTNAME_INSIDE);
     let ran = Box::pin(machine::run(&cx, work, &target.server, &vm, &|p| say(r, &target.words, work, p))).await;
