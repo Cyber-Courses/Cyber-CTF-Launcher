@@ -28,8 +28,8 @@ pub async fn screen_connect(window: WebviewWindow) -> Result<screen::Connection>
         let dirs = AppDirs::from(window.app_handle());
         let dir = paths::lab_dir(&dirs, &which.id)?;
         let located = host::locate(&dirs, &dir, &which.id, which.runtime).await?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
-        let trust = match &located {
-            host::Host::Server { conn, .. } => crate::runtime::server::store::load_host(&dirs, &conn.id)?.tls_trust(),
+        let trust = match (located.run.site(), &located.conn) {
+            (crate::runtime::isothrum::Site::Server(_), Some(conn)) => crate::runtime::server::store::load_host(&dirs, &conn.id)?.tls_trust(),
             _ => crate::runtime::server::tls_pin::Trust::System,
         };
         let (mut reached, tunnel) = Reached::of(located.graphical_console(&dirs, &which.machine).await?, trust)?;

@@ -535,8 +535,8 @@ mod tests {
         // The box is a machine the launcher adds to the lab, the run updated with the account's
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
         let placed = async |runtime| match crate::runtime::attack_box::locate(&t.dirs(), &dir, "srv", runtime).await.unwrap() {
-            Some(b) => match &b.host {
-                crate::runtime::host::Host::Cloud { conn, .. } => (conn.id.clone(), b.target, b.vm),
+            Some(b) => match (b.host.run.site(), &b.host.conn) {
+                (crate::runtime::isothrum::Site::Cloud(_), Some(conn)) => (conn.id.clone(), b.target, b.vm),
                 _ => panic!("in the cloud account"),
             },
             None => panic!("a box"),

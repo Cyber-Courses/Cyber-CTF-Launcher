@@ -22,7 +22,7 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
         Some(host) => status_at(host).await?,
         None => LabStatus::default(),
     };
-    let here = matches!(host, Some(Host::Local(_)));
+    let here = host.as_ref().is_some_and(Host::is_here);
     // What the page may do on it, by the lifecycle's own rules.
     let controls = super::lifecycle::controls(host.as_ref(), status.provider.as_deref());
     // The attack box the launcher added is no machine of the lab's own (`attack_box`).
@@ -69,14 +69,15 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
 /// The lab as the runner sees it where it runs. The failed-launch masking is applied by `status`,
 /// uniformly, so it is not repeated here.
 async fn status_at(host: &Host) -> Result<LabStatus> {
-    Ok(match host {
-        // On this machine: a container lab on Docker or in one local VM, or a VM lab.
-        Host::Local(run) => run.status().await?,
-        // ESXi (Vagrant on the host): Vagrant's states, each VM at its own address. A cloud
-        // account (cloud-vm, cloud-docker, cloud-services): from the runner's record. A Proxmox
-        // server: from the runner's own record and state, each VM as the server's API says it
-        // stands, asked with the server's credentials (a VM removed in its web UI gone).
-        Host::Esxi { run, conn } | Host::Cloud { run, conn } | Host::Server { run, conn } => on_server(run.status().await?, conn),
+    // On this machine: a container lab on Docker or in one local VM, or a VM lab. ESXi (Vagrant
+    // on the host): Vagrant's states, each VM at its own address. A cloud account (cloud-vm,
+    // cloud-docker, cloud-services): from the runner's record. A Proxmox server: from the
+    // runner's own record and state, each VM as the server's API says it stands, asked with the
+    // server's credentials (a VM removed in its web UI gone).
+    let status = host.run.status().await?;
+    Ok(match &host.conn {
+        Some(conn) => on_server(status, conn),
+        None => status,
     })
 }
 
@@ -212,10 +213,11 @@ pub fn lab_installed(dirs: &AppDirs, id: &str) -> bool {
 /// launch: as the runner's status publishes the lab's ports ([`isothrum::Deployment::local_url`]).
 /// None for a lab run as VMs or elsewhere, or when nothing is published.
 pub async fn primary_url(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Option<String> {
-    match host::locate(dirs, dir, id, runtime).await.ok()?? {
-        Host::Local(run) if run.target() == Some(super::lab::Target::Docker) => run.local_url().await.ok().flatten(),
-        _ => None,
+    let host = host::locate(dirs, dir, id, runtime).await.ok()??;
+    if !host.is_here() || host.target() != Some(super::lab::Target::Docker) {
+        return None;
     }
+    host.run.local_url().await.ok().flatten()
 }
 
 #[cfg(test)]

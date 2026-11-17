@@ -455,7 +455,7 @@ fn every_run_gets_the_claims_values_empty_unless_the_launch_gives_them() {
 fn placed_box(f: &Fixture) -> crate::runtime::attack_box::Placed {
     use crate::runtime::attack_box::Placed;
     use crate::runtime::host::Host;
-    Placed { host: Host::Local(f.run()), dir: f.home.dir.clone(), target: lab::Target::Docker, vm: false }
+    Placed { host: Host::here(f.run()), dir: f.home.dir.clone(), target: lab::Target::Docker, vm: false }
 }
 
 #[tokio::test]

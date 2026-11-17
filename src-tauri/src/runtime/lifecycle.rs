@@ -38,7 +38,7 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
 async fn local_run(dirs: &AppDirs, lab: LabRef<'_>, elsewhere: &str) -> Result<isothrum::Deployment> {
     let LabRef { dir, id, runtime } = lab;
     match host::locate(dirs, dir, id, runtime).await? {
-        Some(Host::Local(run)) => Ok(run),
+        Some(Host { run, conn: None }) => Ok(run),
         Some(_) => Err(Error::Invalid(elsewhere.into())),
         None => Err(Error::Invalid(CLOUD_PARK.into())),
     }
@@ -96,8 +96,8 @@ fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
 /// runs.
 pub(crate) fn controls(host: Option<&Host>, provider: Option<&str>) -> Vec<Control> {
     match host {
-        Some(Host::Local(run)) => local_controls(run.target(), provider),
-        Some(Host::Esxi { run, .. }) if run.target() == Some(lab::Target::Vagrant) => vec![Control::Provision],
+        Some(Host { run, conn: None }) => local_controls(run.target(), provider),
+        Some(host) if host.on_esxi() && host.target() == Some(lab::Target::Vagrant) => vec![Control::Provision],
         Some(_) | None => Vec::new(),
     }
 }
@@ -156,7 +156,7 @@ async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut l
     let _lock = lock_lab(dirs, id).await?;
     // Through the runner: a VM lab on this machine, or on an ESXi host. Proxmox and the clouds
     // aren't re-provisioned in place yet.
-    let Some(Host::Local(run) | Host::Esxi { run, .. }) = host::locate(dirs, dir, id, runtime).await? else {
+    let Some(Host { run, .. }) = host::locate(dirs, dir, id, runtime).await?.filter(|h| h.is_here() || h.on_esxi()) else {
         return Err(Error::Invalid("Re-running provisioning isn't available for labs on Proxmox or a cloud yet.".into()));
     };
     log(provision_target(&run.status().await?, machine)?);
