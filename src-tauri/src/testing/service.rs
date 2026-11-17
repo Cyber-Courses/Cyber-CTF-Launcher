@@ -4,7 +4,9 @@
 //! ([`serve_home`], [`serve`]: a runner of its own config), on the test's own runtime, so a test on
 //! Tokio's paused clock runs its service on that clock too; any other home is served on demand,
 //! on this host's tools as the app's service is ([`client`]), and stops once idle or once its
-//! home's folder is gone (the test's temporary folder dropped).
+//! home's folder is gone (the test's temporary folder dropped). Only Unix removes that folder while
+//! the service holds its store open: Windows refuses to remove an open file, so there the folder
+//! stays until the service has ended, which it does with its test's runtime or once idle.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -289,6 +291,9 @@ mod tests {
     // A service a test left serving keeps its store and its socket open for the rest of the run:
     // a full run's then outgrew macOS's 256 open files.
 
+    // Windows won't remove the folder while the service holds its store open (`state.db`, with
+    // no sharing for deletion): the test's temporary folder outlives its drop there.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_service_started_on_demand_ends_with_its_homes_folder() {
         let dir = tempfile::tempdir().unwrap();
