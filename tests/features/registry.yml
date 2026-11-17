@@ -1961,7 +1961,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/system/docker/tests.rs > a_daemon_this_account_cannot_use_is_reported_without_waiting
-            - src-tauri/src/platform/exec/docker.rs > a_denied_docker_socket_is_not_a_stopped_daemon
+            - src-tauri/src/machine/system/docker/tests.rs > a_daemon_that_refuses_this_account_is_the_denied_error_and_a_stopped_one_isnt
             - src-tauri/src/platform/exec/docker.rs > the_denied_message_names_the_command_to_run
             - src/features/machine/machine-screen.test.tsx > explains a denied or stopped current engine
           web:

@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use isothrum_runner::fake::{FakeProcesses, Reply};
 
 use super::*;
-use crate::platform::exec::docker_denied;
 use crate::runtime::providers::testing::{Machine, host};
 
 /// `docker info`'s operating system line, as the launcher's error when the daemon gives none.
@@ -28,10 +27,14 @@ fn docker(tools: FakeProcesses) -> (Machine, Arc<FakeProcesses>) {
 #[tokio::test]
 async fn a_daemon_that_refuses_this_account_is_the_denied_error_and_a_stopped_one_isnt() {
     let _machine = docker(FakeProcesses::script().expect("docker info", Reply::fail(1, DENIED)).build());
-    assert!(docker_denied(&daemon_os().await.unwrap_err()));
+    // Told apart by isothrum-machine (`says_denied`), each in the CLI's own words.
+    assert!(matches!(daemon_os().await.unwrap_err(), Error::CommandFailed { stderr, .. } if stderr.contains(DENIED)));
     let _machine = docker(FakeProcesses::script().expect("docker info", Reply::fail(1, DOWN)).build());
     let err = daemon_os().await.unwrap_err();
-    assert!(!docker_denied(&err) && err.to_string().contains("Cannot connect to the Docker daemon"), "{err}");
+    assert!(
+        matches!(&err, Error::CommandFailed { stderr, .. } if stderr.contains(DOWN)) && err.to_string().contains("Cannot connect to the Docker daemon"),
+        "{err}"
+    );
     let _machine = docker(FakeProcesses::script().expect("docker", Reply::missing()).build());
     assert!(matches!(daemon_os().await.unwrap_err(), Error::ToolMissing { tool: "docker" }));
 }

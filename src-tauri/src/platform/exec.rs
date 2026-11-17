@@ -12,8 +12,6 @@ use std::time::Duration;
 /// The image pattern, for the bindings the tests write (`testing::ts_bindings`).
 #[cfg(test)]
 pub use docker::IMAGE_PATTERN;
-#[cfg(test)]
-pub use docker::docker_denied;
 pub use docker::login_name;
 pub use docker::{ImageRef, docker_denied_error, valid_image};
 
