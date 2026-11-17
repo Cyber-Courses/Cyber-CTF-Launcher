@@ -140,7 +140,7 @@ async fn a_taken_fixed_port_names_what_holds_it() {
     let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let port = held.local_addr().unwrap().port();
     installed(&t, "fixed", &web(port, true));
-    for (lsof, named) in [("p4123\ncnginx\n", "nginx (pid 4123)"), ("p77\ncom.docke\n", "Docker (pid 77)")] {
+    for (lsof, named) in [("p4123\ncnginx\n", "nginx (pid 4123)"), ("p77\nccom.docke\n", "Docker (pid 77)")] {
         let _tools = fake(FakeProcesses::model(move |c: &Call| match c.program.as_str() {
             "docker" if c.args.first().is_some_and(|a| a == "context") => Reply::ok("default *\n"),
             "docker" => Reply::ok("27.3.1\n"),
