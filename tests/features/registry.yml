@@ -3006,13 +3006,13 @@ areas:
           desktop:
             - server-lab/vm-test
           integration:
-            - server-vm-test-proxmox
+            - server-lab-vm-test-proxmox
         rig:
           - desktop-e2e
         gaps:
           web: no spec runs the VM test
           desktop: needs CYBERCTF_TEST_SERVER_ENV; skips without it; desktop-e2e not run on the rig yet
-          integration: Proxmox only (server-vm-test-proxmox); the ESXi VM test is tested in isothrum-machine on a modelled Vagrant, never on a real host
+          integration: Proxmox only (server-lab-vm-test-proxmox); the ESXi VM test is tested in isothrum-machine on a modelled Vagrant, never on a real host
 
       - id: servers.remove
         what: Remove a host after a system confirmation; one with labs still on it is refused with the reason, and the default moves to another server.
