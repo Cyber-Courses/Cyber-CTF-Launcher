@@ -21,6 +21,7 @@ pub(crate) mod lifecycle;
 mod model;
 pub(crate) mod paths;
 pub mod placement;
+pub(crate) mod preflight;
 pub mod providers;
 pub(crate) mod proxmox;
 mod reaper;

@@ -232,6 +232,28 @@ fn here_on(options: &RunOptions, provider: Provider) -> Result<Placement> {
     Ok(Placement::Vms { provider })
 }
 
+/// Whether Isoloom's `options` for a `runtime` lab allow `placement`, as it is: the refusal
+/// [`choose`] would make for the same pick, never another place. `host_kind` names a saved host's
+/// kind (none: it isn't saved).
+pub(crate) fn allowed(runtime: Runtime, options: &RunOptions, placement: &Placement, host_kind: impl Fn(&str) -> Result<Option<Provider>>) -> Result<()> {
+    let kind_of = |id: &str| host_kind(id)?.ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()));
+    match placement {
+        _ if runtime == Runtime::Cloud && !matches!(placement, Placement::Cloud { .. }) => Err(Error::coded(Code::PickCloudAccount)),
+        Placement::Docker { .. } if runtime == Runtime::Vm => Err(Error::coded(Code::NoHypervisor)),
+        Placement::Docker { .. } if options.docker.is_none() => Err(refused(options, None, "containers on this machine")),
+        Placement::Docker { .. } => Ok(()),
+        Placement::Vms { provider } => here_on(options, *provider).map(drop),
+        Placement::Server { host } => match on_host(runtime, options, host, kind_of(host)?, false)? {
+            Placement::Server { .. } => Ok(()),
+            _ => Err(Error::Refused("this host is a cloud account, not a server".into())),
+        },
+        Placement::Cloud { account, per_machine } => match on_host(runtime, options, account, kind_of(account)?, *per_machine)? {
+            Placement::Cloud { .. } => Ok(()),
+            _ => Err(Error::Refused("this host is a server, not a cloud account".into())),
+        },
+    }
+}
+
 /// Whether `paths` has one on `provider`.
 fn offers(paths: &[RunPath], provider: Provider) -> bool {
     paths.iter().any(|p| p.provider == Some(provider))
