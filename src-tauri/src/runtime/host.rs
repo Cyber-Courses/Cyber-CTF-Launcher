@@ -158,9 +158,9 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::providers::testing::no_tools;
     use crate::runtime::test_support::record_run;
     use crate::testing::test_app::TestApp;
-    use crate::testing::tools::Tools;
 
     /// A lab with both forms: a container per machine, and a VM recipe for it.
     const SPEC: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, vm: { box: debian/bookworm64 }, networks: { lab: 10 } }\n";
@@ -188,7 +188,7 @@ mod tests {
     #[tokio::test]
     async fn a_lab_is_found_where_its_run_is_recorded_in_the_form_it_was_started_in() {
         let t = TestApp::new();
-        let _tools = Tools::strict_rules(&[]);
+        let _tools = no_tools();
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
         // On this machine: as its runtime says, or as one VM per machine; a cloud-services lab on
         // no account runs nowhere.
@@ -222,7 +222,7 @@ mod tests {
     #[tokio::test]
     async fn cloud_services_have_no_machines_to_check_nor_to_put_an_attack_box_beside() {
         let t = TestApp::new();
-        let tools = Tools::strict_rules(&[]);
+        let tools = no_tools();
         let dir = t.lab("t", &[("isoloom.yml", SPEC), ("cloud/lab.yml", "provider: aws\n"), ("cloud/main.tf", "")]);
         record_run(t.data(), "t", Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true }))), "cloud-docker/aws", "ready");
         let host = locate(&t.dirs(), &dir, "t", Runtime::Cloud).await.unwrap().unwrap();

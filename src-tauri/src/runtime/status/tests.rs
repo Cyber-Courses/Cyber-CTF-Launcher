@@ -60,7 +60,7 @@ async fn only_a_local_container_lab_has_a_url_here() {
     let t = crate::testing::test_app::TestApp::new();
     let dir = t.lab("t", &[]);
     // A VM lab, a lab on a server host, a container lab as local VMs: no Docker probe at all.
-    let _tools = crate::testing::tools::Tools::strict_rules(&[]);
+    let _tools = crate::runtime::providers::testing::no_tools();
     assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Vm).await, None);
     record_run(t.data(), "t", None, "vagrant", "ready");
     assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Docker).await, None);
@@ -154,11 +154,11 @@ async fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
 
 #[tokio::test]
 async fn a_lab_recorded_on_a_host_that_is_no_longer_saved_names_that_host() {
-    use crate::testing::tools::Tools;
+    use crate::runtime::providers::testing::no_tools;
     let t = crate::testing::test_app::TestApp::new();
     let dir = t.lab("web", &[]);
     crate::runtime::test_support::record_run(t.data(), "web", Some("gone1"), "cloud-vm/aws", "ready");
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     for runtime in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
         let err = super::status(&t.dirs(), &dir, "web", runtime).await.expect_err("refused").to_string();
         assert_eq!(err, "server host `gone1` not found", "{runtime:?}");
@@ -182,7 +182,7 @@ fn a_parked_mark_is_reported_only_while_the_lab_is_down_whatever_the_mode() {
 async fn the_status_carries_what_the_page_may_do_where_the_lab_runs() {
     use crate::runtime::Control;
     let t = crate::testing::test_app::TestApp::new();
-    let _tools = crate::testing::tools::Tools::strict_rules(&[]);
+    let _tools = crate::runtime::providers::testing::no_tools();
     let dir = t.lab("web", &[]);
     // Never run: nothing to pause or shut down (the runner lists the ways a run parks from its
     // record, `Status::parks`). Containers stopped outside the app come back with a resume

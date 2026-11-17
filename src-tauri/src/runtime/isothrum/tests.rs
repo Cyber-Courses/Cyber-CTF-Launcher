@@ -7,8 +7,8 @@ use isothrum_runner::{EventKind, Format, Status, StepState, WarningCode};
 use super::test_lab::prelude::*;
 use super::*;
 use crate::error::Error;
+use crate::runtime::providers::testing::{Faked, no_tools};
 use crate::runtime::{Park, Place, Runtime, lab};
-use crate::testing::tools::Tools;
 use isothrum_runner::HostPort;
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: { CTF_LAUNCH_TOKEN: { default: dev-launch-token } }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
@@ -171,10 +171,10 @@ fn on_own_ports(values: &[(String, String)]) -> Inputs<'_> {
 
 /// A fixture whose lab is up and then parked with `Park::Shutdown`, the launcher tools scripted
 /// empty — the shared start of the park/resume tests. The caller keeps the `Fixture` and the
-/// `Tools` guard, which hold the lab's folder and the fake tools for the rest of the test.
-async fn up_then_parked() -> (Fixture, Deployment, Tools) {
+/// tools' guard, which hold the lab's folder and the fake tools for the rest of the test.
+async fn up_then_parked() -> (Fixture, Deployment, Faked) {
     let f = Fixture::new();
-    let tools = Tools::strict_rules(&[]);
+    let tools = no_tools();
     let run = f.up().await;
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
     (f, run, tools)
@@ -183,7 +183,7 @@ async fn up_then_parked() -> (Fixture, Deployment, Tools) {
 #[tokio::test]
 async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let mut log = Vec::new();
     f.run().up(on_own_ports(&launch_env()), None, &mut |l| log.push(l)).await.unwrap();
     let up = last_compose(&f, "up", None).unwrap();
@@ -201,7 +201,7 @@ async fn a_container_lab_started_on_an_engine_stays_on_it_for_its_page_and_its_s
     // The player chose an engine other than the current one: the runner records it with the run,
     // so the page's reads and the stop, which name none, go to it too.
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.run();
     let env = launch_env();
     let on_orbstack = Inputs { docker_context: Some("orbstack"), ..on_own_ports(&env) };
@@ -218,7 +218,7 @@ async fn a_container_lab_started_on_an_engine_stays_on_it_for_its_page_and_its_s
 #[tokio::test]
 async fn the_lab_page_reads_the_runners_status() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     let s = run.status().await.unwrap();
     assert!(s.running && s.parked.is_none());
@@ -251,7 +251,7 @@ async fn a_lab_parks_and_resumes() {
 #[tokio::test]
 async fn a_container_lab_pauses_and_resumes_as_it_was() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     run.park(Park::Pause, &mut |_| {}).await.unwrap();
     assert!(last_compose(&f, "pause", None).is_some(), "a Pause freezes the lab's containers");
@@ -271,7 +271,7 @@ async fn a_container_lab_pauses_and_resumes_as_it_was() {
 #[tokio::test]
 async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     assert_eq!(last_compose(&f, "up", None).and_then(|c| c.env("CTF_LAUNCH_TOKEN").map(str::to_owned)).as_deref(), Some("t0k"));
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
@@ -287,7 +287,7 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
 #[tokio::test]
 async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_defaults() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     f.run().up(Inputs::default(), None, &mut |_| {}).await.unwrap();
     let up = last_compose(&f, "up", None).expect("the lab goes up");
     assert_eq!(up.env("CTF_LAUNCH_TOKEN"), None, "{}", up.line());
@@ -302,7 +302,7 @@ async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_def
 #[tokio::test]
 async fn a_container_stopped_outside_the_app_is_resumed_as_it_is() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     f.set(Containers::Stopped);
     let down = run.status().await.unwrap();
@@ -332,7 +332,7 @@ async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
 async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
     use crate::runtime::status::{forget_gone_with, refuse_replace, still_up};
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     let mut quiet = |_: String| {};
@@ -357,7 +357,7 @@ async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
 #[tokio::test]
 async fn a_second_start_of_a_running_lab_is_refused_and_a_down_removes_it_all() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     let again = run.up(on_own_ports(&launch_env()), None, &mut |_| {}).await.unwrap_err();
     assert!(matches!(&again, Error::Refused(m) if m.starts_with("This lab is already running on this machine")), "{again}");
@@ -369,7 +369,7 @@ async fn a_second_start_of_a_running_lab_is_refused_and_a_down_removes_it_all() 
 #[tokio::test]
 async fn the_labs_checks_run_through_the_runner() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.run();
     let not_up = run.check().await.unwrap_err().to_string();
     assert!(not_up.contains("isn't running"), "{not_up}");
@@ -455,7 +455,7 @@ fn placed_box(f: &Fixture) -> crate::runtime::attack_box::Placed {
 #[tokio::test]
 async fn an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_published() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
     let err =
@@ -468,7 +468,7 @@ async fn an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_publish
 #[tokio::test]
 async fn an_attack_box_whose_start_failed_in_the_run_stays_in_the_lab_for_stop_to_take_out() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     f.up().await;
     f.model().failing_up = true;
@@ -487,7 +487,7 @@ async fn an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull() {
     // Regression: the box's image downloading inside the start's `up` was read as the lab's `up`
     // running out of time, and the player was told to check Docker's resources.
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     f.up().await;
     f.model().failing_pull = true;
@@ -508,7 +508,7 @@ async fn an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull() {
 #[tokio::test]
 async fn an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     f.up().await;
     let placed = placed_box(&f);
@@ -663,7 +663,7 @@ async fn a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_st
     // Regression: the player deleted the lab's generated folder while it ran. Its page read it as
     // stopped, and its Stop said "Nothing to remove" and left its containers running.
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     std::fs::remove_file(lab::compose_file(&f.home.dir)).unwrap();
     assert!(run.status().await.unwrap().running, "the page still sees it");
@@ -677,7 +677,7 @@ async fn a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_st
 #[tokio::test]
 async fn a_running_lab_whose_whole_folder_is_gone_says_what_is_left() {
     let f = Fixture::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = no_tools();
     let run = f.up().await;
     std::fs::remove_dir_all(&f.home.dir).unwrap();
     let err = run.down(&mut |_| {}).await.unwrap_err().to_string();

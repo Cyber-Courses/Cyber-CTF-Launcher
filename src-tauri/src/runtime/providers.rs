@@ -237,6 +237,12 @@ pub(crate) mod testing {
         Faked { fake, _machine: machine }
     }
 
+    /// A machine on which no tool may run, until dropped: any call the code under test makes
+    /// fails the test ([`fake`] with an empty script).
+    pub(crate) fn no_tools() -> Faked {
+        fake(FakeProcesses::script().build())
+    }
+
     /// [`fake`]'s guard. Its fields drop in order: the guard's handle on the fake, then the
     /// machine's, so the fake's own check runs as the machine goes.
     pub(crate) struct Faked {
