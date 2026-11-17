@@ -63,7 +63,7 @@ import { fileURLToPath } from "node:url";
 import { NO_WINDOW_MANAGER, needsDisplay, runEnv, startDisplay } from "./display.mjs";
 import { preflightHint } from "./preflight.mjs";
 import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "../support/host.mjs";
-import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runTool } from "../support/owned.mjs";
+import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runServices, runTool } from "../support/owned.mjs";
 import {
   DEAD_APP,
   RUNNER_NEEDS,
@@ -240,6 +240,7 @@ function dropRunRoot() {
   saveAppLogs();
   if (KEEP) console.log(`kept: the run's folder ${RUN_ROOT} (CYBERCTF_TEST_DESKTOP_KEEP)`);
   else {
+    stopRunServices();
     rmSync(RUN_ROOT, { recursive: true, force: true });
     if (existsSync(RUN_ROOT)) console.log(`couldn't remove all of the run's folder ${RUN_ROOT}`);
   }
@@ -316,6 +317,39 @@ function stopDeployWorkers() {
     return (runTool("powershell.exe", ["-NoProfile", "-Command", script]) ?? "").includes("killed");
   }
   return runTool("pkill", ["-9", "-f", `deploy --job ${RUN_ROOT}`]) !== null;
+}
+/** How long a runner service has after SIGTERM before SIGKILL. */
+const SERVICE_STOP_MS = 5000;
+/** The runner services whose home is in the run's folder (owned.mjs `runServices`: the app's
+ *  `serve --home <home> --detach`, which outlives the app and would otherwise run on, its home
+ *  gone, until it idles out), stopped before the folder goes: SIGTERM, then SIGKILL to any still
+ *  up after SERVICE_STOP_MS. Never another run's or the user's. */
+function stopRunServices() {
+  const listing = WINDOWS
+    ? runTool("powershell.exe", ["-NoProfile", "-Command", 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }'])
+    : runTool("ps", ["-eo", "pid=,args="]);
+  const pids = runServices(listing ?? "", RUN_ROOT);
+  if (pids.length === 0) return;
+  if (WINDOWS) pids.forEach(killPid);
+  else
+    for (const pid of pids)
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* gone already */
+      }
+  for (let waited = 0; waited < SERVICE_STOP_MS && pids.some(isRunning); waited += 200) sleepSync(200);
+  pids.filter(isRunning).forEach(killPid);
+  say(`cleanup: the run's runner service${pids.length > 1 ? "s" : ""} stopped (${pids.join(", ")})`);
+}
+/** Whether process `pid` still runs. */
+function isRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 /** The run's own apps still up, stopped, never another copy of the same binary: the ones the run
  *  launched (records/apps/<pid>, by app.mjs and the preflight; fail-signedout's under
