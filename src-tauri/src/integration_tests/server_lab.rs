@@ -118,6 +118,8 @@ async fn a_proxmox_host_passes_the_connection_test() {
     let (Some(address), Some(password)) = (super::support::knob("CYBERCTF_TEST_PVE_HOST"), super::support::knob("CYBERCTF_TEST_PVE_PASSWORD")) else {
         return;
     };
+    // The real ssh, ssh-keygen and ssh-keyscan: a unit test's machine has no tools.
+    crate::runtime::providers::testing::read_this_machine();
     let opt = super::support::var;
     let profile = |username: &str, bridge: &str| proxmox_profile(&address, 8006, username, bridge);
     let bridge = opt("CYBERCTF_TEST_PVE_BRIDGE").unwrap_or_else(|| "vmbr1".into());
@@ -139,6 +141,13 @@ async fn a_proxmox_host_passes_the_connection_test() {
     // The message is the contract here: it is what the Servers page's Test shows the player, and
     // the result has no field of its own for the bridge.
     check(!r.ok && r.message.contains("vmbr-nope"), format!("a bridge that isn't there is named ({})", r.message), &mut f);
+    // The setup's Placement step: the server's nodes, storages and bridges, each with its default.
+    match crate::runtime::proxmox::placement::read_host(&profile("root@pam", &bridge), &password, address.parse().ok()).await {
+        Ok(p) => {
+            check(p.nodes.iter().any(|n| n.default_bridge.is_some() && n.default_disk.is_some()), format!("the placement choices are read ({p:?})"), &mut f)
+        }
+        Err(e) => check(false, format!("the placement choices are read ({e})"), &mut f),
+    }
 
     if let (Some(token), Some(secret), Some(ssh_key)) = (opt("CYBERCTF_TEST_PVE_TOKEN_ID"), opt("CYBERCTF_TEST_PVE_TOKEN_SECRET"), ssh_key) {
         let r = test(&profile(&token, &bridge), &secret, &ssh_key).await;

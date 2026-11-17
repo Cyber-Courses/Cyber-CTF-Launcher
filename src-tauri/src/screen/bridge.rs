@@ -411,7 +411,7 @@ async fn open_websocket(
         req = req.header("Sec-WebSocket-Protocol", p);
     }
     let answer = req.send().await.map_err(|e| match pinned.refused() {
-        Some(refusal) => refusal.error("the Proxmox server").to_string(),
+        Some(refusal) => crate::runtime::server::tls_pin::refused(refusal, "the Proxmox server").to_string(),
         None => e.to_string(),
     })?;
     if answer.status() != reqwest::StatusCode::SWITCHING_PROTOCOLS {
