@@ -333,6 +333,46 @@ pub(crate) async fn public_key(home: &Path) -> Result<String> {
     call(home, |client| async move { client.public_key().await }).await.map_err(Failure::into_error)
 }
 
+/// What `home`'s runner downloaded and records (its runs' images and boxes, and those adopted),
+/// each with its size when it can be read.
+///
+/// # Errors
+///
+/// No service can be reached, or it can't read its record.
+pub(crate) async fn downloads(home: &Path) -> Result<Vec<isothrum_runner::Download>> {
+    call(home, |client| async move { client.downloads().await }).await.map_err(Failure::into_error)
+}
+
+/// Removes the downloads `home`'s runner records that `which` names: how each went.
+///
+/// # Errors
+///
+/// No service can be reached, or it can't read or write its record.
+pub(crate) async fn remove_downloads(home: &Path, which: isothrum_runner::DownloadsToRemove) -> Result<Vec<isothrum_runner::DownloadRemoval>> {
+    call(home, |client| {
+        let which = which.clone();
+        async move { client.remove_downloads(which).await }
+    })
+    .await
+    .map_err(Failure::into_error)
+}
+
+/// Adopts `adopted` into `home`'s runner's record of downloads: those on this machine now, as
+/// they were fetched.
+///
+/// # Errors
+///
+/// No service can be reached; the engine or Vagrant couldn't say what they hold; the record can't
+/// be written.
+pub(crate) async fn adopt_downloads(home: &Path, adopted: Vec<isothrum_runner::DownloadToAdopt>) -> Result<Vec<isothrum_runner::Download>> {
+    call(home, |client| {
+        let adopted = adopted.clone();
+        async move { client.adopt_downloads(adopted).await }
+    })
+    .await
+    .map_err(Failure::into_error)
+}
+
 /// The recorded runs of `home`'s service past their lifetime that may still hold something.
 ///
 /// # Errors

@@ -546,7 +546,6 @@ areas:
           unit:
             - src-tauri/src/runtime/isothrum/vm_tests.rs > a_vm_lab_goes_up_on_its_hypervisor_through_the_runner
             - src-tauri/src/runtime/isothrum/vm_tests.rs > the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_process
-            - src-tauri/src/runtime/launch/tests.rs > a_start_downloads_images_for_containers_here_and_boxes_for_every_vm_form_here
             - src-tauri/src/runtime/launch/tests.rs > qemu_emulates_only_the_vms_built_for_another_cpu
             - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here on the hypervisor the backend picks for it there
           web:
@@ -1578,7 +1577,6 @@ areas:
           unit:
             - src-tauri/src/runtime/attack_box/tests.rs > beside_containers_the_box_runs_the_picked_image_on_the_picked_network
             - src-tauri/src/runtime/attack_box/tests.rs > a_container_box_makes_the_player_account_where_it_starts_then_idles
-            - src-tauri/src/runtime/host.rs > only_a_container_box_on_this_machine_pulls_its_image_here
             - src-tauri/src/runtime/attack_box/place.rs > on_an_arm_computer_the_box_of_a_lab_here_runs_natively_on_every_local_form
           desktop:
             - attack-box
@@ -2132,9 +2130,8 @@ areas:
           - machine_storage
         tests:
           unit:
-            - src-tauri/src/machine/storage.rs > present_boxes_are_the_apps_downloaded_versions_with_their_size
-            - src-tauri/src/machine/storage.rs > only_the_attack_boxs_own_repository_is_the_apps_by_name
-            - src-tauri/src/machine/storage.rs > reads_boxes_from_vagrantfiles
+            - src-tauri/src/machine/storage/tests.rs > storage_lists_and_cleans_only_the_apps_downloads_taken_in_from_what_earlier_launchers_recorded
+            - src-tauri/src/machine/storage/tests.rs > only_the_attack_boxs_own_repository_is_the_apps_by_name
             - src-tauri/src/machine/storage/owned/record.rs > box_listings_read_as_name_provider_and_version
             - src/features/machine/machine-interaction.test.tsx > says the read failed and why, never that nothing was downloaded
           desktop:
@@ -2739,17 +2736,13 @@ areas:
           - machine_storage_clean
         tests:
           unit:
-            - src-tauri/src/machine/storage.rs > clean_up_removes_only_the_apps_downloads_and_forgets_what_went
-            - src-tauri/src/machine/storage.rs > a_removal_that_fails_says_why_the_item_stayed
-            - src-tauri/src/machine/storage.rs > a_download_recorded_during_a_clean_up_is_kept
-            - src-tauri/src/machine/storage/owned.rs > only_what_appeared_during_the_operation_is_claimed
+            - src-tauri/src/machine/storage/tests.rs > storage_lists_and_cleans_only_the_apps_downloads_taken_in_from_what_earlier_launchers_recorded
+            - src-tauri/src/machine/storage/owned.rs > only_what_appeared_during_the_self_test_is_adopted
             - src/features/machine/machine-interaction.test.tsx > asks once and removes once however often Clean up is pressed
             - src/features/machine/machine-screen.test.tsx > lists the downloads and frees space once the system dialog confirms it
           desktop:
             - cleanup/downloads-cancel
             - cleanup/downloads
-          integration:
-            - src-tauri/src/machine/storage.rs > real_docker_clean_up_keeps_the_players_image
         rig:
           - desktop-e2e
         gaps:

@@ -247,16 +247,4 @@ mod tests {
         assert!(locate(&t.dirs(), &dir, "t", Runtime::Docker).await.unwrap().unwrap().has_machines());
         assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Docker).await.unwrap().is_some());
     }
-
-    #[tokio::test]
-    async fn only_a_container_box_on_this_machine_pulls_its_image_here() {
-        let t = TestApp::new();
-        let _tools = Tools::strict_rules(&[]);
-        let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
-        let placed = async |runtime| crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", runtime).await.unwrap().unwrap();
-        assert!(placed(Runtime::Docker).await.pulls_image_here());
-        assert!(!placed(Runtime::Vm).await.pulls_image_here(), "a Kali VM pulls no image");
-        record_run(t.data(), "t", Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true }))), "cloud-docker/aws", "ready");
-        assert!(!placed(Runtime::Docker).await.pulls_image_here(), "pulled in the account's VM");
-    }
 }

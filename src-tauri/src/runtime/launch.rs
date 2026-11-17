@@ -304,30 +304,6 @@ pub(super) const PER_MACHINE_NOT_ON_SERVERS: &str =
 pub(super) const CONTAINERS_NOT_ON_SERVERS: &str =
     "A container lab runs on this machine (on Docker, or as one VM per machine) or in a cloud account, not on a server (ESXi, Proxmox).";
 
-/// What a start downloads to this machine, for the layer above to record as the app's (Storage
-/// cleans what the app downloaded): container images, Vagrant boxes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Downloads {
-    /// Container images, pulled by this machine's Docker.
-    pub(crate) images: bool,
-    /// Vagrant boxes, added to this machine's Vagrant.
-    pub(crate) boxes: bool,
-}
-
-/// What a start of a `runtime` lab `to` its destination downloads here: images for containers on
-/// this machine's Docker, boxes for every VM form here, nothing for a server or a cloud account
-/// (nor for a start [`local_run`] refuses).
-pub(crate) fn downloads(runtime: Runtime, to: &Destination<'_>) -> Downloads {
-    if to.host.is_some() {
-        return Downloads::default();
-    }
-    match local_run(runtime, to.provider, to.per_machine_vm) {
-        Ok(LocalRun::Docker) => Downloads { images: true, boxes: false },
-        Ok(LocalRun::Vm(_)) => Downloads { images: false, boxes: true },
-        Err(_) => Downloads::default(),
-    }
-}
-
 /// How a lab runs on this machine.
 #[derive(Debug, PartialEq)]
 enum LocalRun {

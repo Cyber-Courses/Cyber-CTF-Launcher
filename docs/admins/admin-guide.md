@@ -318,18 +318,19 @@ the per-user profile folder keeps other accounts out. On Windows it is under the
 
 In the app data folder:
 
-| Path                                   | Holds                                                                                                                                                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `labs/<lab id>/`                       | each installed lab: its source (up to 512 MB downloaded, 4 GB unpacked) and the files generated to run it (Compose, Vagrant, Terraform)                                                                |
-| `runs/<run>/`                          | the state of each running lab, kept by the Isothrum runner: its record, events, and for a server or cloud lab its **Terraform state**, which holds the lab's outputs, secrets included                 |
-| `launcher.sqlite3`                     | the launcher's own store: the user's servers and cloud accounts (names, addresses, regions; no secrets), the user's settings, this installation's random id (see [Privacy](#privacy-and-what-is-sent)) |
-| `ssh/id_ed25519`                       | the launcher's own SSH key (no passphrase), put on the server and cloud machines it creates                                                                                                            |
-| `launcher.sqlite3.v<N>.bak`            | the store as it was before an update changed its layout (the last two kept)                                                                                                                            |
-| `offline/`                             | which lab, runtime, repository and commit each lab last started from, for an offline start (no tokens)                                                                                                 |
-| `deploys/`                             | the jobs of the deploy workers (a deploy keeps running if the window closes), each with its output (`<lab>.log`, the run before kept as `<lab>.previous.log`); a job carries the lab's launch token    |
-| `storage.json`, `installed-tools.json` | the images, boxes and tools the launcher downloaded or installed, so Settings > Maintenance removes only those                                                                                         |
-| `terraform-plugins/`                   | an older Terraform provider cache, cleanable from the Storage page                                                                                                                                     |
-| `tools/ovftool/`                       | VMware's OVF Tool, when the user placed a download of it from the ESXi setup ("Use a downloaded OVF Tool…"): a copy of the unpacked folder, on the app's `PATH`                                        |
+| Path                        | Holds                                                                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `labs/<lab id>/`            | each installed lab: its source (up to 512 MB downloaded, 4 GB unpacked) and the files generated to run it (Compose, Vagrant, Terraform)                                                                |
+| `runs/<run>/`               | the state of each running lab, kept by the Isothrum runner: its record, events, and for a server or cloud lab its **Terraform state**, which holds the lab's outputs, secrets included                 |
+| `launcher.sqlite3`          | the launcher's own store: the user's servers and cloud accounts (names, addresses, regions; no secrets), the user's settings, this installation's random id (see [Privacy](#privacy-and-what-is-sent)) |
+| `ssh/id_ed25519`            | the launcher's own SSH key (no passphrase), put on the server and cloud machines it creates                                                                                                            |
+| `launcher.sqlite3.v<N>.bak` | the store as it was before an update changed its layout (the last two kept)                                                                                                                            |
+| `offline/`                  | which lab, runtime, repository and commit each lab last started from, for an offline start (no tokens)                                                                                                 |
+| `deploys/`                  | the jobs of the deploy workers (a deploy keeps running if the window closes), each with its output (`<lab>.log`, the run before kept as `<lab>.previous.log`); a job carries the lab's launch token    |
+| `installed-tools.json`      | the tools the launcher installed, so Settings > Maintenance removes only those                                                                                                                         |
+| `storage.json`              | what a launcher up to 1.9 downloaded: handed to the Isothrum runner, which records what the launcher downloads, at the first Storage listing, then removed                                             |
+| `terraform-plugins/`        | an older Terraform provider cache, cleanable from the Storage page                                                                                                                                     |
+| `tools/ovftool/`            | VMware's OVF Tool, when the user placed a download of it from the ESXi setup ("Use a downloaded OVF Tool…"): a copy of the unpacked folder, on the app's `PATH`                                        |
 
 The user's settings (the attack box's image and options, the hypervisor and Docker engine labs
 use, how labs take ports, the last test results and when each lab last started) are in

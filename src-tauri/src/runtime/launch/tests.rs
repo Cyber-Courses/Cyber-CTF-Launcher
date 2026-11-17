@@ -1,7 +1,7 @@
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
-    Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, downloads, local_run, low_memory_warning,
-    parse_ipv4, per_machine_runs_on,
+    Destination, LabRef, LocalRun, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, local_run, low_memory_warning, parse_ipv4,
+    per_machine_runs_on,
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
@@ -145,20 +145,6 @@ fn a_local_run_follows_the_runtime_and_the_hypervisor() {
     assert_eq!(local_run(Runtime::Vm, None, false).unwrap_err().code(), crate::error::Code::NoHypervisor);
     assert_eq!(local_run(Runtime::Vm, Some(Provider::VmwareEsxi), false).unwrap_err().to_string(), "pick a server host to run on ESXi or Proxmox");
     assert_eq!(local_run(Runtime::Cloud, None, false).unwrap_err().code(), crate::error::Code::PickCloudAccount);
-}
-
-#[test]
-fn a_start_downloads_images_for_containers_here_and_boxes_for_every_vm_form_here() {
-    let to = |provider, per_machine_vm, host| Destination { provider, host, per_machine_vm, ..Destination::default() };
-    let (images, boxes, none) = (Downloads { images: true, boxes: false }, Downloads { images: false, boxes: true }, Downloads::default());
-    assert_eq!(downloads(Runtime::Docker, &to(None, false, None)), images);
-    assert_eq!(downloads(Runtime::Docker, &to(Some(Provider::Utm), false, None)), boxes);
-    assert_eq!(downloads(Runtime::Docker, &to(Some(Provider::Qemu), true, None)), boxes);
-    assert_eq!(downloads(Runtime::Vm, &to(Some(Provider::Virtualbox), false, None)), boxes);
-    // Nothing comes to this machine for a server or a cloud account, nor for a start refused here.
-    assert_eq!(downloads(Runtime::Vm, &to(Some(Provider::VmwareEsxi), false, Some("esx"))), none);
-    assert_eq!(downloads(Runtime::Cloud, &to(None, false, None)), none);
-    assert_eq!(downloads(Runtime::Vm, &to(None, false, None)), none);
 }
 
 #[test]

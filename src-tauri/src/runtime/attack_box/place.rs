@@ -184,13 +184,6 @@ impl Placed {
     fn local(&self) -> bool {
         self.host.is_here()
     }
-
-    /// Whether adding the box pulls its image on this machine: a container box here. A Kali VM
-    /// box pulls none, and an image pulled in a lab's VM on a server or in a cloud account isn't
-    /// this machine's download to account for.
-    pub(crate) fn pulls_image_here(&self) -> bool {
-        !self.vm && self.local()
-    }
 }
 
 /// Whether a machine of a lab of `target` can mount a folder of this computer (`os`, as Rust

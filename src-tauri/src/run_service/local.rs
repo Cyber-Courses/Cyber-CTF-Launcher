@@ -353,13 +353,8 @@ async fn attach_box(dirs: &AppDirs, id: &str, runtime: Runtime, pick: AttachPick
     let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime).await?;
     let mut line = move |l: String| log(l);
     let image = image.unwrap_or_else(|| attack_box::default_image().to_owned());
-    let attach = run.add(dirs, attack_box::Pick { image: &image, desktop }, network.as_deref(), &mut line);
-    // Only an image pulled on this machine is the app's to account for.
-    if !run.pulls_image_here() {
-        return Box::pin(attach).await;
-    }
-    // Boxed: the runner's attach future is large, and tracking it adds to it.
-    Box::pin(crate::machine::storage::owned::tracked(dirs.clone(), std::slice::from_ref(&image), &[], attach)).await
+    // The runner records the image its attach pulls (Storage cleans it).
+    Box::pin(run.add(dirs, attack_box::Pick { image: &image, desktop }, network.as_deref(), &mut line)).await
 }
 
 /// Takes the attack box back out of running lab `id`, leaving the rest of the lab up.
