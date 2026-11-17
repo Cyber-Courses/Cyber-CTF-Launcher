@@ -4,8 +4,9 @@ Fixes for the problems people meet most. The launcher's own messages say what to
 cases; this page adds the context. When nothing here helps, open an issue with the diagnostics and
 logs ([SUPPORT.md](../../SUPPORT.md#what-to-send-with-a-bug-report)).
 
-**Logs**: Settings > About > Log files > **Open folder**. `cyberctf.log` is the app's,
-`deploy-<lab>.log` each lab's deploys. The folders are listed in the
+**Logs**: Settings > About > Log files > **Open folder**: `cyberctf.log`, the app's. A lab's
+operations are recorded by the runner service: `cyberctf labs logs <lab>` lists them, and the
+diagnostics bundle carries the last ones. The folders are listed in the
 [administrator guide](../admins/admin-guide.md#files-and-data).
 
 ## Signing in

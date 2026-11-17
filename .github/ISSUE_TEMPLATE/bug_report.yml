@@ -60,5 +60,5 @@ body:
     attributes:
       label: Logs
       description: >-
-        From Settings > About > Log files > Open folder: cyberctf.log and the deploy-<lab>.log of the lab, from when it
-        went wrong. Drag the files here or paste the relevant lines. Read them first: they name your labs, servers and paths.
+        From Settings > About > Log files > Open folder: cyberctf.log, from when it went wrong.
+        Drag the files here or paste the relevant lines. Read them first: they name your labs, servers and paths.

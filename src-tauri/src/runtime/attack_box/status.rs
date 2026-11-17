@@ -86,7 +86,7 @@ mod tests {
         assert!(!status_of(&vm_lab("running"), "nobody", None, None, false).running, "no such machine: no box");
     }
 
-    /// Regression: the box's start, in the deploy worker, held `attackbox` in Vagrant, and the
+    /// Regression: the box's start, in another process, held `attackbox` in Vagrant, and the
     /// page's status poll failed with Vagrant's lock refusal. The runner now says the machine is
     /// busy: the box isn't up yet, and nothing of it is an error.
     #[test]

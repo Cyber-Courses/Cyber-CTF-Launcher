@@ -8,7 +8,7 @@
 //!   lab, what, outcome, failure code, when), and what couldn't be read;
 //! - `host-report.json`: the machine check (the Machine page's report: tools and versions,
 //!   engines, hypervisors);
-//! - `logs/`: the end of the newest log files (the app's, the deploy workers');
+//! - `logs/`: the end of the newest log files (the app's);
 //! - `operations/`: the end of the newest lab operation logs.
 //!
 //! Every text in it passes through [`scrub::Scrubber`] (tokens, passwords, keys, flags, a running

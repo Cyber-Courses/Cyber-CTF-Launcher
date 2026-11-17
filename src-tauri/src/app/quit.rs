@@ -1,7 +1,7 @@
 //! Quitting while a lab operation runs in this process. An interrupted cloud apply can leave
 //! billable resources, so a quit is held and the frontend asks first; the player can also let
-//! the app finish in the background with its windows hidden. Detached deploy workers never hold
-//! the app: they finish on their own.
+//! the app finish in the background with its windows hidden. What the runner service runs never
+//! holds the app: the service finishes it on its own.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

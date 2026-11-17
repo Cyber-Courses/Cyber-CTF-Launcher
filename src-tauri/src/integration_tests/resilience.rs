@@ -269,7 +269,7 @@ const CHILD_TEST: &str = "integration_tests::resilience::the_child_starts_the_la
 
 /// Not a scenario of its own: the process a killed-start scenario starts and kills
 /// ([`killed_start`]). It starts the lab it is handed in `CYBERCTF_TEST_RESILIENCE_CHILD`, as the
-/// deploy worker does, and returns early without it.
+/// app does, and returns early without it.
 #[tokio::test]
 #[ignore = "run by the killed-start scenarios, as their child process"]
 async fn the_child_starts_the_lab_it_is_handed() {

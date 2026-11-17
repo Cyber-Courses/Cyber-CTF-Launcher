@@ -194,7 +194,7 @@ fn a_files_crate_modules_are_read_from_paths_and_grouped_uses() {
 /// machine, the cloud sign-ins, the commands), its tests included (a test of a command over it
 /// belongs with the command); and those domain layers name neither the app shell nor the commands
 /// over them. What a layer needs from above is handed in (a source check, a hook to run first,
-/// whether a deploy worker is busy). A cycle between them came back more than once (the runtime
+/// whether a lab is busy). A cycle between them came back more than once (the runtime
 /// reached for the deploy workers' lock and status files, then for the catalogue's source rule, the
 /// co-location server and Storage's records; the platform's process runner for the runtime's ESXi
 /// relay settings; the labs for the deploy workers' jobs; the runtime's AWS budget for the cloud

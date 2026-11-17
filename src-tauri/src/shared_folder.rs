@@ -4,7 +4,7 @@
 //! computer and its form can share a folder of it (`attack_box::Placed`): not on a server or
 //! in a cloud account, nor in a VM on QEMU outside Linux, on Hyper-V or on a hypervisor the lab's
 //! run doesn't name.
-//! Kept in the launcher's store (`crate::store::settings`), so the background deploy worker sees
+//! Kept in the launcher's store (`crate::store::settings`), so the app and the command line see
 //! the same choice.
 
 use std::path::{Path, PathBuf};

@@ -203,7 +203,7 @@ async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_pr
     let (holds, ends) = (Arc::new(tokio::sync::Notify::new()), Arc::new(tokio::sync::Notify::new()));
     let mut config = f.home.config(&f.fake, []);
     config.processes = Arc::new(Provisions { fake: Arc::clone(&f.fake), holds: Arc::clone(&holds), ends: Arc::clone(&ends) });
-    // The deploy worker's runner, which starts the lab, and the app's, which the page reads it
+    // The runner that starts the lab, and the app's, which the page reads it
     // through: the lab's status, and the attack box's (the run's status, the box one of its
     // machines).
     let worker = Deployment::here_with(config, &f.home.dir, "web", Kind::Vm).unwrap();

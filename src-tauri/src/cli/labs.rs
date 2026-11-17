@@ -150,9 +150,8 @@ fn choice_of(s: &StartArgs) -> Result<placement::Choice, Failure> {
 }
 
 /// Runs `request` on a run service of the app's folders, as the app's commands start it, its
-/// events streamed until it ends. Ctrl+C stops following it: an operation in a deploy worker (a
-/// launch, a resume, a park) goes on there, one in this process (a stop, the attack box) ends
-/// with it.
+/// events streamed until it ends. Ctrl+C stops following it: what it already asked of the lab's
+/// run goes on in the runner service; the launcher's own steps it hadn't reached don't run.
 async fn operate(ctx: &Context, out: &mut Output<'_>, request: Request) -> Exit {
     let service = LocalRunService::new(ctx.dirs.clone());
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

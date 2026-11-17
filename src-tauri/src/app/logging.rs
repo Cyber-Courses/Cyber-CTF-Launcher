@@ -3,7 +3,8 @@
 //!
 //! Files live in the app's log folder (`%LOCALAPPDATA%\org.cyberctf.desktop\logs` on Windows,
 //! `~/Library/Logs/org.cyberctf.desktop` on macOS, `~/.local/share/org.cyberctf.desktop/logs` on
-//! Linux): `cyberctf.log` for the app, `deploy-<lab>.log` for each lab's deploy worker.
+//! Linux): `cyberctf.log`, the app's. A lab's operations are the runner service's, which records
+//! them in the run's journal (`cyberctf labs logs <lab>`).
 //!
 //! They record `info` and above; `CYBERCTF_LOG` (`error`, `warn`, `info`, `debug`, `trace`) sets
 //! another level for the run. Every line is redacted first (`platform::redact`): a token,

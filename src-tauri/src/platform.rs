@@ -64,8 +64,8 @@ impl AppDirs {
     }
 
     /// The app's folders as Tauri resolves them for the app ([`APP_IDENTIFIER`]), worked out
-    /// without Tauri: what a process of the app's that runs without it (the command line, a
-    /// deploy worker started by it) shares with the app. An end-to-end run's app keeps them in
+    /// without Tauri: what a process of the app's that runs without it (the command line, the
+    /// runner service) shares with the app. An end-to-end run's app keeps them in
     /// its own folder ([`test_root`]).
     pub fn standard() -> AppDirs {
         if let Some(root) = test_root::root() {

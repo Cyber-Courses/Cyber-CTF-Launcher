@@ -59,7 +59,7 @@ function useUpdate() {
 export function UpdateBanner() {
   const t = useT();
   const { update, phase, install } = useUpdate();
-  // Installing quits every Cyber CTF process, the deploy workers included (the installer ends
+  // Installing quits every Cyber CTF process, the runner service included (the installer ends
   // them by name on Windows), so an update waits for every lab operation to finish.
   const busy = useLabsBusy();
 

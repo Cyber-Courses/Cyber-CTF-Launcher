@@ -37,15 +37,16 @@ use crate::runtime::{self, Runtime, server};
 /// A system notification for the player (title, body), shown when a website launch starts here.
 pub type Notify = dyn Fn(&str, &str) + Send + Sync;
 
-/// Ends the deploy still running in lab `id`'s worker, if any, before the agent stops the lab
-/// (see `labs::stop_lab_retiring_colocation`).
+/// Ends the operations the runner service still runs on lab `id`, if any, before the agent stops
+/// the lab (see `labs::stop_lab_retiring_colocation`).
 pub type EndWorkers = dyn Fn(&str) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync;
 
 /// The app the background agent runs inside: its data folder, the two things it reaches the
 /// player through — a prompt to confirm a website launch and a system notification when one
-/// starts here —, and the ending of a lab's deploy workers. The app shell builds it from the `AppHandle` (see `crate::app`); unit tests build
-/// one with effects of their own. Keeping the effects behind closures is what lets this module
-/// stay domain code, free of `tauri`.
+/// starts here —, and the ending of a lab's operations in the runner service. The app shell
+/// builds it from the `AppHandle` (see `crate::app`); unit tests build one with effects of their
+/// own. Keeping the effects behind closures is what lets this module stay domain code, free of
+/// `tauri`.
 #[derive(Clone)]
 pub struct Deps {
     dirs: AppDirs,

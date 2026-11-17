@@ -27,7 +27,7 @@ pub fn keep_ledger_in(dir: PathBuf) {
 }
 
 /// Ends what a previous process of the app recorded in the ledger `dir` and left running (the app
-/// or a deploy worker killed outright, a crash); the ids it ended.
+/// killed outright, a crash); the ids it ended.
 pub async fn end_left_behind(dir: &Path) -> Vec<u32> {
     let ended = isothrum_runner::ledger::end_orphans(dir).await;
     if !ended.is_empty() {
