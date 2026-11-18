@@ -269,11 +269,14 @@ const CHILD_TEST: &str = "integration_tests::resilience::the_child_starts_the_la
 
 /// Not a scenario of its own: the process a killed-start scenario starts and kills
 /// ([`killed_start`]). It starts the lab it is handed in `CYBERCTF_TEST_RESILIENCE_CHILD`, as the
-/// app does, and returns early without it.
+/// app does, and returns early without it. Its process isn't a scenario's, so it reads this
+/// machine itself: on a unit test's empty machine, QEMU's emulator check found no
+/// `qemu-system-x86_64` and the start ended before it made anything.
 #[tokio::test]
 #[ignore = "run by the killed-start scenarios, as their child process"]
 async fn the_child_starts_the_lab_it_is_handed() {
     let Some(handed) = var(CHILD) else { return };
+    crate::runtime::providers::testing::read_this_machine();
     let [form, home, dir, id, provider] = handed.lines().collect::<Vec<_>>()[..] else { panic!("{CHILD}: {handed}") };
     let (home, dir) = (Path::new(home), Path::new(dir));
     let started = match form {
