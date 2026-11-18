@@ -116,6 +116,18 @@ fn windows_on_arm_is_refused_the_hypervisors_not_built_for_it_by_the_hypervisor_
     assert!(plan_on(Dependency::Hyperv, &arm, None).is_ok() && plan_on(Dependency::Docker, &arm, None).is_ok());
 }
 
+#[test]
+fn a_tool_its_vendor_ships_no_build_of_here_is_refused_saying_why() {
+    let windows_arm = Host { arch: Arch::Arm64, ..WINDOWS.clone() };
+    let said = plan_on(Dependency::Gcloud, &windows_arm, None).err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(said.starts_with("The guided setup doesn't offer Google Cloud CLI on this computer: Google ships no Windows on Arm build"), "{said}");
+    let linux_arm = Host { arch: Arch::Arm64, ..APT.clone() };
+    let said = plan_on(Dependency::Vagrant, &linux_arm, Some("ada")).err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(said.contains("Vagrant") && said.contains("2.4.0"), "{said}");
+    let linux = APT.clone();
+    assert!(plan_on(Dependency::Vagrant, &linux, Some("ada")).is_ok());
+}
+
 #[tokio::test]
 async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
     let _policy = policy::Override::with(&[Key::DisableToolInstalls]);

@@ -92,6 +92,9 @@ pub(super) fn refusal(refused: Refusal) -> Error {
             "{} doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.",
             Provider::from(provider).label_on(HostOs::Windows)
         )),
+        Refusal::NoBuild { dependency, os, why, .. } => {
+            Error::Invalid(format!("The guided setup doesn't offer {} on this computer: {why}.", name_on(dependency, os)))
+        }
         Refusal::WindowsFeature { dependency: Dependency::Wsl } => Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into()),
         Refusal::WindowsFeature { .. } => Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into()),
         other => Error::Io(std::io::Error::other(other.to_string())),
@@ -100,8 +103,8 @@ pub(super) fn refusal(refused: Refusal) -> Error {
 
 /// The install on Linux: isothrum-machine's root script, for the player `user` (Linux joins them
 /// to the groups a tool's devices need).
-fn linux_plan(dep: Dependency, packages: Option<Packages>, user: Option<&str>) -> Result<Plan> {
-    linux::install(dep, packages, user, &linux_root()).map_err(refusal)
+fn linux_plan(dep: Dependency, packages: Option<Packages>, arch: Arch, user: Option<&str>) -> Result<Plan> {
+    linux::install(dep, packages, arch, user, &linux_root()).map_err(refusal)
 }
 
 /// The ordered install steps for a dependency on `host`, for the player `user` (Linux joins
@@ -113,7 +116,7 @@ pub(super) fn plan_on(dep: Dependency, host: &Host, user: Option<&str>) -> Resul
     match host.os {
         HostOs::Macos => macos_plan(dep, host),
         HostOs::Windows => windows_plan(dep, host.arch),
-        HostOs::Linux => linux_plan(dep, host.packages, user),
+        HostOs::Linux => linux_plan(dep, host.packages, host.arch, user),
     }
 }
 
