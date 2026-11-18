@@ -58,7 +58,7 @@ pub(super) async fn ensure_box(dirs: &AppDirs, p: isothrum_runner::Provider, bx:
     let cx = providers::machine_selftest();
     let mut waited = false;
     loop {
-        if hypervisor::box_for(&cx, p).await == (bx, true) {
+        if hypervisor::box_for(&cx, p).await == Some((bx, true)) {
             return Ok(true);
         }
         if let Some(_busy) = Busy::try_take(&VM_BOX_DOWNLOADING) {
