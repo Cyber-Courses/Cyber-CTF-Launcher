@@ -11,50 +11,90 @@ import type { Args } from "@/lib/dev-mock/types";
 import { SAMPLE_IN_FLIGHT } from "@/lib/dev-mock/labs";
 import type { ActiveOperation } from "@/lib/tauri/run-events";
 import type { LabPlacement } from "@/lib/tauri";
+import type { DeployStep } from "@/lib/tauri/generated";
+
+/** What a start streams: a log line, or a step the runner says (`isothrum_runner::Phase`'s id),
+ *  as the core relays both. The lab page's steps are the runner's alone. */
+type Said = string | DeployStep;
+
+/** Step `step` in `state`: about machine `label` when it is one of several, `done` of `total`
+ *  items when it counts them. */
+const step = (id: string, state: DeployStep["state"], label: string | null = null, done?: number, total?: number): DeployStep => ({
+  step: id,
+  state,
+  label,
+  count: done === undefined ? null : { done, total: total ?? null },
+});
 
 /** A Docker Compose start, as the launcher streams it. */
-const composeUp = (slug: string) => [
+const composeUp = (slug: string): Said[] => [
   `Downloading ${slug}…`,
   "Lab installed",
+  step("images", "started", null, 0, 1),
   ` Image ${slug}-web Pulling`,
   ` Image ${slug}-web Pulled`,
+  step("images", "done", null, 1, 1),
+  step("create", "started", null, 0, 2),
   ` Network ${slug}_default Creating`,
   ` Network ${slug}_default Created`,
   ` Container ${slug}-web-1 Creating`,
   ` Container ${slug}-web-1 Created`,
+  step("create", "done", null, 2, 2),
+  step("start", "started", null, 0, 1),
   ` Container ${slug}-web-1 Starting`,
   ` Container ${slug}-web-1 Started`,
+  step("start", "done", null, 1, 1),
+  step("health", "started", null, 0, 1),
   ` Container ${slug}-web-1 Waiting`,
   ` Container ${slug}-web-1 Healthy`,
+  step("health", "done", null, 1, 1),
 ];
 
 /** A cloud lab's Terraform apply. */
-const terraformApply = (slug: string) => [
+const terraformApply = (slug: string): Said[] => [
   `Downloading ${slug}…`,
   "Lab installed",
+  step("init", "started"),
   "Initializing the backend...",
   "Initializing provider plugins...",
+  step("init", "done"),
+  step("apply", "started", null, 0, 6),
   "Terraform will perform the following actions:",
   "Plan: 6 to add, 0 to change, 0 to destroy.",
   "aws_instance.web: Creating...",
   "aws_instance.web: Still creating... [10s elapsed]",
   "aws_instance.web: Creation complete after 21s [id=i-0c0ffee5afe]",
   "Apply complete! Resources: 6 added, 0 changed, 0 destroyed.",
+  step("apply", "done", null, 6, 6),
 ];
 
-/** A VM lab's `vagrant up` with `provider`, on the server `hostName` or here (null). */
-const vagrantUp = (slug: string, provider: string, hostName: string | null) => [
+/** A VM lab's `vagrant up` with `provider`, on the server `hostName` or here (null): its box,
+ *  then each machine's start and provisioning, a step of its own each. */
+const vagrantUp = (slug: string, provider: string, hostName: string | null): Said[] => [
   `Downloading ${slug}…`,
   "Lab installed",
   ...(hostName ? [`Running on server host ${hostName}`] : []),
   ...vagrantMachines().map((m) => `Bringing machine '${m}' up with '${provider}' provider...`),
+  step("boxes", "started", null, 0, 1),
+  `==> ${vagrantMachines()[0] ?? "default"}: Importing base box 'StefanScherer/windows_2019'...`,
+  step("boxes", "done", null, 1, 1),
   ...vagrantMachines().flatMap((m) => [
-    `==> ${m}: Importing base box 'StefanScherer/windows_2019'...`,
+    step("up", "started", m),
     `==> ${m}: Booting VM...`,
     `==> ${m}: Machine booted and ready!`,
+    step("up", "done", m),
+    step("provision", "started", m),
     `==> ${m}: Running provisioner: ansible...`,
+    step("provision", "done", m),
   ]),
 ];
+
+/** `said` up to its `lines`-th log line, the steps among them kept: what a start that fails
+ *  then streamed. */
+const upTo = (said: Said[], lines: number): Said[] => {
+  let seen = 0;
+  return said.filter((s) => (typeof s === "string" ? ++seen <= lines : seen < lines));
+};
 
 /** A container lab started here, on its own host ports or random ones (`defaultPorts`); with
  *  `launch=fail`, the first one fails on its port. With
@@ -68,19 +108,21 @@ async function launchContainer(id: string, args: Args, live: Live) {
   else live.ownPorts.delete(id);
   try {
     if (args?.offline === true) send(args, "Starting offline: Cyber CTF can't be reached, progress isn't saved");
-    for (const [n, line] of composeUp(slug).entries()) {
+    for (const line of composeUp(slug)) {
       // Before the containers start: once one runs, the lab's status reads as running.
-      if (line.endsWith(" Starting")) await live.holds.passed("launch");
-      if (live.launchFails && n === 8) {
+      const starting = typeof line === "string" && line.endsWith(" Starting");
+      if (starting) await live.holds.passed("launch");
+      if (live.launchFails && starting) {
         live.launchFails = false;
         await sleep(120);
+        send(args, step("start", "failed", null, 0, 1));
         fail(
           `Error response from daemon: driver failed programming external connectivity on endpoint ${slug}-web-1: Bind for 0.0.0.0:8443 failed: port is already allocated`,
         );
       }
       send(args, line);
       // The containers run once started, before the launch is over (it waits until healthy).
-      if (line.endsWith(" Started")) live.running.add(id);
+      if (typeof line === "string" && line.endsWith(" Started")) live.running.add(id);
       await sleep(120);
     }
     return null;
@@ -102,7 +144,8 @@ async function launchElsewhere(id: string, runtime: "VM" | "CLOUD", args: Args, 
   const lines = cloud ? terraformApply(slugOf(id)) : vagrantUp(slugOf(id), provider, host ? argText(host.name) : null);
   if (live.launchFails) {
     live.launchFails = false;
-    await operation({ id, op: "launch", lines: lines.slice(0, 4) }, args, live);
+    await operation({ id, op: "launch", lines: upTo(lines, 4) }, args, live);
+    send(args, cloud ? step("apply", "failed", null, 0, 6) : step("up", "failed", vagrantMachines()[0] ?? null));
     fail(
       cloud
         ? "Error: creating EC2 Instance: UnauthorizedOperation: You are not authorized to perform this operation."
