@@ -21,8 +21,9 @@ pwsh -File tests\e2e\desktop\runner\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64
 
 Both are thin: they build or unpack the app and serve a debug build's frontend, then start
 `tests/e2e/desktop/runner/run.mjs`, the runner itself, the same on every system (it makes the run's folder,
-checks the needs, runs the specs and writes the results). Without `--app` or `--package` they build the app with `cargo build --features wdio` and
-serves the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
+checks the needs, runs the specs and writes the results). Without `--app` or `--package` they build the app with `cargo build --features wdio`,
+keep a copy of it as the runner's own (`<target>/debug/wdio/cyberctf-desktop`, below), and
+serve the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
 from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A package must be a
 `tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`
 (the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). On Linux the runner always starts
@@ -40,7 +41,7 @@ the package (`xvfb`, `dbus-daemon`) rather than letting the app panic or reach t
 Xvfb has no window manager to act on a maximize or a minimize: without one installed, the run goes
 on and the `title-bar` case skips those checks, saying why.
 Before the specs, the runner starts the app once and stops with a clear message when no WebDriver
-server answers. It checks out
+server answers. Before it ever starts the app, it checks the app is a `wdio` build, below. It checks out
 the fixture lab (the Invoice Portal API lab, under `tests/e2e/desktop/.state/labs`) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
 
 It is safe on a machine someone uses: the app keeps all of its own (data, settings, logs, webview
@@ -49,6 +50,36 @@ removes only what the run made, by the records it wrote: never the user's labs, 
 apps ([tests/README.md](../../../tests/README.md#a-desktop-runs-own-folder)). Before that folder goes, the runner stops
 the Isothrum runner services the run's apps started (`<app> serve --home <home> --detach`, which
 outlive the app), those whose home is in the folder only.
+
+### Only a wdio build is started
+
+Only a `wdio` build keeps to the run's folder: any other build ignores `CYBERCTF_WDIO_ROOT` and
+uses the user's own data folder (on macOS `~/Library/Application Support/org.cyberctf.desktop/`),
+their labs, settings and runner service. Three things keep a run from ever starting one:
+
+- **The runner reads the app's file first.** A `wdio` build's binary holds a mark no other build
+  has (`src-tauri/src/platform/test_root.rs` `BUILD_MARK`, `tests/e2e/desktop/runner/preflight.mjs`
+  `WDIO_BUILD_MARK`). The runner looks for it in the file, never by starting the app, before it
+  makes the run's folder, and again before each spec when the file changed (inode, size, time).
+  Without it the run stops with exit 2 (or, mid-run, that case fails and the rest skip), naming the
+  file and how to rebuild; the app is never started. For an AppImage, whose binary is compressed,
+  `run.sh` extracts the binary with the AppImage's own `--appimage-extract` and the runner checks
+  that (`CYBERCTF_TEST_DESKTOP_BINARY`).
+- **The runner drives a copy of its own.** `cargo test` and a `cargo build` without the feature
+  relink cargo's `<target>/debug/cyberctf-desktop`, the file the wdio build was in, so a run
+  started after them, or a spec started while they ran, would drive a build that ignores the run's
+  folder. `run.sh` and `run.ps1` copy the wdio build they just made to
+  `<target>/debug/wdio/cyberctf-desktop` (`support/host.mjs` `keepWdioBuild`: written beside it,
+  then renamed over it), which nothing else writes, and drive that; `--skip-build` drives that
+  copy as the last build left it. A copy rather than a target directory of its own: the two builds
+  differ only in the app's crate and the two WebDriver plugins, so they share every other compiled
+  crate in one target directory; a second one would build the whole tree again and hold as much
+  again on disk. The copy keeps the binary's name (macOS names a bare binary's WebKit folders
+  after it) and stays in a debug folder (the run serves it `devUrl`'s frontend).
+- **The app refuses a folder it won't keep to.** Started with `CYBERCTF_WDIO_ROOT` set, a build
+  without `wdio` (or one given a folder that isn't absolute) stops at once with exit 2, before it
+  reads or writes any folder, saying how to build it (`test_root::refusal`). A player never sets
+  the variable: their app starts as before.
 
 ## Results
 

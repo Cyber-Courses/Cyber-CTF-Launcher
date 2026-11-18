@@ -7,11 +7,11 @@
 // its plugins (Compose), which a spec's Docker config of its own must keep. And a program run with
 // a bound, ended with what it started past it (`runBounded`), and whether `docker info` says an
 // engine answers. And whether this session can drive UTM (`utmUnreachable`). And where cargo builds
-// the app (`builtApp`). No dependency of its own, so the runner loads it before webdriverio.
+// the app (`builtApp`) and where the runner keeps its wdio build (`wdioApp`). No dependency of its own, so the runner loads it before webdriverio.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -185,14 +185,51 @@ export function cargoTargetDir(env = process.env) {
   return env.CARGO_TARGET_DIR ? resolve(env.CARGO_TARGET_DIR) : join(repo(), "src-tauri", "target");
 }
 
+const appName = (platform = process.platform) => `cyberctf-desktop${platform === "win32" ? ".exe" : ""}`;
+
 /**
- * The app `cargo build --features wdio` makes: `<target dir>/debug/cyberctf-desktop[.exe]`.
+ * The app cargo's debug build makes, `<target dir>/debug/cyberctf-desktop[.exe]`: whichever build
+ * ran last, with the `wdio` feature or without (a `cargo test`, a `cargo build`, relinking it).
  * @param {Record<string, string | undefined>} [env]
  * @param {string} [platform]
  */
 export function builtApp(env = process.env, platform = process.platform) {
-  return join(cargoTargetDir(env), "debug", `cyberctf-desktop${platform === "win32" ? ".exe" : ""}`);
+  return join(cargoTargetDir(env), "debug", appName(platform));
 }
 
-// `node support/host.mjs --built-app`: the path, for run.sh and run.ps1.
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url && process.argv[2] === "--built-app") console.log(builtApp());
+/**
+ * The runner's own copy of the `wdio` build, `<target dir>/debug/wdio/cyberctf-desktop[.exe]`:
+ * kept by run.sh and run.ps1 right after their `cargo build --features wdio` (`keepWdioBuild`),
+ * written by nothing else, so a `cargo test` or a build without the feature, which relink
+ * `builtApp`, never put an app that ignores the run's folder in its place. The same file name
+ * (macOS names a bare binary's WebKit folders after it), in a debug folder (the run serves it
+ * devUrl's frontend); a debug build reads nothing beside itself.
+ * @param {Record<string, string | undefined>} [env]
+ * @param {string} [platform]
+ */
+export function wdioApp(env = process.env, platform = process.platform) {
+  return join(cargoTargetDir(env), "debug", "wdio", appName(platform));
+}
+
+/**
+ * The `wdio` build cargo just made (`builtApp`) copied to the runner's own (`wdioApp`): written
+ * beside it, then renamed over it, so an app still running from the old file keeps it and macOS
+ * never sees a signed binary change in place. Its path.
+ * @param {Record<string, string | undefined>} [env]
+ * @param {string} [platform]
+ */
+export function keepWdioBuild(env = process.env, platform = process.platform) {
+  const [from, to] = [builtApp(env, platform), wdioApp(env, platform)];
+  mkdirSync(dirname(to), { recursive: true });
+  const part = `${to}.${process.pid}.part`;
+  copyFileSync(from, part);
+  renameSync(part, to);
+  return to;
+}
+
+// `node support/host.mjs --wdio-app`: the runner's copy of the wdio build, for run.sh and run.ps1;
+// `--keep-wdio-build`: that copy made from the build cargo just made, and its path.
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  if (process.argv[2] === "--wdio-app") console.log(wdioApp());
+  if (process.argv[2] === "--keep-wdio-build") console.log(keepWdioBuild());
+}

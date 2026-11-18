@@ -60,6 +60,12 @@ struct Started {
 ///
 /// When Tauri can't build the app (its embedded configuration is broken).
 pub fn run() -> tauri::Result<()> {
+    // Before anything reads or writes a folder: an app given an end-to-end run's folder it won't
+    // keep to (a build without `wdio`) stops here rather than use the user's own folders.
+    if let Some(why) = platform::test_root::refusal() {
+        eprintln!("Cyber CTF won't start: {why}");
+        std::process::exit(2);
+    }
     // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
     logging::install_panic_hook();
     // SAFETY: called first thing, before anything starts a thread (Tauri, tokio and the plugins

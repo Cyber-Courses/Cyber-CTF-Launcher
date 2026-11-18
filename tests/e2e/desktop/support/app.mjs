@@ -10,13 +10,13 @@ import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
 import { appExit, boxReport, fromRunEvents, isOperationId, operationEnd, startEnded, stuckLabReport } from "./diagnose.mjs";
-import { builtApp, dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree } from "./host.mjs";
+import { dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree, wdioApp } from "./host.mjs";
 
 export { runContainers } from "./owned.mjs";
 
-/** Path to the app binary: CYBERCTF_TEST_DESKTOP_APP, else the debug build where cargo put it. */
+/** Path to the app binary: CYBERCTF_TEST_DESKTOP_APP, else the runner's copy of the wdio build. */
 export function appBinary() {
-  return process.env.CYBERCTF_TEST_DESKTOP_APP || builtApp();
+  return process.env.CYBERCTF_TEST_DESKTOP_APP || wdioApp();
 }
 
 /** The port the embedded WebDriver server listens on (override with TAURI_WEBDRIVER_PORT). */

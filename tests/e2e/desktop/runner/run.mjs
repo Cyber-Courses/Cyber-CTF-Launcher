@@ -25,10 +25,15 @@
 //
 // Safe on a machine someone uses: the app keeps all of its own in a folder made for the run
 // (CYBERCTF_WDIO_ROOT), removed at the end; every clean-up acts only on what the run made, by
-// the records it wrote (tests/e2e/desktop/support/owned.mjs).
+// the records it wrote (tests/e2e/desktop/support/owned.mjs). Only a wdio build keeps to that
+// folder, so the app's file is read for the build's mark before the app is ever started, and
+// again before each spec when the file changed (runner/preflight.mjs `notWdioBuild`): another
+// build is refused, never started.
 //
 // Knobs (environment, or the --knobs file; tests/README.md has each spec's):
 //   CYBERCTF_TEST_DESKTOP_APP      the app, built with --features wdio (run.sh's --app, --package)
+//   CYBERCTF_TEST_DESKTOP_BINARY   the binary the app runs when the app only wraps it (an AppImage's, run.sh's
+//                                  --package): the file checked for the wdio build's mark (default: the app)
 //   CYBERCTF_TEST_LOCAL_LAB        the lab folder to import (default: a checkout of the Invoice Portal API lab)
 //   CYBERCTF_TEST_ACCOUNT_SESSION  a signed-in session (a dev-session.json), placed in the run's folder
 //   CYBERCTF_TEST_VM_PROVIDER      the hypervisor for the VM specs (libvirt, virtualbox, hyperv, qemu, utm)
@@ -61,8 +66,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NO_WINDOW_MANAGER, needsDisplay, runEnv, startDisplay } from "./display.mjs";
-import { preflightHint } from "./preflight.mjs";
-import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "../support/host.mjs";
+import { notWdioBuild, preflightHint } from "./preflight.mjs";
+import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree, wdioApp } from "../support/host.mjs";
 import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runServices, runTool } from "../support/owned.mjs";
 import {
   DEAD_APP,
@@ -140,9 +145,34 @@ const { hypervisorVms, localLabName } = await import("../support/app.mjs");
 // --- Settings ------------------------------------------------------------------------------
 const listed = (word, list) => ` ${list} `.includes(` ${word} `);
 const wanted = (name) => !(process.env.ONLY && !listed(name, process.env.ONLY)) && !(process.env.SKIP && listed(name, process.env.SKIP));
-const APP = process.env.CYBERCTF_TEST_DESKTOP_APP || join(ROOT, "src-tauri", "target", "debug", `cyberctf-desktop${WINDOWS ? ".exe" : ""}`);
+// The runner's own copy of the wdio build (support/host.mjs wdioApp), never cargo's debug binary,
+// which a `cargo test` relinks without the feature.
+const APP = process.env.CYBERCTF_TEST_DESKTOP_APP || wdioApp();
 if (!existsSync(APP)) die(`app binary not found: ${APP} (build it with --features wdio, or give --app)`);
 process.env.CYBERCTF_TEST_DESKTOP_APP = APP;
+const APP_BINARY = process.env.CYBERCTF_TEST_DESKTOP_BINARY || APP;
+/** The app's file as last found a wdio build (inode, size, time): one replaced under the run (a
+ *  `cargo test` relinking the binary given as --app) is read again before it starts. */
+let checkedAs = "";
+/** Why the app must not be started (not a wdio build, its file gone); null when it may. */
+function notWdioWhy() {
+  let id;
+  try {
+    const s = statSync(APP_BINARY);
+    id = `${s.ino}:${s.size}:${s.mtimeMs}`;
+  } catch (e) {
+    return `the app's file is gone: ${e.message}`;
+  }
+  if (id === checkedAs) return null;
+  const why = notWdioBuild(APP, APP_BINARY);
+  if (why === null) checkedAs = id;
+  return why;
+}
+// Before anything of the run: no folder made, no display, no app started.
+{
+  const why = notWdioWhy();
+  if (why) die(why);
+}
 const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
 process.env.TAURI_WEBDRIVER_PORT = String(PORT);
 const LOGS = process.env.CYBERCTF_TEST_DESKTOP_LOGS || join(DESKTOP, ".state", "logs");
@@ -405,6 +435,8 @@ const BIND_FAILED = /Failed to bind WebDriver server/;
 /** Launches the app once and waits for its embedded WebDriver server (APP_UP_S); null when it
  *  answered, else why not (its output's last lines). */
 async function appComesUp(log) {
+  const notWdio = notWdioWhy();
+  if (notWdio) return notWdio;
   const held = await portWhy();
   if (held) return `${held}: the run would drive that app instead of its own`;
   const out = [];
@@ -554,13 +586,14 @@ async function runCase(c) {
   }
   stopRunApps();
   cleanupLab();
-  // The previous app's port, free before this case's app, or the case would drive that one.
-  const held = await portWhy();
-  if (held) {
-    say(`${c.case}: ${held}`);
-    record({ name: c.case, status: "FAIL", seconds: 0, detail: held, form: c.form, provider: providerOf(c) });
-    state.verdict(c.case, "FAIL", held);
-    ended = `${held}: the run ended`;
+  // The app's file, still a wdio build (nothing relinked it), and the previous app's port, free
+  // before this case's app, or the case would drive that one.
+  const blocked = notWdioWhy() ?? (await portWhy());
+  if (blocked) {
+    say(`${c.case}: ${blocked}`);
+    record({ name: c.case, status: "FAIL", seconds: 0, detail: blocked, form: c.form, provider: providerOf(c) });
+    state.verdict(c.case, "FAIL", blocked);
+    ended = `${blocked}: the run ended`;
     return null;
   }
   say(c.case);

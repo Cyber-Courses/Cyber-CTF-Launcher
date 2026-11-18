@@ -17,11 +17,12 @@ credential store live there.
 -Group      only that group's specs (-List says each case's groups; run.sh's --group)
 -Specs      only these specs (space-separated, as ONLY)
 -App        the app to drive, built with --features wdio (CYBERCTF_TEST_DESKTOP_APP; default: the
-            debug build, built here)
+            debug build, built here and kept as the runner's own copy, target\debug\wdio\)
 -Package    an .msi (unpacked with msiexec /a, not installed) or an NSIS setup .exe (installed
             silently into the run's folder) of such a build
 -Knobs      a KEY=value file (read literally), set in the environment first
--SkipBuild  use the debug build as it is
+-SkipBuild  use the wdio build the last run here kept, as it is (never cargo's
+            target\debug\cyberctf-desktop.exe, which a `cargo test` relinks without the feature)
 -Results    append a JSON record per spec and per check to this file (run.sh's --results;
             tests/README.md, "Results")
 -List       print a JSON line per case (its id, spec, form, knobs, groups, needs) and exit (run.sh's
@@ -29,7 +30,8 @@ credential store live there.
 
 Safe on a machine someone uses, as run.sh: the app keeps all of its own in a folder made for the
 run (CYBERCTF_WDIO_ROOT, under %TEMP%), removed at the end, and every clean-up acts only on what
-the run made, by the records it wrote (lib\owned.mjs).
+the run made, by the records it wrote (lib\owned.mjs). Only a wdio build keeps to that folder: the
+runner reads the app's file for the build's mark before it ever starts it and refuses another build.
 
 Knobs: as run.sh's (CYBERCTF_TEST_LOCAL_LAB, CYBERCTF_TEST_ACCOUNT_SESSION,
 CYBERCTF_TEST_VM_PROVIDER, CYBERCTF_TEST_SERVER_ENV, ...; tests/README.md lists each). Exit status: 0 nothing failed (and
@@ -101,17 +103,22 @@ if ($Package) {
 }
 if (-not $App -and $env:CYBERCTF_TEST_DESKTOP_APP) { $App = $env:CYBERCTF_TEST_DESKTOP_APP }
 if (-not $App) {
-  # In cargo's target directory, which CARGO_TARGET_DIR or a cargo config can move out of
-  # src-tauri\target (support\host.mjs builtApp).
-  $App = (& node (Join-Path $Repo "tests\e2e\desktop\support\host.mjs") --built-app | Select-Object -Last 1)
-  if ($LASTEXITCODE -ne 0 -or -not $App) { Stop-Runner "couldn't tell where cargo builds the app" }
+  # The wdio build, copied right after it is built to the runner's own file in cargo's target
+  # directory (which CARGO_TARGET_DIR or a cargo config can move out of src-tauri\target), apart
+  # from the target\debug\cyberctf-desktop.exe every debug build relinks (support\host.mjs wdioApp).
+  $HostJs = Join-Path $Repo "tests\e2e\desktop\support\host.mjs"
   if (-not $SkipBuild) {
     Say "cargo build --features wdio"
     & cargo build --manifest-path src-tauri\Cargo.toml --features wdio
     if ($LASTEXITCODE -ne 0) { Stop-Runner "the wdio build failed" }
+    $App = (& node $HostJs --keep-wdio-build | Select-Object -Last 1)
+    if ($LASTEXITCODE -ne 0 -or -not $App) { Stop-Runner "couldn't keep the wdio build" }
+  } else {
+    $App = (& node $HostJs --wdio-app | Select-Object -Last 1)
+    if ($LASTEXITCODE -ne 0 -or -not $App) { Stop-Runner "couldn't tell where cargo builds the app" }
   }
 }
-if (-not (Test-Path $App)) { Stop-Runner "app binary not found: $App" }
+if (-not (Test-Path $App)) { Stop-Runner "app binary not found: $App (run.ps1 without -SkipBuild builds it with --features wdio)" }
 $env:CYBERCTF_TEST_DESKTOP_APP = $App
 $Debug = $App -match "\\debug\\"
 

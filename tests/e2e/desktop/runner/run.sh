@@ -9,7 +9,10 @@
 # Safe on a machine someone uses: the app keeps all of its own in a folder made for the run
 # (CYBERCTF_WDIO_ROOT: its data, settings, logs, webview data, session and secrets, never the
 # user's), removed at the end; and every clean-up acts only on what the run made, by the records
-# it wrote (tests/e2e/desktop/support/owned.mjs).
+# it wrote (tests/e2e/desktop/support/owned.mjs). Only a wdio build keeps to that folder: the
+# runner reads the app's file for the build's mark before it ever starts it and refuses another
+# build, and the app it builds here is a copy of its own, which a `cargo test` or a `cargo build`
+# without the feature (relinking cargo's target/debug/cyberctf-desktop) never replaces.
 #
 #   tests/e2e/desktop/runner/run.sh --all                                 # every spec (the default)
 #   tests/e2e/desktop/runner/run.sh --group lab                           # one group of specs (the rig's shards)
@@ -29,14 +32,18 @@
 #                         build --features wdio`, which embeds the frontend with the hooks (a
 #                         `cargo build --release` doesn't)
 #   --package <file>      a .deb, .rpm or .AppImage of such a build: unpacked here, not installed
-#   --skip-build          use the debug build as it is (it loads devUrl, served here)
+#   --skip-build          use the wdio build the last run here kept, as it is (it loads devUrl,
+#                         served here); never cargo's target/debug/cyberctf-desktop, which a
+#                         `cargo test` relinks without the feature
 #   --knobs <file>        KEY=value lines (read literally, never sourced), exported first
 #   --results <file>      append a JSON record per spec and per check to <file> (tests/README.md,
 #                         "Results")
 #   --list                print a JSON line per case (its id, spec, form, knobs, groups, needs) and exit
 #
 # Knobs (environment, or the knobs file; tests/README.md has each spec's):
-#   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here, in cargo's target directory: CARGO_TARGET_DIR when set)
+#   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here and kept as the runner's own
+#                                 copy, <target>/debug/wdio/cyberctf-desktop, in cargo's target directory:
+#                                 CARGO_TARGET_DIR when set)
 #   CYBERCTF_TEST_LOCAL_LAB       the lab folder to import (default: a checkout of the Invoice Portal
 #                                 API lab under tests/e2e/desktop/.state/labs)
 #   CYBERCTF_TEST_ACCOUNT_SESSION a signed-in session (a dev-session.json), placed in the run's folder
@@ -112,6 +119,11 @@ if [ -n "$PACKAGE" ]; then
       cp "$PACKAGE" "$UNPACKED/" && chmod +x "$UNPACKED/$(basename "$PACKAGE")"
       # Without FUSE (a container, a minimal guest) an AppImage still runs, extracted first.
       export APPIMAGE_EXTRACT_AND_RUN=1
+      # Its binary is compressed inside: extracted (by the AppImage's own runtime, which doesn't
+      # start the app) for the runner to check it is a wdio build before it starts the AppImage.
+      (cd "$UNPACKED" && "./$(basename "$PACKAGE")" --appimage-extract 'usr/bin/*' >/dev/null) || fail_now "couldn't extract the binary of $PACKAGE"
+      CYBERCTF_TEST_DESKTOP_BINARY=$(find "$UNPACKED/squashfs-root/usr/bin" -type f -perm -u+x | head -n 1)
+      export CYBERCTF_TEST_DESKTOP_BINARY
       ;;
     *) fail_now "not a package this runner unpacks (.deb, .rpm, .AppImage): $PACKAGE" ;;
   esac
@@ -120,19 +132,23 @@ if [ -n "$PACKAGE" ]; then
     *) CYBERCTF_TEST_DESKTOP_APP=$(find "$UNPACKED/usr/bin" -type f -perm -u+x | head -n 1) ;;
   esac
 fi
-# The app the specs drive (tests/e2e/desktop/support/app.mjs reads it).
-# The wdio build's app is in cargo's target directory, which CARGO_TARGET_DIR or a cargo config can
-# move out of src-tauri/target (support/host.mjs `builtApp`).
+# The app the specs drive (tests/e2e/desktop/support/app.mjs reads it): the wdio build, copied
+# right after it is built to the runner's own file in cargo's target directory (which
+# CARGO_TARGET_DIR or a cargo config can move out of src-tauri/target), apart from the
+# target/debug/cyberctf-desktop every debug build relinks (support/host.mjs `wdioApp`).
+HOST="$HERE/tests/e2e/desktop/support/host.mjs"
 if [ -z "${CYBERCTF_TEST_DESKTOP_APP:-}" ]; then
-  CYBERCTF_TEST_DESKTOP_APP=$(node "$HERE/tests/e2e/desktop/support/host.mjs" --built-app) || fail_now "couldn't tell where cargo builds the app"
+  if [ -z "$SKIP_BUILD" ]; then
+    say "cargo build --features wdio"
+    cargo build --manifest-path src-tauri/Cargo.toml --features wdio || fail_now "the wdio build failed"
+    CYBERCTF_TEST_DESKTOP_APP=$(node "$HOST" --keep-wdio-build) || fail_now "couldn't keep the wdio build"
+  else
+    CYBERCTF_TEST_DESKTOP_APP=$(node "$HOST" --wdio-app) || fail_now "couldn't tell where cargo builds the app"
+  fi
 fi
 export CYBERCTF_TEST_DESKTOP_APP
 APP_BIN=$CYBERCTF_TEST_DESKTOP_APP
-if [ -z "$SKIP_BUILD" ]; then
-  say "cargo build --features wdio"
-  cargo build --manifest-path src-tauri/Cargo.toml --features wdio || fail_now "the wdio build failed"
-fi
-[ -x "$APP_BIN" ] || fail_now "app binary not found or not executable: $APP_BIN"
+[ -x "$APP_BIN" ] || fail_now "app binary not found or not executable: $APP_BIN (run.sh without --skip-build builds it with --features wdio)"
 
 # --- The frontend a `cargo build` app loads (devUrl); a `tauri build` one embeds it ----------
 NEXT_PGID=""
