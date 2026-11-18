@@ -133,7 +133,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
       "wsl": [
         {
           "kind": "install",
-          "dependency": "wsl"
+          "dependency": "wsl",
+          "interactions": [
+            {
+              "kind": "adminPassword",
+              "via": "uac"
+            },
+            {
+              "kind": "restart"
+            }
+          ]
         }
       ],
       "recommendedEngine": "docker-desktop",
@@ -144,7 +153,18 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "licence",
+                  "name": "Docker Subscription Service Agreement",
+                  "url": "https://www.docker.com/legal/docker-subscription-service-agreement/"
+                }
+              ]
             }
           ]
         }
@@ -156,13 +176,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -171,15 +206,31 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -188,13 +239,31 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "hyperv"
+              "dependency": "hyperv",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         }
@@ -341,7 +410,18 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "licence",
+                  "name": "Docker Subscription Service Agreement",
+                  "url": "https://www.docker.com/legal/docker-subscription-service-agreement/"
+                }
+              ]
             }
           ]
         }
@@ -353,13 +433,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -368,15 +463,31 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -385,13 +496,31 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "hyperv"
+              "dependency": "hyperv",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         }
@@ -545,13 +674,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -560,15 +704,31 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -577,13 +737,31 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "hyperv"
+              "dependency": "hyperv",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         }
@@ -719,7 +897,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
       "wsl": [
         {
           "kind": "install",
-          "dependency": "wsl"
+          "dependency": "wsl",
+          "interactions": [
+            {
+              "kind": "adminPassword",
+              "via": "uac"
+            },
+            {
+              "kind": "restart"
+            }
+          ]
         }
       ],
       "recommendedEngine": "docker-desktop",
@@ -730,7 +917,18 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "licence",
+                  "name": "Docker Subscription Service Agreement",
+                  "url": "https://www.docker.com/legal/docker-subscription-service-agreement/"
+                }
+              ]
             }
           ]
         }
@@ -742,13 +940,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -757,15 +970,31 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         },
@@ -780,7 +1009,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "uac"
+                },
+                {
+                  "kind": "restart"
+                }
+              ]
             }
           ]
         }
@@ -936,6 +1174,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -947,7 +1192,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -956,6 +1210,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -970,13 +1231,25 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ]
         },
@@ -985,15 +1258,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ]
         },
@@ -1002,13 +1288,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "libvirt"
+              "dependency": "libvirt",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -1021,13 +1322,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -1223,13 +1539,25 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ]
         },
@@ -1238,15 +1566,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ]
         },
@@ -1255,13 +1596,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "libvirt"
+              "dependency": "libvirt",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -1274,13 +1630,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -1449,6 +1820,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -1460,7 +1838,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -1469,6 +1856,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -1483,7 +1877,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -1493,9 +1893,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -1515,7 +1922,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -1681,6 +2097,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -1692,7 +2115,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -1701,6 +2133,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -1715,7 +2154,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -1725,9 +2170,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -1749,7 +2201,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -1923,6 +2384,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -1934,7 +2402,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -1943,6 +2420,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -1957,7 +2441,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -1967,9 +2457,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -1993,7 +2490,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -2164,6 +2670,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -2175,7 +2688,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -2184,6 +2706,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -2198,7 +2727,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -2208,9 +2743,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -2220,7 +2762,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "libvirt"
+              "dependency": "libvirt",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -2395,6 +2946,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -2406,7 +2964,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -2415,6 +2982,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -2429,7 +3003,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -2439,9 +3019,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -2451,7 +3038,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "libvirt"
+              "dependency": "libvirt",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -2466,7 +3062,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -2630,6 +3235,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -2641,7 +3253,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -2650,6 +3271,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -2664,7 +3292,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -2674,9 +3308,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -2686,7 +3327,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "libvirt"
+              "dependency": "libvirt",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -2696,7 +3346,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -2865,6 +3524,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -2876,7 +3542,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -2885,6 +3560,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -2899,7 +3581,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -2909,9 +3597,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -2921,7 +3616,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "libvirt"
+              "dependency": "libvirt",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -2936,7 +3640,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": []
@@ -3093,6 +3806,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -3104,7 +3824,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "install",
-              "dependency": "docker"
+              "dependency": "docker",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ]
         },
@@ -3113,6 +3842,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -3127,13 +3863,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "virtualbox"
+              "dependency": "virtualbox",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ]
         },
@@ -3142,15 +3893,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             }
           ]
         },
@@ -3159,13 +3923,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "libvirt"
+              "dependency": "libvirt",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -3178,13 +3957,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                },
+                {
+                  "kind": "relogin"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "pkexec"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -3344,6 +4138,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Docker Desktop",
+                  "url": "https://www.docker.com/products/docker-desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.docker.com/products/docker-desktop/"
@@ -3355,6 +4156,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "docker",
               "url": "https://docs.docker.com/engine/install/"
@@ -3366,6 +4168,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -3380,6 +4189,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "virtualbox",
               "url": "https://www.virtualbox.org/wiki/Linux_Downloads"
@@ -3388,6 +4198,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "vagrant",
               "url": "https://developer.hashicorp.com/vagrant/install"
@@ -3399,14 +4210,22 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Workstation%20Pro&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "vagrant",
               "url": "https://developer.hashicorp.com/vagrant/install"
@@ -3418,6 +4237,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "libvirt",
               "url": "https://libvirt.org/"
@@ -3426,6 +4246,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "vagrant",
               "url": "https://developer.hashicorp.com/vagrant/install"
@@ -3441,6 +4262,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "qemu",
               "url": "https://www.qemu.org/download/"
@@ -3449,6 +4271,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant": [
             {
               "kind": "manual",
+              "interactions": [],
               "reason": "distribution",
               "dependency": "vagrant",
               "url": "https://developer.hashicorp.com/vagrant/install"
@@ -3625,6 +4448,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "OrbStack",
+                  "url": "https://orbstack.dev/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://orbstack.dev/"
@@ -3636,6 +4466,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -3650,15 +4487,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Fusion&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Fusion&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             }
           ]
         },
@@ -3667,6 +4517,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Parallels",
+                  "url": "https://www.parallels.com/products/desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.parallels.com/products/desktop/"
@@ -3675,7 +4532,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -3688,13 +4551,20 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": []
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -3707,13 +4577,25 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "utm"
+              "dependency": "utm",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -3903,6 +4785,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -3917,15 +4806,28 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Fusion&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Fusion&freeDownloads=true"
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             }
           ]
         },
@@ -3934,6 +4836,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Parallels",
+                  "url": "https://www.parallels.com/products/desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.parallels.com/products/desktop/"
@@ -3942,7 +4851,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -3955,13 +4870,20 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": []
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -3974,13 +4896,25 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "utm"
+              "dependency": "utm",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             }
           ],
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vagrant"
+              "dependency": "vagrant",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -4161,6 +5095,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "OrbStack",
+                  "url": "https://orbstack.dev/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://orbstack.dev/"
@@ -4172,6 +5113,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -4187,7 +5135,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant": [
             {
               "kind": "install",
-              "dependency": "vmware-utility"
+              "dependency": "vmware-utility",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             },
             {
               "kind": "plugin",
@@ -4200,6 +5154,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Parallels",
+                  "url": "https://www.parallels.com/products/desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.parallels.com/products/desktop/"
@@ -4217,7 +5178,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": []
             }
           ],
           "vagrant": [
@@ -4232,7 +5194,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "utm"
+              "dependency": "utm",
+              "interactions": [
+                {
+                  "kind": "adminPassword",
+                  "via": "mac"
+                }
+              ]
             }
           ],
           "vagrant": [
@@ -4413,6 +5381,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "OrbStack",
+                  "url": "https://orbstack.dev/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://orbstack.dev/"
@@ -4424,6 +5399,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "actions": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Colima",
+                  "url": "https://github.com/abiosoft/colima"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://github.com/abiosoft/colima"
@@ -4438,9 +5420,16 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Broadcom",
+                  "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Fusion&freeDownloads=true"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
-              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+              "url": "https://support.broadcom.com/group/ecx/productdownloads?subfamily=VMware%20Fusion&freeDownloads=true"
             }
           ],
           "vagrant": []
@@ -4450,6 +5439,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "manual",
+              "interactions": [
+                {
+                  "kind": "downloadByHand",
+                  "vendor": "Parallels",
+                  "url": "https://www.parallels.com/products/desktop/"
+                }
+              ],
               "reason": "vendor",
               "dependency": null,
               "url": "https://www.parallels.com/products/desktop/"
@@ -4467,7 +5463,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "install",
-              "dependency": "qemu"
+              "dependency": "qemu",
+              "interactions": []
             }
           ],
           "vagrant": [

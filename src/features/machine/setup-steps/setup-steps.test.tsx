@@ -491,7 +491,7 @@ describe("VM step", () => {
     expect(text()).toContain("Install VMware Workstation, then re-check.");
     await user.click(button(/get vmware workstation/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/vmware\.com/);
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/^https:\/\/support\.broadcom\.com\//);
     await user.click(button(/re-check/i));
     expect(onRefresh).toHaveBeenCalledOnce();
   });

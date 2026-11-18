@@ -44,11 +44,11 @@ pub fn left_alone(action: &Action) -> Option<Outcome> {
 /// leaves alone ([`left_alone`]).
 pub fn would(action: &Action) -> Option<String> {
     Some(match action {
-        Action::Install { dependency } => format!("would install {}", name(*dependency)),
+        Action::Install { dependency, .. } => format!("would install {}", name(*dependency)),
         Action::Plugin { plugin } => format!("would install the Vagrant plugin {plugin}"),
         Action::StartEngine { engine } => format!("would start {}", engine.id()),
         Action::UseEngine { engine } => format!("would point Docker at {}", engine.id()),
-        Action::ShareVirtualization => "would let VirtualBox share the CPU's virtualization with KVM".to_owned(),
+        Action::ShareVirtualization { .. } => "would let VirtualBox share the CPU's virtualization with KVM".to_owned(),
         Action::Restart { feature } => format!(
             "would restart the computer to turn {} on",
             match feature {
@@ -69,13 +69,13 @@ pub async fn run_step(dirs: &AppDirs, action: &Action, mut on_line: impl FnMut(S
         return left;
     }
     let done = match action {
-        Action::Install { dependency } => {
+        Action::Install { dependency, .. } => {
             install::install_dependency(dirs.clone(), *dependency, &mut on_line).await.map(|()| format!("{} installed", name(*dependency)))
         }
         Action::Plugin { plugin } => install::install_vagrant_plugin(plugin.clone(), &mut on_line).await.map(|()| format!("{plugin} installed")),
         Action::StartEngine { engine } => docker::docker_start_engine(engine.id().to_owned()).await.map(|()| format!("{} started", engine.id())),
         Action::UseEngine { engine } => docker::docker_use_engine(engine.id().to_owned()).await.map(|()| format!("Docker uses {}", engine.id())),
-        Action::ShareVirtualization => install::share_virtualization(&mut on_line).await.map(|shared| match shared {
+        Action::ShareVirtualization { .. } => install::share_virtualization(&mut on_line).await.map(|shared| match shared {
             Shared::Now => "KVM shares the CPU's virtualization with VirtualBox".to_owned(),
             Shared::AfterRestart => "KVM shares the CPU's virtualization with VirtualBox from the next restart".to_owned(),
         }),

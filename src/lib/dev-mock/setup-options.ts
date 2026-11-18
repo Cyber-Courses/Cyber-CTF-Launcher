@@ -3,9 +3,9 @@
 // its report as its installs run, with no core to ask. The setup window itself never works these
 // out; `setup-options.test.ts` holds this stand-in to the core's answer on every machine shape the
 // core writes (`SETUP_SHAPES`).
-import type { Dependency, DockerEngine, Os, Provider, ProviderStatus, SetupAction, SetupOptions, SystemReport } from "@/lib/tauri";
-import { DOCKER_ENGINE_URLS } from "@/lib/tauri/generated/DockerEngines";
-import { ENGINES_ON, INSTALLS_AS, OWN_INSTALL_URLS, RECOMMENDED_ENGINE, VENDOR_URLS } from "@/lib/tauri/generated/SetupTables";
+import type { Dependency, DockerEngine, Interaction, Os, Provider, ProviderStatus, SetupAction, SetupOptions, SystemReport } from "@/lib/tauri";
+import { DOCKER_ENGINE_NAMES, DOCKER_ENGINE_URLS } from "@/lib/tauri/generated/DockerEngines";
+import { DOWNLOAD_PAGES, ENGINES_ON, INSTALL_ASKS, INSTALLS_AS, OWN_INSTALL_URLS, RECOMMENDED_ENGINE, SHARE_ASKS } from "@/lib/tauri/generated/SetupTables";
 
 const enginesOn = (os: Os): readonly DockerEngine[] => ENGINES_ON[os];
 
@@ -16,10 +16,27 @@ const dockerReady = (r: Machine) => r.docker.installed && r.dockerRunning;
 /** A machine as the check reports it, its setup options aside. */
 type Machine = Omit<SystemReport, "setup">;
 
-function install(r: Machine, dependency: Dependency): SetupAction {
-  if (r.os === "linux" && !r.pkgManager.installed) return { kind: "manual", reason: "distribution", dependency, url: OWN_INSTALL_URLS[dependency] ?? null };
-  return { kind: "install", dependency };
+/** What installing `dependency` asks of the player on the machine `r` reports (Rust's
+ *  `install::interactions`, by its OS, its CPU and, on Linux, its package manager). */
+export function installAsks(r: Pick<SystemReport, "os" | "arch" | "pkgManager">, dependency: Dependency): Interaction[] {
+  const key = r.os === "linux" ? `${r.os}/${r.arch}/${r.pkgManager.name}` : `${r.os}/${r.arch}`;
+  return key in INSTALL_ASKS ? (INSTALL_ASKS[key][dependency] ?? []) : [];
 }
+
+function install(r: Machine, dependency: Dependency): SetupAction {
+  if (r.os === "linux" && !r.pkgManager.installed)
+    return { kind: "manual", interactions: [], reason: "distribution", dependency, url: OWN_INSTALL_URLS[dependency] ?? null };
+  return { kind: "install", dependency, interactions: installAsks(r, dependency) };
+}
+
+/** Getting it from its vendor's own download page (Rust's `setup::by_hand`). */
+const byHand = (vendor: string, url: string): SetupAction => ({
+  kind: "manual",
+  interactions: [{ kind: "downloadByHand", vendor, url }],
+  reason: "vendor",
+  dependency: null,
+  url,
+});
 
 function wsl(r: Machine): SetupAction[] {
   const state = r.wsl?.state ?? "unknown";
@@ -34,7 +51,7 @@ function engineActions(r: Machine, engine: DockerEngine): SetupAction[] {
   if (r.dockerDenied && engine === "docker-engine") return [{ kind: "relogin" }];
   if (r.docker.installed && !dockerReady(r)) return [{ kind: "startEngine", engine }];
   if (engine === recommended(r.os) && !r.docker.installed) return [install(r, "docker")];
-  return [{ kind: "manual", reason: "vendor", dependency: null, url: DOCKER_ENGINE_URLS[engine] }];
+  return [byHand(DOCKER_ENGINE_NAMES[engine], DOCKER_ENGINE_URLS[engine])];
 }
 
 const installable = (provider: Provider, os: Os): Dependency | null => INSTALLS_AS[os][provider] ?? null;
@@ -58,7 +75,7 @@ function get(r: Machine, p: ProviderStatus, hypervRestart: boolean): SetupAction
   const reason = p.reason;
   if (reason?.code === "kvmHoldsVirtualization" || reason?.code === "kvmSharesAfterRestart") {
     const first: SetupAction[] = p.hypervisor === true ? [] : [getHypervisor(r, p)];
-    return [...first, reason.code === "kvmSharesAfterRestart" ? { kind: "blocked", reason } : { kind: "shareVirtualization" }];
+    return [...first, reason.code === "kvmSharesAfterRestart" ? { kind: "blocked", reason } : { kind: "shareVirtualization", interactions: SHARE_ASKS }];
   }
   const groups = loginGroups(p.provider, r.os);
   if (p.hypervisor === true && r.groupsPending.some((g) => groups.includes(g))) return [{ kind: "relogin" }];
@@ -70,7 +87,9 @@ function get(r: Machine, p: ProviderStatus, hypervRestart: boolean): SetupAction
 /** What brings hypervisor `p` here: its install, else its vendor's site. */
 function getHypervisor(r: Machine, p: ProviderStatus): SetupAction {
   const dependency = installable(p.provider, r.os);
-  return dependency ? install(r, dependency) : { kind: "manual", reason: "vendor", dependency: null, url: VENDOR_URLS[p.provider] ?? null };
+  if (dependency) return install(r, dependency);
+  const page = DOWNLOAD_PAGES[r.os][p.provider];
+  return page ? byHand(page.name, page.url) : { kind: "manual", interactions: [], reason: "vendor", dependency: null, url: null };
 }
 
 /** What Vagrant needs to drive `p`, as the core plans it: a provider driven through VMware's
