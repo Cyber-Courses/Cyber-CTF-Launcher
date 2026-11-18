@@ -187,7 +187,7 @@ impl Provider {
     /// or a Windows feature the player turns on by hand).
     #[cfg(test)]
     pub(crate) fn vendor(self) -> Option<&'static str> {
-        self.row()?.vendor
+        self.row()?.vendor.map(|page| page.url)
     }
 
     /// Whether its VMs share a folder of this computer (on `os`) two-way: never a server's or a

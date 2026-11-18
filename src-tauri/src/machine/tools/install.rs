@@ -67,6 +67,18 @@ pub(crate) fn elevation() -> Elevation {
     if crate::platform::elevation::unattended() { Elevation::Unattended { root: crate::platform::elevation::is_root() } } else { Elevation::Prompt }
 }
 
+/// What letting VirtualBox share the CPU's virtualization with KVM asks of the player: its root
+/// step's password prompt, unless it runs unattended (as `setup::Action::ShareVirtualization`
+/// says it).
+#[cfg(test)]
+pub(crate) fn share_asks() -> Vec<isothrum_machine::install::Interaction> {
+    use isothrum_machine::install::{Interaction, Prompt};
+    match elevation() {
+        Elevation::Prompt => vec![Interaction::AdminPassword { via: Prompt::Pkexec }],
+        Elevation::Unattended { .. } => Vec::new(),
+    }
+}
+
 /// How root steps run on this Linux machine (isothrum-machine's [`linux::Root`]): [`elevation`]'s
 /// way, with this process's proxy, which a root step reads from a private file.
 pub(super) fn linux_root() -> linux::Root {

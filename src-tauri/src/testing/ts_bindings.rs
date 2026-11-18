@@ -291,16 +291,60 @@ fn write_setup_tables(dir: &Path) {
     });
     let own =
         Dependency::ALL.iter().filter_map(|d| d.row().own_url.map(|url| format!("  {}: {},\n", quoted(&dependency_id(*d)), quoted(url)))).collect::<String>();
-    let vendor = Provider::ALL.iter().filter_map(|p| p.vendor().map(|url| format!("  {}: {},\n", p.id(), quoted(url)))).collect::<String>();
+    let pages = per_os(&|os| {
+        let pairs = Provider::ALL.iter().filter_map(|p| {
+            let page = isothrum_machine::providers::download_page(p.vagrant()?, os)?;
+            Some(format!(" {}: {},", p.id(), serde_json::to_string(&page).unwrap()))
+        });
+        format!("{{{} }}", pairs.collect::<String>())
+    });
+    let asks = install_asks();
+    let share = serde_json::to_string(&crate::machine::tools::install::share_asks()).unwrap();
     let text = format!(
-        "{HEADER}import type {{ Dependency }} from \"./Dependency\";\nimport type {{ DockerEngine }} from \"./DockerEngine\";\nimport type {{ Os }} from \"./Os\";\nimport type {{ Provider }} from \"./Provider\";\n\n\
+        "{HEADER}import type {{ Dependency }} from \"./Dependency\";\nimport type {{ DockerEngine }} from \"./DockerEngine\";\nimport type {{ Interaction }} from \"./Interaction\";\nimport type {{ Os }} from \"./Os\";\nimport type {{ Provider }} from \"./Provider\";\n\n\
          /** The engines the setup offers on each OS, in its order (Rust's `machine::setup::engines_on`). */\nexport const ENGINES_ON: Record<Os, readonly DockerEngine[]> = {{\n{engines}}};\n\n\
          /** The engine the setup installs in one click on each OS (Rust's `machine::setup::recommended_engine`). */\nexport const RECOMMENDED_ENGINE: Record<Os, DockerEngine> = {{\n{recommended}}};\n\n\
          /** The tool the setup installs as each hypervisor, on each OS (Rust's `Provider::dependency`, where the tool runs). */\nexport const INSTALLS_AS: Record<Os, Partial<Record<Provider, Dependency>>> = {{\n{installs}}};\n\n\
          /** Where the player installs a tool themselves when the setup can't (Rust's tool rows, `own_url`). */\nexport const OWN_INSTALL_URLS: Partial<Record<Dependency, string>> = {{\n{own}}};\n\n\
-         /** Where a hypervisor the setup doesn't install comes from (Rust's provider rows, `vendor`). */\nexport const VENDOR_URLS: Partial<Record<Provider, string>> = {{\n{vendor}}};\n"
+         /** Where the player downloads a hypervisor the setup doesn't install, on each OS: its vendor and official page (Rust's `providers::download_page`). */\nexport const DOWNLOAD_PAGES: Record<Os, Partial<Record<Provider, {{ name: string; url: string }}>>> = {{\n{pages}}};\n\n\
+         /** What each install asks of the player, by `os/cpu`, and on Linux `/package manager` (Rust's `install::interactions`, as the setup elevates). */\nexport const INSTALL_ASKS: Record<string, Partial<Record<Dependency, Interaction[]>>> = {{\n{asks}}};\n\n\
+         /** What letting VirtualBox share the CPU's virtualization with KVM asks of the player. */\nexport const SHARE_ASKS: Interaction[] = {share};\n"
     );
     fs::write(dir.join(format!("{SETUP_TABLES}.ts")), text).unwrap();
+}
+
+/// [`write_setup_tables`]'s `INSTALL_ASKS`: for each OS, CPU and package manager a report names,
+/// what each install that asks something asks ([`machine::setup`]'s actions carry the same).
+fn install_asks() -> String {
+    use crate::machine::tools::install::{Dependency, elevation};
+    use isothrum_machine::{Arch, HostOs};
+    let user = crate::platform::exec::login_name();
+    let mut rows = String::new();
+    for os in isothrum_machine::host::ALL_OSES {
+        let managers: &[&str] = if os == HostOs::Linux { &["apt", "dnf"] } else { &[isothrum_machine::host::usual_packages(os)] };
+        for arch in [Arch::Amd64, Arch::Arm64] {
+            for manager in managers {
+                let mut report = machine::setup::shapes::bare(os, arch);
+                report.pkg_manager.name = (*manager).to_owned();
+                let host = machine::setup::host_of(&report);
+                let mut pairs = String::new();
+                for d in Dependency::ALL {
+                    let asks = isothrum_machine::install::interactions(d, &host, elevation(), user.as_deref());
+                    if !asks.is_empty() {
+                        let _ = write!(pairs, " {}: {},", serde_json::to_string(&dependency_id(d)).unwrap(), serde_json::to_string(&asks).unwrap());
+                    }
+                }
+                // The package manager decides only on Linux (Fedora's VirtualBox group).
+                let key = if os == HostOs::Linux {
+                    format!("{}/{}/{manager}", os_id(os), crate::platform::cpu_name(arch))
+                } else {
+                    format!("{}/{}", os_id(os), crate::platform::cpu_name(arch))
+                };
+                let _ = writeln!(rows, "  \"{key}\": {{{pairs} }},");
+            }
+        }
+    }
+    rows
 }
 
 /// A tool's id as the webview writes it (its serde name).

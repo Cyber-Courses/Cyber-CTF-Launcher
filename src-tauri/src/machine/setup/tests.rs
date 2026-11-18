@@ -26,11 +26,11 @@ fn steps(p: &Plan) -> Vec<String> {
         .iter()
         .map(|s| {
             let what = match &s.action {
-                Action::Install { dependency } => format!("install {}", serde_json::to_value(dependency).unwrap().as_str().unwrap()),
+                Action::Install { dependency, .. } => format!("install {}", serde_json::to_value(dependency).unwrap().as_str().unwrap()),
                 Action::Plugin { plugin } => format!("plugin {plugin}"),
                 Action::StartEngine { engine } => format!("start {}", engine.id()),
                 Action::UseEngine { engine } => format!("use {}", engine.id()),
-                Action::ShareVirtualization => "share".into(),
+                Action::ShareVirtualization { .. } => "share".into(),
                 Action::Restart { feature } => format!("restart {feature:?}"),
                 Action::Relogin => "relogin".into(),
                 Action::Manual { reason, .. } => format!("manual {reason:?}"),
@@ -42,7 +42,30 @@ fn steps(p: &Plan) -> Vec<String> {
 }
 
 fn get_of(r: &SystemReport, provider: Provider) -> Vec<Action> {
-    r.setup.hypervisors.iter().find(|h| h.provider == provider).unwrap().get.clone()
+    unasked(&r.setup.hypervisors.iter().find(|h| h.provider == provider).unwrap().get)
+}
+
+/// `actions` without what each asks of the player (which depends on how this test run elevates).
+fn unasked(actions: &[Action]) -> Vec<Action> {
+    actions
+        .iter()
+        .cloned()
+        .map(|a| match a {
+            Action::Install { dependency, .. } => install(dependency),
+            Action::ShareVirtualization { .. } => share(),
+            other => other,
+        })
+        .collect()
+}
+
+/// Installing `dependency`, without what it asks.
+fn install(dependency: Dependency) -> Action {
+    Action::Install { dependency, interactions: Vec::new() }
+}
+
+/// KVM set to share, without what it asks.
+fn share() -> Action {
+    Action::ShareVirtualization { interactions: Vec::new() }
 }
 
 #[test]
@@ -55,7 +78,7 @@ fn a_bare_windows_turns_wsl_on_installs_docker_desktop_virtualbox_and_vagrant_an
         passed(&p),
         [
             (Provider::Hyperv, "not needed: VirtualBox is set up".to_owned()),
-            (Provider::VmwareDesktop, "links out: https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion".to_owned()),
+            (Provider::VmwareDesktop, format!("links out: {}", isothrum_machine::install::VMWARE_WORKSTATION_PAGE.url)),
         ]
     );
     assert_eq!(p.items, ["wsl", "docker", "engine:docker-desktop", "vagrant", "virtualbox"]);
@@ -90,7 +113,7 @@ fn a_running_docker_engine_is_proof_enough_of_wsl() {
     r.docker_engine = Some(Engine::DockerDesktop);
     assert_eq!(options(&r, false).wsl, []);
     r.docker_running = false;
-    assert_eq!(options(&r, false).wsl, [Action::Install { dependency: Dependency::Wsl }]);
+    assert_eq!(unasked(&options(&r, false).wsl), [install(Dependency::Wsl)]);
 }
 
 #[test]
@@ -144,7 +167,7 @@ fn libvirt_joined_since_logging_in_asks_for_a_new_login_after_the_rest() {
 /// its VMs need beside it, and that the setup installs it again, which brings that program: it
 /// never passes `provider` over.
 fn installed_again(r: &SystemReport, provider: Provider, dependency: Dependency, reason: &Unavailable) {
-    assert_eq!(get_of(r, provider), [Action::Install { dependency }]);
+    assert_eq!(get_of(r, provider), [install(dependency)]);
     let p = plan_of(r, &wanted(&[SetupPath::Vm], &[provider]));
     assert_eq!(p.hypervisor, Some(provider));
     assert_eq!(steps(&p), [format!("{0}: install {0}", provider.id())]);
@@ -239,7 +262,7 @@ fn virtualbox_while_kvm_holds_the_cpus_virtualization_gives_way_unless_installed
     // being used by another hypervisor"). Regression: the setup installed it anyway, then left the
     // player stuck with no action; it now lets KVM share the CPU's virtualization.
     let r = virtualbox_reads(shapes::bare_debian(), &Unavailable::KvmHoldsVirtualization);
-    assert_eq!(get_of(&r, Provider::Virtualbox), [Action::Install { dependency: Dependency::Virtualbox }, Action::ShareVirtualization]);
+    assert_eq!(get_of(&r, Provider::Virtualbox), [install(Dependency::Virtualbox), share()]);
     assert_eq!(r.setup.hypervisor, Some(Provider::Libvirt), "the window starts on one that just installs");
     let p = plan_of(&r, &wanted(&BOTH, &[]));
     assert_eq!(p.hypervisor, Some(Provider::Libvirt));
@@ -248,12 +271,12 @@ fn virtualbox_while_kvm_holds_the_cpus_virtualization_gives_way_unless_installed
     let named = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Virtualbox]));
     assert_eq!(named.hypervisor, Some(Provider::Virtualbox));
     assert!(steps(&named).iter().any(|s| s.starts_with("virtualbox: install")), "{:?}", steps(&named));
-    assert!(named.steps.iter().any(|s| s.action == Action::ShareVirtualization), "{:?}", steps(&named));
+    assert!(named.steps.iter().any(|s| s.action.kind() == "share"), "{:?}", steps(&named));
     // Installed already: the one set up, KVM set to share with it.
     let installed = virtualbox_reads(with_virtualbox(shapes::bare_debian()), &Unavailable::KvmHoldsVirtualization);
-    assert_eq!(get_of(&installed, Provider::Virtualbox), [Action::ShareVirtualization]);
+    assert_eq!(get_of(&installed, Provider::Virtualbox), [share()]);
     assert_eq!(plan_of(&installed, &wanted(&[SetupPath::Vm], &[])).hypervisor, Some(Provider::Virtualbox));
-    assert_eq!(run::would(&Action::ShareVirtualization).as_deref(), Some("would let VirtualBox share the CPU's virtualization with KVM"));
+    assert_eq!(run::would(&share()).as_deref(), Some("would let VirtualBox share the CPU's virtualization with KVM"));
     // KVM was in use: a restart away, which ends the pass.
     let restart = virtualbox_reads(with_virtualbox(shapes::bare_debian()), &Unavailable::KvmSharesAfterRestart);
     let blocked = Action::Blocked { reason: Unavailable::KvmSharesAfterRestart };
@@ -302,7 +325,12 @@ fn a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt() {
 fn a_linux_without_apt_or_dnf_is_told_to_install_each_tool_itself_instead_of_a_failing_command() {
     // Regression: Fedora, openSUSE and Arch were offered the apt installs, which failed.
     let r = shapes::bare_arch();
-    let distribution = |dependency, url: &str| Action::Manual { reason: ManualReason::Distribution, dependency: Some(dependency), url: Some(url.into()) };
+    let distribution = |dependency, url: &str| Action::Manual {
+        interactions: Vec::new(),
+        reason: ManualReason::Distribution,
+        dependency: Some(dependency),
+        url: Some(url.into()),
+    };
     assert_eq!(
         r.setup.engines.iter().find(|e| e.engine == Engine::Native).unwrap().actions,
         [distribution(Dependency::Docker, "https://docs.docker.com/engine/install/")]
@@ -355,13 +383,13 @@ fn vmware_gets_hashicorps_utility_then_its_plugin_and_its_install_links_out() {
         p.utility = Some(UtilityState::Stopped);
     }
     r.setup = options(&r, false);
-    assert!(r.setup.hypervisors.iter().any(|h| h.vagrant.contains(&Action::Install { dependency: Dependency::VmwareUtility })));
+    assert!(r.setup.hypervisors.iter().any(|h| unasked(&h.vagrant).contains(&install(Dependency::VmwareUtility))));
 }
 
 #[test]
 fn hyper_v_is_turned_on_by_the_setup_then_waits_for_a_restart() {
     // Was a link to Microsoft's guide.
-    assert_eq!(get_of(&shapes::bare_windows(), Provider::Hyperv), [Action::Install { dependency: Dependency::Hyperv }]);
+    assert_eq!(get_of(&shapes::bare_windows(), Provider::Hyperv), [install(Dependency::Hyperv)]);
     let r = shapes::windows_hyperv_waits_for_restart();
     assert_eq!(get_of(&r, Provider::Hyperv), [Action::Restart { feature: WindowsFeature::Hyperv }]);
     let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Hyperv]));
@@ -376,7 +404,16 @@ fn each_engine_says_what_makes_it_the_one_docker_uses() {
     assert_eq!(r.setup.engines.iter().map(|o| o.engine).collect::<Vec<_>>(), [Engine::DockerDesktop, Engine::Orbstack, Engine::Colima]);
     assert!(of(Engine::Orbstack).is_empty(), "in use");
     assert_eq!(of(Engine::DockerDesktop), [Action::UseEngine { engine: Engine::DockerDesktop }]);
-    assert_eq!(of(Engine::Colima), [Action::Manual { reason: ManualReason::Vendor, dependency: None, url: Some("https://github.com/abiosoft/colima".into()) }]);
+    let colima = "https://github.com/abiosoft/colima";
+    assert_eq!(
+        of(Engine::Colima),
+        [Action::Manual {
+            interactions: vec![isothrum_machine::install::Interaction::DownloadByHand { vendor: "Colima", url: colima }],
+            reason: ManualReason::Vendor,
+            dependency: None,
+            url: Some(colima.into())
+        }]
+    );
     assert_eq!(r.setup.engine, Engine::Orbstack);
     // A plan for another engine: switched to.
     let w = Wanted { engine: Some(Engine::DockerDesktop), ..wanted(&[SetupPath::Docker], &[]) };
@@ -384,7 +421,7 @@ fn each_engine_says_what_makes_it_the_one_docker_uses() {
     // Nothing installed: the recommended one is installed, the others link out.
     let r = bare(isothrum_machine::HostOs::Macos, isothrum_machine::Arch::Amd64);
     assert_eq!(r.setup.recommended_engine, Engine::DockerDesktop);
-    assert_eq!(r.setup.engines[0].actions, [Action::Install { dependency: Dependency::Docker }]);
+    assert_eq!(unasked(&r.setup.engines[0].actions), [install(Dependency::Docker)]);
     assert!(matches!(r.setup.engines[1].actions.as_slice(), [Action::Manual { reason: ManualReason::Vendor, .. }]));
     assert_eq!(shapes::bare_debian().setup.recommended_engine, Engine::Native);
 }
@@ -417,13 +454,19 @@ fn a_ready_machine_has_nothing_to_do() {
 #[test]
 fn actions_reach_the_webview_tagged_by_kind() {
     let json = |a: Action| serde_json::to_value(a).unwrap();
-    assert_eq!(json(Action::Install { dependency: Dependency::VmwareUtility }), serde_json::json!({ "kind": "install", "dependency": "vmware-utility" }));
+    assert_eq!(
+        json(Action::Install {
+            dependency: Dependency::VmwareUtility,
+            interactions: vec![isothrum_machine::install::Interaction::AdminPassword { via: isothrum_machine::install::Prompt::Mac }]
+        }),
+        serde_json::json!({ "kind": "install", "dependency": "vmware-utility", "interactions": [{ "kind": "adminPassword", "via": "mac" }] })
+    );
     assert_eq!(json(Action::StartEngine { engine: Engine::Native }), serde_json::json!({ "kind": "startEngine", "engine": "docker-engine" }));
     assert_eq!(json(Action::Relogin), serde_json::json!({ "kind": "relogin" }));
     assert_eq!(json(Action::Restart { feature: WindowsFeature::Hyperv }), serde_json::json!({ "kind": "restart", "feature": "hyperv" }));
     assert_eq!(
-        json(Action::Manual { reason: ManualReason::Distribution, dependency: Some(Dependency::Vagrant), url: None }),
-        serde_json::json!({ "kind": "manual", "reason": "distribution", "dependency": "vagrant", "url": null })
+        json(Action::Manual { interactions: Vec::new(), reason: ManualReason::Distribution, dependency: Some(Dependency::Vagrant), url: None }),
+        serde_json::json!({ "kind": "manual", "interactions": [], "reason": "distribution", "dependency": "vagrant", "url": null })
     );
     let paths: Vec<SetupPath> = serde_json::from_str(r#"["docker","vm"]"#).unwrap();
     assert_eq!(paths, BOTH);

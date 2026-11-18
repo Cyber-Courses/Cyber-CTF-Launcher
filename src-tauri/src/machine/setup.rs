@@ -28,15 +28,35 @@ use crate::machine::system::SystemReport;
 use crate::machine::system::docker::Engine;
 use crate::machine::tools::install::{Dependency, name};
 use crate::runtime::providers::{self, Provider};
-#[cfg(test)]
-use isothrum_machine::HostOs;
+use isothrum_machine::{Arch, HostOs, LinuxPackages, Packages};
+
+/// The CPU a report names by Rust's name for it ([`crate::platform::cpu_name`]).
+pub(crate) fn arch_of(name: &str) -> Arch {
+    if name == crate::platform::cpu_name(Arch::Arm64) { Arch::Arm64 } else { Arch::Amd64 }
+}
+
+/// The computer the machine `r` reports: this one, as the report names its OS, CPU and package
+/// manager.
+pub(crate) fn host_of(r: &SystemReport) -> isothrum_machine::Host {
+    let mut host = providers::machine().host;
+    host.os = r.os;
+    // The CPU and the package manager the report says, which decide what an install asks (an
+    // Intel Mac's long builds, Fedora's VirtualBox group).
+    host.arch = arch_of(r.arch);
+    if r.os == HostOs::Linux {
+        host.packages = match r.pkg_manager.name.as_str() {
+            "apt" => Some(Packages::Linux(LinuxPackages::Apt)),
+            "dnf" => Some(Packages::Linux(LinuxPackages::Dnf)),
+            _ => None,
+        };
+    }
+    host
+}
 
 /// What the setup reads of the machine `r` reports.
 fn machine(r: &SystemReport) -> Machine {
-    let mut host = providers::machine().host;
-    host.os = r.os;
     Machine {
-        host,
+        host: host_of(r),
         packages_installed: r.pkg_manager.installed,
         docker: DockerFound {
             installed: r.docker.installed,
@@ -48,6 +68,8 @@ fn machine(r: &SystemReport) -> Machine {
         wsl: r.wsl.as_ref().map(|w| w.state),
         providers: r.vm_providers.clone(),
         groups_pending: r.groups_pending.clone(),
+        elevation: crate::machine::tools::install::elevation(),
+        user: crate::platform::exec::login_name(),
     }
 }
 
