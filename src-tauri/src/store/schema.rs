@@ -71,6 +71,20 @@ const MIGRATIONS: &[&str] = &[
     DROP TABLE storage_images;
     DROP TABLE storage_boxes;
     ",
+    // 5: what each install added, never the whole tool. A record an earlier build left says only
+    // that a tool was installed, which can't prove what of it the install added (a QEMU installed
+    // by hand, its helpers added): dropped, so Cleanup never offers to remove it.
+    "
+    DROP TABLE installed_tools;
+    -- What the guided setup's installs added of each tool, so Cleanup removes only that:
+    -- `added` and `waiting` are JSON lists of isothrum-machine's install items.
+    CREATE TABLE installed_tools (
+        dependency TEXT PRIMARY KEY,
+        at         INTEGER NOT NULL,
+        added      TEXT NOT NULL,
+        waiting    TEXT NOT NULL DEFAULT '[]'
+    ) STRICT;
+    ",
 ];
 
 /// The schema version this build writes.
@@ -159,6 +173,17 @@ mod tests {
 
     fn version(conn: &Connection) -> u32 {
         conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn a_record_an_earlier_build_left_of_a_whole_tool_is_never_offered_for_removal() {
+        // It says only that QEMU was installed, which can't prove what of it the install added
+        // (QEMU installed by hand, its helpers added by the setup): Cleanup must not remove QEMU.
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate_with(&mut conn, &MIGRATIONS[..4]).unwrap();
+        conn.execute("INSERT INTO installed_tools (dependency, at) VALUES ('qemu', 1)", []).unwrap();
+        migrate(&mut conn).unwrap();
+        assert_eq!(crate::store::tools::all(&conn).unwrap(), []);
     }
 
     #[test]

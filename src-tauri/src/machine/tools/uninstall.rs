@@ -1,11 +1,14 @@
-//! Removing what Cyber CTF installed. Each successful assisted install is recorded, and Cleanup
-//! offers to remove those tools only (a Docker or Vagrant the player had before is never
-//! touched). Removal goes through the same trusted flows as install: the package manager,
-//! the vendor's own uninstaller, or the OS admin prompt.
+//! Removing what Cyber CTF installed. What each successful assisted install added is recorded
+//! (isothrum-machine reads it: [`Installed`](isothrum_machine::install::Installed)), never what was
+//! there before it, and Cleanup removes only that: a Docker or Vagrant the player had before is
+//! never touched, nor a QEMU the player installed whose helpers an install added. Removal goes
+//! through the same trusted flows as install: the package manager, the vendor's own uninstaller,
+//! or the OS admin prompt.
 
 use std::path::Path;
 
-use isothrum_machine::install::record::{self, InstalledTool, Outcome, confirmed};
+use isothrum_machine::install::record::{self, InstalledTool, removable};
+use isothrum_machine::install::{Installed as Added, Item};
 use isothrum_machine::{Host, HostOs, Packages};
 use serde::Serialize;
 
@@ -26,36 +29,34 @@ pub struct Installed {
     pub at: u64,
 }
 
-/// Whether `dep` is installed on this machine; None when that can't be told (WSL): as
-/// isothrum-machine finds it.
-pub async fn present(dep: Dependency) -> Option<bool> {
-    isothrum_machine::install::present(&crate::runtime::providers::machine(), dep).await
+/// What of `dep`'s install is on this machine now (isothrum-machine's
+/// [`there`](isothrum_machine::install::there)); `None` when that can't be told.
+async fn there(dep: Dependency) -> Option<Vec<Item>> {
+    isothrum_machine::install::there(&crate::runtime::providers::machine_setup().await, dep).await.map(|items| items.into_iter().collect())
 }
 
-/// Records the outcome of an install of `dependency` (isothrum-machine's
-/// [`remember`](record::remember)).
-pub fn record_outcome(dirs: &AppDirs, dependency: Dependency, outcome: Outcome) {
-    if outcome != Outcome::NotOurs {
-        update(dirs, |tools| record::remember(tools, dependency, outcome, crate::platform::clock::unix_secs()));
+/// Records what an install of `dependency` added (isothrum-machine's
+/// [`remember`](record::remember)): nothing when it added nothing.
+pub fn record_installed(dirs: &AppDirs, dependency: Dependency, installed: &Added) {
+    if !installed.is_empty() {
+        update(dirs, |tools| record::remember(tools, dependency, installed, crate::platform::clock::unix_secs()));
     }
 }
 
-/// Re-checks the installs that only opened an installer: run when the tools are listed.
+/// Re-checks what installs left waiting (an installer only opened): run when the tools are listed.
 async fn confirm_pending(dirs: &AppDirs) {
-    let waiting: Vec<Dependency> = load_or_logged(dirs).into_iter().filter(|t| t.pending).map(|t| t.dependency).collect();
+    let waiting: Vec<Dependency> = load_or_logged(dirs).into_iter().filter(|t| !t.waiting.is_empty()).map(|t| t.dependency).collect();
     if waiting.is_empty() {
         return;
     }
     let mut found = Vec::new();
     for dep in waiting {
-        if present(dep).await == Some(true) {
-            found.push(dep);
+        if let Some(items) = there(dep).await {
+            found.push((dep, items));
         }
     }
     let now = crate::platform::clock::unix_secs();
-    update(dirs, |tools| {
-        record::settle(tools, &found, now);
-    });
+    update(dirs, |tools| record::settle(tools, &found, now));
 }
 
 /// The records; none without a data folder.
@@ -98,11 +99,11 @@ fn update_at(data: &Path, change: impl FnOnce(&mut Vec<InstalledTool>)) -> Resul
     })
 }
 
-/// The tools Cyber CTF installed on this machine (and hasn't removed since). Installs that only
-/// opened the vendor's installer count once the tool is found.
+/// The tools Cyber CTF added something of on this machine (and hasn't removed since). Installs
+/// that only opened the vendor's installer count once the tool is found.
 pub async fn installed_tools(dirs: AppDirs) -> Vec<Installed> {
     confirm_pending(&dirs).await;
-    confirmed(load_or_logged(&dirs)).into_iter().map(|t| Installed { dependency: t.dependency, name: super::install::name(t.dependency), at: t.at }).collect()
+    removable(load_or_logged(&dirs)).into_iter().map(|t| Installed { dependency: t.dependency, name: super::install::name(t.dependency), at: t.at }).collect()
 }
 
 /// The VirtualBox installer image Homebrew (`brew`) keeps, which its uninstaller runs from
@@ -123,51 +124,37 @@ async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<
     })
 }
 
-/// The removal on macOS: isothrum-machine's (Homebrew's packages, or the vendor's uninstaller).
-fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
-    isothrum_machine::install::macos::uninstall(dep, packages, virtualbox_dmg).map_err(super::install::refusal)
-}
-
-/// The removal on Windows: isothrum-machine's winget packages and VMware's utility's MSI.
-fn windows_plan(dep: Dependency) -> Result<super::steps::Plan> {
-    isothrum_machine::install::windows::uninstall(dep).map_err(super::install::refusal)
-}
-
-/// How to remove `dep` on Linux: its packages through the package manager that installed them
-/// (apt or dnf, as root through pkexec), or its folder. Regression: a tool the setup had
-/// installed through dnf on Fedora was removed with `apt-get remove`, which pkexec ran to
-/// The removal on Linux: isothrum-machine's root script, through the package manager that
-/// installed the tool.
-fn linux_plan(dep: Dependency, packages: Option<Packages>) -> Result<super::steps::Plan> {
-    isothrum_machine::install::linux::uninstall(dep, packages, &super::install::linux_root()).map_err(super::install::refusal)
-}
-
-/// How to remove `dep` on `host`. On macOS, VirtualBox's step needs its installer image
-/// (`virtualbox_dmg`).
-pub(super) fn plan_on(dep: Dependency, host: &Host, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
+/// How to remove what an install added of `dep` (`added`, as on record) on `host`, and nothing
+/// else: isothrum-machine's [`removal`](isothrum_machine::install::removal) (the package manager's
+/// removal of those packages, or the vendor's uninstaller when the install added the tool
+/// itself). On macOS, VirtualBox's step needs its installer image (`virtualbox_dmg`).
+pub(super) fn plan_on(dep: Dependency, host: &Host, added: &[Item], virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
     if !super::install::runs_on(dep, host.os) {
         return Err(super::install::not_here(dep, host.os));
     }
-    match host.os {
-        HostOs::Macos => macos_plan(dep, host.packages, virtualbox_dmg),
-        HostOs::Windows => windows_plan(dep),
-        HostOs::Linux => linux_plan(dep, host.packages),
-    }
+    isothrum_machine::install::removal(dep, host, added, super::install::elevation(), virtualbox_dmg).map_err(super::install::refusal)
 }
 
-/// Removes a tool Cyber CTF installed, streaming the output, then forgets it.
+/// Why a removal of a tool Cyber CTF added nothing of is refused.
+pub(super) fn not_ours() -> Error {
+    Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into())
+}
+
+/// Removes what Cyber CTF's installs added of a tool, streaming the output, then forgets it.
 pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
     super::install::installs_allowed(&mut on_line)?;
     let recorded = load(&dirs).map_err(|e| Error::Invalid(format!("the record of the tools Cyber CTF installed can't be read: {e}")))?;
-    if !confirmed(recorded).iter().any(|t| t.dependency == dependency) {
-        return Err(Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into()));
-    }
+    let Some(added) = removable(recorded).into_iter().find(|t| t.dependency == dependency).map(|t| t.added) else {
+        return Err(not_ours());
+    };
     let host = crate::runtime::providers::host().await;
     let dmg = match (host.os, host.packages, dependency) {
-        (HostOs::Macos, Some(Packages::Homebrew(brew)), Dependency::Virtualbox) => Some(virtualbox_dmg(brew, &mut on_line).await?),
+        (HostOs::Macos, Some(Packages::Homebrew(brew)), Dependency::Virtualbox) if added.contains(&Item::Tool(dependency)) => {
+            Some(virtualbox_dmg(brew, &mut on_line).await?)
+        }
         _ => None,
     };
-    super::steps::run_plan(&plan_on(dependency, &host, dmg.as_deref())?, &mut on_line).await?;
+    super::steps::run_plan(&plan_on(dependency, &host, &added, dmg.as_deref())?, &mut on_line).await?;
     update(&dirs, |tools| tools.retain(|t| t.dependency != dependency));
     on_line("Removed.".into());
     Ok(())
@@ -189,7 +176,7 @@ mod tests {
         use crate::platform::policy::{Key, Override};
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
-        record_outcome(&dirs, Dependency::Vagrant, Outcome::Installed);
+        record_installed(&dirs, Dependency::Vagrant, &tool(Dependency::Vagrant));
         let _policy = Override::with(&[Key::DisableToolInstalls]);
         let tools = crate::runtime::providers::testing::fake(isothrum_runner::fake::FakeProcesses::script().build());
         let mut lines = Vec::new();
@@ -197,7 +184,12 @@ mod tests {
         assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableToolInstalls".into() });
         assert_eq!(lines, [err.to_string()], "said on the removal's log");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-        assert!(confirmed(load(&dirs).unwrap()).iter().any(|t| t.dependency == Dependency::Vagrant), "still remembered as installed");
+        assert!(removable(load(&dirs).unwrap()).iter().any(|t| t.dependency == Dependency::Vagrant), "still remembered as installed");
+    }
+
+    /// What an install that added the tool `dep` itself reports.
+    fn tool(dep: Dependency) -> Added {
+        Added::new(vec![Item::Tool(dep)], vec![])
     }
 
     /// Makes the recorded tools unreadable, as a damaged store would be.
@@ -205,7 +197,7 @@ mod tests {
         crate::store::open(dirs)
             .unwrap()
             .write(|tx| {
-                tx.execute("INSERT INTO installed_tools (dependency, at) VALUES ('no-such-tool', 1)", [])?;
+                tx.execute("INSERT INTO installed_tools (dependency, at, added) VALUES ('no-such-tool', 1, '[]')", [])?;
                 Ok(())
             })
             .unwrap();
@@ -219,7 +211,7 @@ mod tests {
         let dirs = t.dirs();
         damage(&dirs);
         crate::testing::logs::take_warnings();
-        record_outcome(&dirs, Dependency::Docker, Outcome::Installed);
+        record_installed(&dirs, Dependency::Docker, &tool(Dependency::Docker));
         assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("couldn't be updated")), "said in the log");
         assert!(load(&dirs).is_err(), "left as it was");
         let listed = tauri::async_runtime::block_on(installed_tools(dirs.clone()));
@@ -235,16 +227,17 @@ mod tests {
         let f = dir.join("data");
         assert_eq!(load_at(&f).unwrap(), []);
         update_at(&f, |tools| {
-            record::remember(tools, Dependency::Vagrant, Outcome::Installed, 1);
-            record::remember(tools, Dependency::Docker, Outcome::Installed, 1);
+            record::remember(tools, Dependency::Vagrant, &tool(Dependency::Vagrant), 1);
+            record::remember(tools, Dependency::Docker, &tool(Dependency::Docker), 1);
         })
         .unwrap();
-        update_at(&f, |tools| record::remember(tools, Dependency::Vagrant, Outcome::Installed, 1)).unwrap();
+        update_at(&f, |tools| record::remember(tools, Dependency::Vagrant, &tool(Dependency::Vagrant), 1)).unwrap();
         let back = load_at(&f).unwrap();
         assert_eq!(back.iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Docker, Dependency::Vagrant]);
         assert!(back.iter().all(|t| t.at > 0));
         let json = serde_json::to_value(&back[0]).unwrap();
         assert_eq!(json["dependency"], "docker");
+        assert_eq!(back[1].added, [Item::Tool(Dependency::Vagrant)], "what it added, read back");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -256,7 +249,7 @@ mod tests {
         std::thread::scope(|s| {
             for dep in deps {
                 let f = &f;
-                s.spawn(move || update_at(f, |tools| record::remember(tools, dep, Outcome::Installed, 1)).unwrap());
+                s.spawn(move || update_at(f, |tools| record::remember(tools, dep, &tool(dep), 1)).unwrap());
             }
         });
         assert_eq!(load_at(&f).unwrap().len(), deps.len());
@@ -264,8 +257,27 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_the_player_installed_stays_when_an_install_only_added_its_helpers() {
+        // QEMU installed by hand, its VMs' helpers added by the setup: Cleanup removes those, and
+        // never QEMU itself.
+        let linux = host_on(HostOs::Linux, isothrum_machine::Arch::Amd64, Some(Packages::Linux(isothrum_machine::LinuxPackages::Apt)));
+        let added = [Item::Package("genisoimage".into()), Item::Package("virtiofsd".into())];
+        let steps = plan_on(Dependency::Qemu, &linux, &added, None).unwrap();
+        let script = steps[0].args.last().unwrap();
+        assert!(script.ends_with("apt-get remove -y genisoimage virtiofsd"), "{script}");
+        assert!(!script.contains("qemu-system") && !script.contains("qemu-utils"), "{script}");
+        // Nothing on record of a tool, or only another's: refused before any step.
+        for added in [vec![], vec![Item::Package("qemu-system-x86".into())], vec![Item::Tool(Dependency::Qemu)]] {
+            let refused = plan_on(Dependency::Libvirt, &linux, &added, None).unwrap_err();
+            assert_eq!(refused.to_string(), not_ours().to_string(), "{added:?}");
+        }
+        let mac = plan_on(Dependency::Qemu, &MAC, &[], None).unwrap_err();
+        assert_eq!(mac.to_string(), not_ours().to_string());
+    }
+
+    #[test]
     fn every_windows_tool_is_removed_through_winget() {
-        let plan = |dep, dmg| plan_on(dep, &WINDOWS, dmg);
+        let plan = |dep, dmg| plan_on(dep, &WINDOWS, &[Item::Tool(dep)], dmg);
         for dep in [
             Dependency::Docker,
             Dependency::Vagrant,
@@ -292,13 +304,16 @@ mod tests {
 
     #[test]
     fn every_macos_tool_has_a_way_out() {
-        let plan = |dep, dmg| plan_on(dep, &MAC, dmg);
+        let plan = |dep, dmg| plan_on(dep, &MAC, &[Item::Tool(dep)], dmg);
         // Regression: VMware's utility, installed from HashiCorp's package without Homebrew, could
         // only be removed with Homebrew; so could every other tool from its vendor's package.
         let without = Host { packages: None, ..MAC.clone() };
-        assert!(plan_on(Dependency::Terraform, &without, None).err().is_some_and(|e| e.to_string().contains("Homebrew is needed")));
+        let whole = |dep| [Item::Tool(dep)];
+        assert!(
+            plan_on(Dependency::Terraform, &without, &whole(Dependency::Terraform), None).err().is_some_and(|e| e.to_string().contains("Homebrew is needed"))
+        );
         for dep in [Dependency::VmwareUtility, Dependency::Vagrant, Dependency::Docker, Dependency::Utm] {
-            assert!(plan_on(dep, &without, None).is_ok(), "{dep:?}");
+            assert!(plan_on(dep, &without, &whole(dep), None).is_ok(), "{dep:?}");
         }
         for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Libvirt | Dependency::Hyperv)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
