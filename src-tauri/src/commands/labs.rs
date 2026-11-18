@@ -155,8 +155,7 @@ pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<
 /// [`lab_status`], in the app whose folders are `dirs`.
 pub(crate) async fn status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<LabStatus> {
     let Some(dir) = installed_lab_dir(dirs, id)? else { return Ok(LabStatus::default()) };
-    let failed = crate::runtime::isothrum::last_run_failed(dirs, id).await;
-    Ok(status::status(dirs, &dir, id, runtime).await?.unless_launch_failed(failed))
+    status::status(dirs, &dir, id, runtime).await
 }
 
 /// Watches `labs` (each with its catalogue runtime), `open` among them looked at closely (a lab
