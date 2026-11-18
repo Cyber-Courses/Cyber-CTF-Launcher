@@ -2,19 +2,7 @@
 import type { SshHostKey } from "./SshHostKey";
 import type { SshHostKeyState } from "./SshHostKeyState";
 
-/**
- * The keys a server offers and whether they are the confirmed ones.
- */
 export type SshHostKeys = { 
-/**
- * The server's address and SSH port, as `known_hosts` names it (`pve.lan`, `[pve.lan]:2222`).
- */
 pattern: string, 
-/**
- * The keys, strongest first.
- */
 keys: Array<SshHostKey>, 
-/**
- * Whether they are the confirmed ones.
- */
 state: SshHostKeyState, };

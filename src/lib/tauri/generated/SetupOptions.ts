@@ -5,34 +5,10 @@ import type { HypervisorOption } from "./HypervisorOption";
 import type { SetupAction } from "./SetupAction";
 import type { VagrantProvider } from "./VagrantProvider";
 
-/**
- * What each choice of a setup takes on this computer.
- */
 export type SetupOptions = { 
-/**
- * What turns WSL 2 on (Windows): nothing once it is ready, or elsewhere.
- */
 wsl: Array<SetupAction>, 
-/**
- * The engine a setup installs in one click on this OS.
- */
 recommendedEngine: DockerEngine, 
-/**
- * The engine a setup works on until its user picks one: the one in use, else the
- * recommended one.
- */
 engine: DockerEngine, 
-/**
- * The engines offered on this OS, in the order shown, each with what makes it the one Docker
- * uses here (nothing: it is).
- */
 engines: Array<EngineOption>, 
-/**
- * The hypervisor a setup works on until its user picks one: an installed one that can run
- * VMs, else an installed one, else the first a setup installs, else the first.
- */
 hypervisor: VagrantProvider | null, 
-/**
- * The local hypervisors offered here, in the machine check's order.
- */
 hypervisors: Array<HypervisorOption>, };
