@@ -31,6 +31,7 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
   // One hypervisor is enough; the pick lives in the setup state so the flow can wait for it.
   const choice = chosenHypervisor(report, setup);
   if (!choice) return <p className="text-[0.8125rem] text-muted-foreground">{t("machine.vm.noHypervisor")}</p>;
+  const first = getActions(report, choice.provider).at(0);
   return (
     <div className="space-y-3">
       <ChoiceGrid>
@@ -48,18 +49,47 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
           />
         ))}
       </ChoiceGrid>
-      {/* Installed but unable to run (no /dev/kvm), or not before a new login (libvirt's group just
-          joined): why, as the Machine page says. */}
-      {(cantRun(report, choice) || getActions(report, choice.provider).at(0)?.kind === "relogin") && choice.reason && (
-        <ChoiceAction>
-          <span className="text-[0.8125rem] text-muted-foreground">{unavailableText(choice.reason, t)}</span>
-        </ChoiceAction>
+      {/* Installed but held from the CPU's virtualization by KVM: the setup lets them share it.
+          Else installed but unable to run (no /dev/kvm), or not before a new login (libvirt's group
+          just joined): why, as the Machine page says. */}
+      {first?.kind === "shareVirtualization" ? (
+        <ShareVirtualization choice={choice} setup={setup} />
+      ) : (
+        (cantRun(report, choice) || first?.kind === "relogin") &&
+        choice.reason && (
+          <ChoiceAction>
+            <span className="text-[0.8125rem] text-muted-foreground">{unavailableText(choice.reason, t)}</span>
+          </ChoiceAction>
+        )
       )}
       {/* Only when there is something to do: an installed hypervisor says so on its card. */}
       {choice.hypervisor !== true && <GetHypervisor choice={choice} report={report} setup={setup} />}
       <Log setup={setup} of={[choice.provider]} />
       <p className="pt-1 text-left text-[0.6875rem] leading-relaxed text-faint">{t("machine.vm.trademarks")}</p>
     </div>
+  );
+}
+
+/** VirtualBox installed while KVM holds the CPU's virtualization (Linux 6.12 and later): the
+ *  core's action lets KVM share it, KVM then taking it only while one of its own VMs runs. */
+function ShareVirtualization({ choice, setup }: { choice: ProviderStatus; setup: MachineSetupState }) {
+  const t = useT();
+  return (
+    <ChoiceAction>
+      <span className="text-[0.8125rem] text-muted-foreground">{t("machine.vm.shareNote")}</span>
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={() => {
+          setup.installs.share(choice.provider);
+        }}
+        disabled={!setup.installs.canInstall}
+      >
+        <BusyLabel busy={setup.installs.installing === choice.provider} label={t("machine.vm.sharing")}>
+          {t("machine.vm.share")}
+        </BusyLabel>
+      </Button>
+    </ChoiceAction>
   );
 }
 

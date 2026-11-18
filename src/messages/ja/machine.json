@@ -344,6 +344,10 @@
     "pluginTitle": "Vagrant 用 {name} アドオン",
     "pluginLater": "{plugin}（Vagrant のインストール後）。",
     "pluginLog": "Vagrant プラグイン {plugin} をインストール中…",
+    "shareNote": "KVM がプロセッサーの仮想化を使用しているため、VirtualBox は VM を起動できません。Cyber CTF で両者に共有させることができます。共有すると、KVM は自身の VM の実行中だけこれを使います。パスワードを求められます。",
+    "share": "VirtualBox に使わせる",
+    "sharing": "設定中…",
+    "shareLog": "KVM と VirtualBox でプロセッサーの仮想化を共有しています…",
     "installPlugin": "プラグインをインストール",
     "utilityDetail": "VMware プラグインが VMware を操作するための HashiCorp のサービスです。HashiCorp の署名付きパッケージからインストールし、パスワードを求められます。",
     "utilityTitle": "Vagrant VMware Utility",
@@ -387,6 +391,7 @@
     "vmwareUtilityMissing": "Vagrant VMware Utility がインストールされていません。VMware プラグインが VMware を操作するための HashiCorp のサービスです。",
     "virtualboxDriver": "VirtualBox のカーネルドライバー（vboxdrv）がこのカーネル（{kernel}）で読み込まれていないため、VirtualBox は VM を起動できません。カーネルのヘッダー（Debian と Ubuntu では linux-headers-{kernel}）をインストールし、ドライバーをビルドしてから（Oracle の VirtualBox は sudo /sbin/vboxconfig、ディストリビューションの VirtualBox は sudo dpkg-reconfigure virtualbox-dkms）、もう一度確認してください。セキュアブートが有効な場合、ドライバーは署名しないと読み込まれません。",
     "kernelRestart": "VirtualBox のカーネルドライバーは、一緒にインストールされた新しいカーネル（{kernel}）用にビルドされます。コンピューターを再起動してそのカーネルで起動してから、もう一度確認してください。",
-    "kvmHoldsVirtualization": "KVM がこのコンピューターのハードウェア仮想化（VT-x または AMD-V）を使用しています。Linux は KVM のモジュールが読み込まれた時点でこれを有効にする（Linux 6.12 以降の既定）ため、VirtualBox は VM を起動できません（「VT-x is being used by another hypervisor」）。KVM で動作する libvirt か QEMU を使ってください。VirtualBox を使う場合は KVM をアンロードする（sudo modprobe -r kvm_intel kvm_amd）か、kvm.enable_virt_at_load=0 を付けて Linux を起動してから、もう一度確認してください。"
+    "kvmHoldsVirtualization": "KVM がこのコンピューターのハードウェア仮想化（VT-x または AMD-V）を使用しています。Linux は KVM のモジュールが読み込まれた時点でこれを有効にする（Linux 6.12 以降の既定）ため、VirtualBox は VM を起動できません（「VT-x is being used by another hypervisor」）。KVM で動作する libvirt か QEMU を使うか、KVM に VirtualBox と共有させてください。共有すると、KVM は自身の VM の実行中だけこれを使います。",
+    "kvmSharesAfterRestart": "KVM は次に読み込まれたときから、このコンピューターのハードウェア仮想化を VirtualBox と共有するよう設定されています。適用するにはコンピューターを再起動してください。"
   }
 }

@@ -71,4 +71,4 @@ kernel: string, } } | { "code": "kernelRestart", "args": {
 /**
  * The newer kernel installed (`uname -r` once it runs).
  */
-kernel: string, } } | { "code": "kvmHoldsVirtualization" };
+kernel: string, } } | { "code": "kvmHoldsVirtualization" } | { "code": "kvmSharesAfterRestart" };

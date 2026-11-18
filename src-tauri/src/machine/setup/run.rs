@@ -10,8 +10,8 @@ use super::{Action, Wanted, WindowsFeature, distribution_said};
 use crate::machine::system::{self, SystemReport, docker};
 use crate::machine::tools::install::{self, name};
 use crate::platform::AppDirs;
-use isothrum_machine::setup::LeftAlone;
 use isothrum_machine::setup::Steps;
+use isothrum_machine::setup::{LeftAlone, Shared};
 pub use isothrum_machine::setup::{OnFailure, Walked};
 
 /// How a step the setup runs (or leaves alone) ended.
@@ -48,6 +48,7 @@ pub fn would(action: &Action) -> Option<String> {
         Action::Plugin { plugin } => format!("would install the Vagrant plugin {plugin}"),
         Action::StartEngine { engine } => format!("would start {}", engine.id()),
         Action::UseEngine { engine } => format!("would point Docker at {}", engine.id()),
+        Action::ShareVirtualization => "would let VirtualBox share the CPU's virtualization with KVM".to_owned(),
         Action::Restart { feature } => format!(
             "would restart the computer to turn {} on",
             match feature {
@@ -74,6 +75,10 @@ pub async fn run_step(dirs: &AppDirs, action: &Action, mut on_line: impl FnMut(S
         Action::Plugin { plugin } => install::install_vagrant_plugin(plugin.clone(), &mut on_line).await.map(|()| format!("{plugin} installed")),
         Action::StartEngine { engine } => docker::docker_start_engine(engine.id().to_owned()).await.map(|()| format!("{} started", engine.id())),
         Action::UseEngine { engine } => docker::docker_use_engine(engine.id().to_owned()).await.map(|()| format!("Docker uses {}", engine.id())),
+        Action::ShareVirtualization => install::share_virtualization(&mut on_line).await.map(|shared| match shared {
+            Shared::Now => "KVM shares the CPU's virtualization with VirtualBox".to_owned(),
+            Shared::AfterRestart => "KVM shares the CPU's virtualization with VirtualBox from the next restart".to_owned(),
+        }),
         Action::Restart { .. } | Action::Relogin | Action::Manual { .. } | Action::Blocked { .. } => {
             return Outcome::Skipped(would(action).unwrap_or_default().replacen("would ", "needs to ", 1));
         }

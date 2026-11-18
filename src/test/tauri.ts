@@ -91,6 +91,7 @@ export const DEFAULTS: Partial<Record<string, Handler>> = {
   install_dependency: streams("Downloading", "Installed"),
   uninstall_dependency: streams("Removing", "Removed"),
   install_vagrant_plugin: streams("Installing plugin"),
+  machine_share_virtualization: streams("KVM loaded again"),
   aws_login: streams("Opening browser"),
   cloud_login: streams("Opening browser"),
 };

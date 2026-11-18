@@ -2269,6 +2269,21 @@ areas:
           integration: never run on a real Windows (UAC prompt, localized group name by SID)
         note: The join itself (one UAC prompt, the group by its SID) is isothrum-machine's setup::join_hyperv_admins, tested there.
 
+      - id: machine.share-virtualization
+        what: On Linux 6.12 and later, where KVM holds the CPU's virtualization, let VirtualBox share it from the setup's VM step (KVM then takes it only while one of its own VMs runs; asks for the password).
+        platforms:
+          - linux
+        providers:
+          - virtualbox
+        host: true
+        commands:
+          - machine_share_virtualization
+        tests:
+          unit:
+            - src-tauri/src/commands/machine.rs > sharing_the_cpus_virtualization_with_kvm_is_linux_only
+            - src-tauri/src/machine/setup/tests.rs > virtualbox_while_kvm_holds_the_cpus_virtualization_gives_way_unless_installed_then_kvm_shares_it
+        note: The action itself (the modprobe option as root, KVM loaded again or a restart) is isothrum-machine's setup::share_virtualization, tested there and on a real Debian 13 host by its machine-tier e2e test.
+
   - id: setup
     title: Guided machine setup
     features:

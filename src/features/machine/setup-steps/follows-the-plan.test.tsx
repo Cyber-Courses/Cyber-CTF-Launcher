@@ -159,6 +159,7 @@ function offered(label: string): string {
   if (text().includes(`install ${label} yourself`)) return "distribution";
   if (text().includes(`Install ${label}, then re-check.`)) return "vendor";
   if (text().includes("log out and back in (or restart) for it to apply")) return "relogin";
+  if (screen.queryByRole("button", { name: /^let virtualbox use it$/i })) return "shareVirtualization";
   if (text().includes("Installed, but it can't run here.")) return "blocked";
   return "nothing";
 }
@@ -167,6 +168,7 @@ function offered(label: string): string {
 function expected(action: SetupAction | undefined, label: string): string {
   if (!action) return "nothing";
   if (action.kind === "manual") return action.reason;
-  if (action.kind === "install" || action.kind === "restart" || action.kind === "blocked" || action.kind === "relogin") return action.kind;
+  if (action.kind === "install" || action.kind === "restart" || action.kind === "blocked" || action.kind === "relogin" || action.kind === "shareVirtualization")
+    return action.kind;
   throw new Error(`${label}: a hypervisor gets no ${action.kind}`);
 }
