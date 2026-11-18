@@ -97,6 +97,12 @@ fn servers_and_cloud_accounts_are_offered_everywhere_and_share_no_folder() {
     assert!(!Provider::Virtualbox.offered_on(&arm_pc, true) && !Provider::VmwareDesktop.offered_on(&arm_pc, true));
     assert!(Provider::Hyperv.offered_on(&arm_pc, false));
     assert!(Provider::Qemu.shares_folders_on(HostOs::Linux) && !Provider::Qemu.shares_folders_on(HostOs::Macos));
+    // Only QEMU's unprivileged virtiofsd on Linux writes as the computer's user whoever writes.
+    for p in Provider::ALL.into_iter().chain(Provider::CLOUDS) {
+        for os in isothrum_machine::host::ALL_OSES {
+            assert_eq!(p.squashes_folder_writers_on(os), p == Provider::Qemu && os == HostOs::Linux, "{p:?} on {os:?}");
+        }
+    }
     for p in Provider::SERVERS.into_iter().chain(Provider::CLOUDS) {
         for os in isothrum_machine::host::ALL_OSES {
             assert!(p.runs_on(os), "{p:?} on {os:?}");
