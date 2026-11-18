@@ -58,6 +58,7 @@ pub fn run() -> tauri::Result<()> {
     // nested Windows 11 VM about one launch in five ended with 0xC0000409, the dumps all on that
     // path. A second install (a test harness's) is no error.
     let _ = rustls::crypto::ring::default_provider().install_default();
+    name_the_app();
     // Before any tool starts: none holds what started the app (#299).
     #[cfg(windows)]
     platform::sys::keep_std_handles();
@@ -70,7 +71,14 @@ pub fn run() -> tauri::Result<()> {
 /// right first.
 #[allow(clippy::must_use_candidate, reason = "ExitCode is must_use itself: clippy 1.100 refuses a second one, which 1.99 still asks for")]
 pub fn cli_main() -> std::process::ExitCode {
+    name_the_app();
     cli::main()
+}
+
+/// Names the app to the installs it runs: macOS's administrator prompt then says "Cyber CTF wants
+/// to install Docker Desktop", not "osascript wants to make changes".
+fn name_the_app() {
+    isothrum_machine::install::set_app_name("Cyber CTF");
 }
 
 /// Runs `task` in the background on the app's async runtime (Tauri's; the command line sets its

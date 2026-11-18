@@ -9,6 +9,7 @@ use serde::Serialize;
 use super::{Action, Wanted, WindowsFeature, distribution_said};
 use crate::machine::system::{self, SystemReport, docker};
 use crate::machine::tools::install::{self, name};
+use crate::machine::tools::steps::as_lines;
 use crate::platform::AppDirs;
 use isothrum_machine::setup::Steps;
 use isothrum_machine::setup::{LeftAlone, Shared};
@@ -70,12 +71,12 @@ pub async fn run_step(dirs: &AppDirs, action: &Action, mut on_line: impl FnMut(S
     }
     let done = match action {
         Action::Install { dependency, .. } => {
-            install::install_dependency(dirs.clone(), *dependency, &mut on_line).await.map(|()| format!("{} installed", name(*dependency)))
+            install::install_dependency(dirs.clone(), *dependency, as_lines(&mut on_line)).await.map(|()| format!("{} installed", name(*dependency)))
         }
         Action::Plugin { plugin } => install::install_vagrant_plugin(plugin.clone(), &mut on_line).await.map(|()| format!("{plugin} installed")),
         Action::StartEngine { engine } => docker::docker_start_engine(engine.id().to_owned()).await.map(|()| format!("{} started", engine.id())),
         Action::UseEngine { engine } => docker::docker_use_engine(engine.id().to_owned()).await.map(|()| format!("Docker uses {}", engine.id())),
-        Action::ShareVirtualization { .. } => install::share_virtualization(&mut on_line).await.map(|shared| match shared {
+        Action::ShareVirtualization { .. } => install::share_virtualization(as_lines(&mut on_line)).await.map(|shared| match shared {
             Shared::Now => "KVM shares the CPU's virtualization with VirtualBox".to_owned(),
             Shared::AfterRestart => "KVM shares the CPU's virtualization with VirtualBox from the next restart".to_owned(),
         }),

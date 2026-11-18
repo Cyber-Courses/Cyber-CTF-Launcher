@@ -59,7 +59,7 @@ export function VagrantRequirements({ choice, report, setup }: { choice: Provide
                 variant="primary"
                 size="xs"
                 onClick={() => {
-                  setup.installs.install("vagrant", "vagrant", t("machine.vm.installVagrantLog"));
+                  setup.installs.install("vagrant", "vagrant", t("machine.vm.installVagrantLog"), "Vagrant");
                 }}
                 disabled={!setup.installs.canInstall}
               >

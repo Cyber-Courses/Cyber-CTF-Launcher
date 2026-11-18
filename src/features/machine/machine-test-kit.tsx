@@ -9,6 +9,7 @@ import { must } from "@/components/test-support";
 import { readyReport } from "@/test/fixtures";
 import type { Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
+import { agreeToInstall } from "@/test/install-consent";
 
 /** The choice card (a radio) whose text includes `label`. */
 export const radioWith = (label: string) =>
@@ -46,6 +47,7 @@ export function providerRows(): RowReading[] {
 /** Presses "Install Docker Desktop": the launcher asks for Docker's install (`calls` records it). */
 export async function installDockerDesktop(user: ReturnType<typeof userEvent.setup>, calls: Call[]) {
   await user.click(button(/install docker desktop/i));
+  await agreeToInstall(user);
   await flush();
   expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
 }

@@ -63,6 +63,9 @@ pub enum Code {
     },
     /// The container engine isn't running.
     DockerNotRunning,
+    /// Docker Desktop waits for the player to accept Docker's Subscription Service Agreement in
+    /// its own window, which nothing accepts for them: its engine starts once they have.
+    DockerDesktopAgreement,
     /// Docker runs, but this account isn't allowed to use it.
     DockerDenied {
         /// The account's user name, for the `usermod` command the message gives.

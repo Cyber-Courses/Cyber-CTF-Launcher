@@ -9,6 +9,7 @@
     "noPasswordStored": "このホストのパスワードが保存されていません。ホストを編集してパスワードを入力してください。",
     "portInUse": "ホストのポート {port} はこのマシンですでに使用されています（別のラボまたはアプリが使用中）。使用中のものを停止してから、ラボをもう一度起動してください。",
     "dockerNotRunning": "Docker が実行されていません。コンテナーエンジン（Docker Desktop、または Linux では docker サービス）を起動してから、ラボをもう一度起動してください。",
+    "dockerDesktopAgreement": "Docker Desktop はウィンドウで Subscription Service Agreement への同意を待っています。そこで同意してから、もう一度確認してください。",
     "dockerDenied": "Docker は実行中ですが、このアカウントではまだ使用できません。ターミナルで自分を docker グループに追加し（sudo usermod -aG docker {user}）、いったんログアウトしてから再度ログインしてください。",
     "dockerDeniedWindows": "Docker は実行中ですが、このアカウントではまだ使用できません。自分を docker-users グループに追加し（管理者として実行したターミナルで net localgroup docker-users \"{user}\" /add）、いったんサインアウトしてから再度サインインしてください。",
     "dockerOtherDistribution": "Cyber CTF が Docker をインストールできるのは Debian、Ubuntu とそれらをベースにしたディストリビューションです。ディストリビューションのパッケージか https://docs.docker.com/engine/install/ から Docker Engine をインストールしてから、もう一度確認してください。",

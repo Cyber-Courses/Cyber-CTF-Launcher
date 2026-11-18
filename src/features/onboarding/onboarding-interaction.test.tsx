@@ -6,7 +6,8 @@ import { Onboarding } from "@/features/onboarding/onboarding";
 import { setLocalePreference } from "@/lib/i18n";
 import type { Os, SystemReport } from "@/lib/tauri";
 import { freshReport, readyReport, withSetup } from "@/test/fixtures";
-import { commands, held, installTauri, rejects, rejectWith, settled, stream, type Handler } from "@/test/tauri";
+import { commands, held, installTauri, progressLines, rejects, rejectWith, settled, stream, type Handler } from "@/test/tauri";
+import { agreeToInstall } from "@/test/install-consent";
 import { button, findButton } from "@/test/ui";
 
 const text = () => document.body.textContent;
@@ -303,13 +304,14 @@ describe("Onboarding: installs that stream and then fail", () => {
     let fail: (e: Error) => void = () => {};
     const { user } = await atFirstMachineStep(report, {
       install_dependency: held((a) => {
-        stream(a, "Enabling Virtual Machine Platform", "Downloading WSL kernel");
+        stream(a, ...progressLines("Enabling Virtual Machine Platform", "Downloading WSL kernel"));
         return new Promise((_, reject) => (fail = reject));
       }),
     });
     await user.click(await findButton(/^continue$/i));
     await settled();
     await user.click(await findButton(/turn on wsl 2/i));
+    await agreeToInstall(user);
     await settled();
     expect(text()).toContain("Downloading WSL kernel");
     // An install is running: neither Back nor the forward button may leave the step.
@@ -328,13 +330,14 @@ describe("Onboarding: installs that stream and then fail", () => {
     const report = { ...freshReport("macos"), pkgManager: { name: "brew", installed: true, version: "4.5" } };
     const { user, calls } = await atFirstMachineStep(report, {
       install_dependency: (a) => {
-        stream(a, "==> Downloading docker.dmg", "==> Verifying checksum");
+        stream(a, ...progressLines("==> Downloading docker.dmg", "==> Verifying checksum"));
         return brewFails(a);
       },
     });
     await user.click(await findButton(/^continue$/i));
     await settled();
     await user.click(await findButton(/install docker desktop/i));
+    await agreeToInstall(user);
     await settled();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
     const log = text();
@@ -353,6 +356,7 @@ describe("Onboarding: installs that stream and then fail", () => {
     await user.click(await findButton(/^continue$/i));
     await settled();
     await user.click(await findButton(/install docker desktop/i));
+    await agreeToInstall(user);
     await settled();
     expect(text()).toContain("✗ brew exited with status 1");
     await user.click(await findButton(/back$/i));

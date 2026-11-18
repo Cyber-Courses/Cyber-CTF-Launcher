@@ -60,6 +60,7 @@ describe("command errors", () => {
         "commandFailed",
         "dockerDenied",
         "dockerDeniedWindows",
+        "dockerDesktopAgreement",
         "dockerNotRunning",
         "dockerOtherDistribution",
         "downloadFailed",

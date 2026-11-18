@@ -11,6 +11,7 @@ import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-se
 import { useCopy } from "@/components/ui/copy-value";
 import { useT } from "@/lib/i18n";
 import { openExternal } from "@/lib/failure";
+import { InstallHint } from "@/features/machine/install-asks";
 import type { SetupAction } from "@/lib/tauri";
 
 /** One thing a step needs: done (from the machine check, never from an install's exit), or to do
@@ -78,7 +79,12 @@ export function OwnInstall({ action, name }: { action: SetupAction | undefined; 
 export function Log({ setup, of }: { setup: MachineSetupState; of: (string | null | undefined)[] }) {
   const t = useT();
   if (!setup.installs.logsFor || !of.includes(setup.installs.logsFor)) return null;
-  return <LogConsole lines={setup.installs.logs} running={setup.installs.installing !== null} title={t("machine.body.installLog")} />;
+  return (
+    <>
+      <InstallHint asks={setup.installs.installing === null ? null : setup.installs.asking} />
+      <LogConsole lines={setup.installs.logs} running={setup.installs.installing !== null} title={t("machine.body.installLog")} />
+    </>
+  );
 }
 
 export function CmdRow({ cmd }: { cmd: string }) {

@@ -1,8 +1,9 @@
 use std::sync::LazyLock;
 
-use isothrum_machine::LinuxPackages;
+use isothrum_machine::{Arch, LinuxPackages, Packages};
 
 use super::*;
+use crate::machine::tools::steps::as_lines;
 use crate::runtime::providers::testing::host_on;
 
 #[test]
@@ -147,7 +148,7 @@ async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
     let tools = fake(FakeProcesses::script().build());
     let t = crate::testing::test_app::TestApp::new();
     let mut lines = Vec::new();
-    let err = install_dependency(t.dirs(), Dependency::Docker, |l| lines.push(l)).await.unwrap_err();
+    let err = install_dependency(t.dirs(), Dependency::Docker, as_lines(|l| lines.push(l))).await.unwrap_err();
     assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableToolInstalls".into() });
     assert_eq!(lines, [err.to_string()], "said on the install's log");
     let err = install_vagrant_plugin("vagrant-vmware-esxi".into(), |_| {}).await.unwrap_err();
@@ -275,7 +276,7 @@ async fn a_dependency_this_os_does_not_install_is_refused_in_the_log_before_runn
     let t = TestApp::new();
     let tools = fake(FakeProcesses::script().build());
     let log = Sink::default();
-    let err = install_dependency(t.dirs(), not_here(), log.on_line()).await.unwrap_err();
+    let err = install_dependency(t.dirs(), not_here(), as_lines(log.on_line())).await.unwrap_err();
     assert_eq!(log.lines(), [err.to_string()]);
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
@@ -291,13 +292,13 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
         // A host with nothing to install through (macOS without Homebrew, Linux without apt or
         // dnf): the install is refused as its plan is, before anything runs.
         Err(refused) => {
-            let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
+            let err = install_dependency(t.dirs(), Dependency::Terraform, as_lines(log.on_line())).await.unwrap_err();
             assert_eq!(err.to_string(), refused.to_string());
             assert!(tools.calls().is_empty(), "{:?}", tools.calls());
             return;
         }
     };
-    install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
+    install_dependency(t.dirs(), Dependency::Terraform, as_lines(log.on_line())).await.unwrap();
     let lines = log.lines();
     assert_eq!(lines.first(), Some(&crate::platform::redact::redact(&isothrum_machine::install::command_line(&steps[0])).into_owned()), "{lines:?}");
     assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
@@ -325,7 +326,7 @@ async fn a_tool_that_was_already_there_is_never_recorded() {
     }
     let t = TestApp::new();
     let _tools = fake(terraform_tools(Arc::new(AtomicBool::new(true)), true));
-    install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
+    install_dependency(t.dirs(), Dependency::Terraform, as_lines(Sink::default().on_line())).await.unwrap();
     assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
 }
 
@@ -345,7 +346,7 @@ async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
         }
         if call.program == "terraform" && !found { Reply::fail(1, "not found") } else { Reply::ok("") }
     }));
-    install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
+    install_dependency(t.dirs(), Dependency::Terraform, as_lines(Sink::default().on_line())).await.unwrap();
     assert!(uninstall::installed_tools(t.dirs()).await.is_empty(), "pending, not shown");
     present.store(true, Ordering::Relaxed);
     let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
@@ -364,7 +365,7 @@ async fn a_failed_install_says_so_and_records_nothing() {
     let t = TestApp::new();
     let _tools = fake(terraform_tools(Arc::new(AtomicBool::new(false)), false));
     let log = Sink::default();
-    let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
+    let err = install_dependency(t.dirs(), Dependency::Terraform, as_lines(log.on_line())).await.unwrap_err();
     assert!(err.to_string().contains("exited with"), "{err}");
     assert!(log.lines().contains(&"E: Unable to locate package terraform".to_string()));
     assert!(!log.lines().iter().any(|l| l.starts_with("Done.")));
@@ -380,9 +381,9 @@ async fn an_invalid_plugin_is_refused_before_running_anything() {
 #[test]
 fn a_root_step_prompts_unless_unattended_where_it_runs_as_root_or_through_sudo_n() {
     use isothrum_machine::install::Elevation;
-    assert_eq!(super::linux_root().elevation, Elevation::Prompt, "the app prompts whoever runs it");
+    assert_eq!(super::elevation(), Elevation::Prompt, "the app prompts whoever runs it");
     crate::platform::elevation::set_unattended(true);
-    let unattended = super::linux_root().elevation;
+    let unattended = super::elevation();
     crate::platform::elevation::set_unattended(false);
     assert_eq!(unattended, Elevation::Unattended { root: crate::platform::elevation::is_root() });
 }
@@ -400,4 +401,16 @@ fn linux_installs_and_removals_are_isothrum_machines_said_in_the_players_words()
     assert_eq!(apt_only, "The guided setup installs Google Cloud CLI through apt only for now: install it yourself, then re-check.");
     let removal = uninstall::plan_on(Dependency::Vagrant, &DNF, &all_added(Dependency::Vagrant, &DNF), None).unwrap();
     assert!(removal[0].args.last().unwrap().ends_with("dnf remove -y vagrant"), "{removal:?}");
+}
+
+#[test]
+fn a_plan_says_what_each_step_asks_of_the_player() {
+    use isothrum_machine::install::Interaction;
+    let docker = plan_on(Dependency::Docker, &WINDOWS, None).unwrap();
+    // Docker Desktop shows Docker's agreement at its first start, for the player to accept there:
+    // the install says so, and accepts nothing.
+    assert!(docker[0].interactions.iter().any(|i| matches!(i, Interaction::VendorAgreement { .. })), "{:?}", docker[0].interactions);
+    assert!(docker[0].args.iter().all(|a| !a.contains("accept")), "{:?}", docker[0].args);
+    let terraform = plan_on(Dependency::Terraform, &WINDOWS, None).unwrap();
+    assert!(terraform[0].interactions.is_empty(), "a portable zip asks nothing");
 }

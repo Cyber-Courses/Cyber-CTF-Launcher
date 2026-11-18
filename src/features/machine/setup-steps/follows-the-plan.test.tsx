@@ -9,6 +9,7 @@ import type { SetupAction, SystemReport } from "@/lib/tauri";
 import { SETUP_SHAPES } from "@/lib/tauri/generated/SetupShapes";
 import { answersDialog, commands, dialogsAsked, installTauri } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
+import { agreeToInstall } from "@/test/install-consent";
 
 // The setup window renders the core's plan: each machine here is one the core built, with the
 // setup options it worked out for it (Rust's `machine::setup::shapes`, written by `cargo test`), so
@@ -30,6 +31,7 @@ describe("the setup window follows the core's plan", () => {
     const user = userEvent.setup();
     render(<Step step="virtualization" report={shape("bareWindows")} />);
     await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "wsl" });
     cleanup();
@@ -43,6 +45,7 @@ describe("the setup window follows the core's plan", () => {
     const user = userEvent.setup();
     render(<Step step="docker" report={shape("bareDebian")} />);
     await user.click(button(/install docker engine/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
     cleanup();
@@ -81,6 +84,7 @@ describe("the setup window follows the core's plan", () => {
     render(<Step step="vm" report={shape("bareWindows")} />);
     await user.click(radioWith("Hyper-V"));
     await user.click(button(/install hyper-v/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "hyperv" });
     cleanup();
@@ -131,6 +135,7 @@ describe("the setup window follows the core's plan", () => {
     await flush();
     expect(calls.find((c) => c.cmd === "install_vagrant_plugin")?.args).toMatchObject({ plugin: "vagrant-vmware-desktop" });
     await user.click(button(/^install$/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.filter((c) => c.cmd === "install_dependency").at(-1)?.args).toMatchObject({ dependency: "vmware-utility" });
   });
@@ -157,7 +162,7 @@ function offered(label: string): string {
   if (screen.queryByRole("button", { name: new RegExp(`^install ${label}$`, "i") })) return "install";
   if (text().includes("Restart Windows to finish turning it on.")) return "restart";
   if (text().includes(`install ${label} yourself`)) return "distribution";
-  if (text().includes(`Install ${label}, then re-check.`)) return "vendor";
+  if (text().includes(`Install ${label}, then re-check.`) || text().includes(`offers ${label} only on its own page`)) return "vendor";
   if (text().includes("log out and back in (or restart) for it to apply")) return "relogin";
   if (screen.queryByRole("button", { name: /^let virtualbox use it$/i })) return "shareVirtualization";
   if (text().includes("Installed, but it can't run here.")) return "blocked";

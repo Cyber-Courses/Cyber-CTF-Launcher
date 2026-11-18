@@ -7,6 +7,7 @@
  */
 
 import { InstallsOffNote } from "@/components/installs-off-note";
+import { PendingInstallConsent } from "@/features/machine/install-asks";
 import { SelfTest, type SelfTestResult } from "@/features/machine/self-test";
 import { getLastTest } from "@/lib/settings";
 import { type SystemReport } from "@/lib/tauri";
@@ -24,7 +25,12 @@ import { useT } from "@/lib/i18n";
 
 /** The body of one setup step (no header, no nav: the flow draws those). */
 export function MachineStepBody({ step, report, setup }: { step: MachineStep; report: SystemReport; setup: MachineSetupState }) {
-  const body = <StepContent step={step} report={report} setup={setup} />;
+  const body = (
+    <>
+      <StepContent step={step} report={report} setup={setup} />
+      <PendingInstallConsent installs={setup.installs} />
+    </>
+  );
   if (!setup.installs.installsOff || !INSTALLING_STEPS.has(step)) return body;
   return (
     <>

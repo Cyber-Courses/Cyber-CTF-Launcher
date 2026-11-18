@@ -422,6 +422,10 @@ fn each_engine_says_what_makes_it_the_one_docker_uses() {
     let r = bare(isothrum_machine::HostOs::Macos, isothrum_machine::Arch::Amd64);
     assert_eq!(r.setup.recommended_engine, Engine::DockerDesktop);
     assert_eq!(unasked(&r.setup.engines[0].actions), [install(Dependency::Docker)]);
+    assert!(
+        r.setup.engines[0].actions[0].interactions().iter().any(|i| matches!(i, isothrum_machine::install::Interaction::VendorAgreement { .. })),
+        "Docker Desktop's install says Docker Desktop will show its agreement, for the player to accept there"
+    );
     assert!(matches!(r.setup.engines[1].actions.as_slice(), [Action::Manual { reason: ManualReason::Vendor, .. }]));
     assert_eq!(shapes::bare_debian().setup.recommended_engine, Engine::Native);
 }

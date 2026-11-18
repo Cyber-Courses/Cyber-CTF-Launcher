@@ -27,14 +27,15 @@ and the proxy. A lab you already installed and started before can still start: t
 
 ## Docker and container labs
 
-| Message or problem                                               | What to do                                                                                                                                     |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Docker isn't running"                                           | Start your container engine (Docker Desktop, OrbStack…, or `sudo systemctl start docker` on Linux), then start the lab again.                  |
-| "Docker is running, but your account can't use it yet" (Linux)   | `sudo usermod -aG docker $USER`, then log out and back in. Membership of `docker` is equivalent to root on the machine.                        |
-| "Docker is running, but your account can't use it yet" (Windows) | In a terminal run as administrator: `net localgroup docker-users "<you>" /add`, then sign out and back in.                                     |
-| "Host port … is already in use"                                  | Another lab or program uses a port the lab publishes. Stop it, or set Settings > Labs > Lab ports to **Random** (each service on a free port). |
-| Docker Desktop won't start on Windows                            | It needs WSL 2: run the **Enable virtualization (WSL 2)** step on the Machine page, and restart Windows when asked.                            |
-| A large download fails or the disk fills up                      | Settings > Maintenance > Cleanup removes the images and VM boxes the launcher downloaded, and leftover labs.                                   |
+| Message or problem                                               | What to do                                                                                                                                         |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Docker isn't running"                                           | Start your container engine (Docker Desktop, OrbStack…, or `sudo systemctl start docker` on Linux), then start the lab again.                      |
+| "Docker is running, but your account can't use it yet" (Linux)   | `sudo usermod -aG docker $USER`, then log out and back in. Membership of `docker` is equivalent to root on the machine.                            |
+| "Docker is running, but your account can't use it yet" (Windows) | In a terminal run as administrator: `net localgroup docker-users "<you>" /add`, then sign out and back in.                                         |
+| "Host port … is already in use"                                  | Another lab or program uses a port the lab publishes. Stop it, or set Settings > Labs > Lab ports to **Random** (each service on a free port).     |
+| Docker Desktop won't start on Windows                            | It needs WSL 2: run the **Enable virtualization (WSL 2)** step on the Machine page, and restart Windows when asked.                                |
+| "Docker Desktop is waiting for you to accept its agreement"      | Docker Desktop shows its Subscription Service Agreement when it first starts. Accept it in its window (the launcher never does), then check again. |
+| A large download fails or the disk fills up                      | Settings > Maintenance > Cleanup removes the images and VM boxes the launcher downloaded, and leftover labs.                                       |
 
 ## VM labs
 
@@ -86,13 +87,26 @@ and the proxy. A lab you already installed and started before can still start: t
 
 ## Installing tools
 
-- **macOS**: the launcher installs with Homebrew; install it first from <https://brew.sh>. A cask
-  (Docker Desktop, Vagrant, VirtualBox, UTM) opens its own installer: finish it, then go back to
-  the launcher.
+Before each install, the launcher lists what the install will ask of you. While it runs, a note
+above its log says what is happening right now.
+
+- **macOS**: the launcher installs with Homebrew; install it first from <https://brew.sh>. Docker
+  Desktop, Vagrant, VirtualBox, UTM and the Vagrant VMware Utility install from their vendor's
+  package. macOS asks for your password in its own window, and nothing is left to drag or finish.
+  Docker Desktop shows the Docker Subscription Service Agreement when it first starts: accept it
+  there, in its own window. The launcher never accepts it for you. On an Intel Mac:
+  - after VirtualBox installs, allow Oracle's system extension in **System Settings › Privacy &
+    Security**, then restart;
+  - Homebrew builds QEMU (and the AWS CLI) from source, which takes a quarter of an hour or more.
 - **Windows**: installs go through winget (App Installer, from the Microsoft Store). If winget is
-  missing, install App Installer, then try again.
+  missing, install App Installer, then try again. Every install but Terraform's asks for your
+  approval through User Account Control. Docker Desktop shows Docker's agreement when it first
+  starts, for you to accept there. If winget asks you to accept a package's agreement, the launcher
+  doesn't accept it for you: run the same `winget install` in a terminal, read the agreement and
+  accept it there, then check again. WSL 2, Hyper-V and Vagrant need a restart to finish.
 - **Linux**: installs run as root through a polkit prompt (`pkexec`); the user needs the right to
-  administer the machine.
+  administer the machine. Docker, QEMU and libvirt add you to a group, which applies once you sign
+  out and back in.
 
 ## Updates
 

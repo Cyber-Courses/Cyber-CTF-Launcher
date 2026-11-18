@@ -9,6 +9,7 @@
     "noPasswordStored": "Für diesen Host ist kein Passwort gespeichert. Bearbeite ihn und gib eines ein.",
     "portInUse": "Host-Port {port} wird auf diesem Rechner bereits verwendet (von einem anderen Lab oder einer App). Beende, was ihn nutzt, und starte das Lab dann erneut.",
     "dockerNotRunning": "Docker läuft nicht. Starte deine Container-Engine (Docker Desktop oder unter Linux den docker-Dienst) und starte das Lab erneut.",
+    "dockerDesktopAgreement": "Docker Desktop wartet darauf, dass du sein Subscription Service Agreement in seinem Fenster akzeptierst. Akzeptiere es dort und prüfe dann erneut.",
     "dockerDenied": "Docker läuft, aber dein Konto kann es noch nicht nutzen. Füge dich in einem Terminal der Gruppe docker hinzu (sudo usermod -aG docker {user}), melde dich dann ab und wieder an.",
     "dockerDeniedWindows": "Docker läuft, aber dein Konto kann es noch nicht nutzen. Füge dich der Gruppe docker-users hinzu (in einem Terminal als Administrator: net localgroup docker-users \"{user}\" /add), melde dich dann ab und wieder an.",
     "dockerOtherDistribution": "Cyber CTF installiert Docker unter Debian, Ubuntu und den darauf aufbauenden Distributionen. Installiere Docker Engine aus deiner Distribution oder von https://docs.docker.com/engine/install/ und prüfe dann erneut.",

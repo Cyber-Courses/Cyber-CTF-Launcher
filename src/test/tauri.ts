@@ -26,6 +26,18 @@ export function stream(args: Record<string, unknown> | undefined, ...messages: u
   for (const m of messages) channel?.onmessage?.(m);
 }
 
+/** An install's progress, line by line (`InstallProgress`), as `install_dependency` and
+ *  `machine_share_virtualization` stream it. */
+export const progressLines = (...lines: string[]) => lines.map((line) => ({ kind: "line", line }));
+
+/** A streaming command that sends `progress` (an install's) and then succeeds. */
+const progresses =
+  (...lines: string[]): Handler =>
+  (args) => {
+    stream(args, ...progressLines(...lines));
+    return null;
+  };
+
 /** A streaming command that logs `lines` and then succeeds. */
 const streams =
   (...lines: string[]): Handler =>
@@ -88,10 +100,10 @@ export const DEFAULTS: Partial<Record<string, Handler>> = {
   lab_park: streams("==> DC01: Saving state"),
   lab_resume: streams("==> DC01: Resuming"),
   lab_provision: streams("TASK [Configure DC01]"),
-  install_dependency: streams("Downloading", "Installed"),
+  install_dependency: progresses("Downloading", "Installed"),
   uninstall_dependency: streams("Removing", "Removed"),
   install_vagrant_plugin: streams("Installing plugin"),
-  machine_share_virtualization: streams("KVM loaded again"),
+  machine_share_virtualization: progresses("KVM loaded again"),
   aws_login: streams("Opening browser"),
   cloud_login: streams("Opening browser"),
 };

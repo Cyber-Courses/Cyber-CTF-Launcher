@@ -10,7 +10,7 @@ import { ServerScreen } from "@/features/servers/servers-screen";
 import { answer } from "@/lib/dev-mock";
 import type { ServerHostInput, ServerList } from "@/lib/tauri";
 import { INSTALLS_OFF, INSTALLS_OFF_NOTE, readyReport } from "@/test/fixtures";
-import { installTauri, stream } from "@/test/tauri";
+import { installTauri, progressLines, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // The server / cloud setup wizard driven the way a player does: typing in the fields, pressing
@@ -266,7 +266,7 @@ describe("cloud setup: validation per provider", () => {
     const calls = installTauri({
       install_dependency: (a) =>
         new Promise<null>((r) => {
-          stream(a, "✓ Downloaded terraform_1.9.0.zip");
+          stream(a, ...progressLines("✓ Downloaded terraform_1.9.0.zip"));
           finish = () => {
             r(null);
           };

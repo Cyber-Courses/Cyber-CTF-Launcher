@@ -21,7 +21,8 @@ import {
   withNeeds,
   withSetup,
 } from "@/test/fixtures";
-import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, progressLines, rejectWith, stream } from "@/test/tauri";
+import { agreeToInstall } from "@/test/install-consent";
 import { button, flush, settle } from "@/test/ui";
 import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
 
@@ -105,12 +106,13 @@ describe("package manager step", () => {
 
 describe("WSL step", () => {
   it("turns on WSL, then asks for a restart", async () => {
-    const calls = installTauri({ install_dependency: (a) => (stream(a, "Enabling feature"), null) });
+    const calls = installTauri({ install_dependency: (a) => (stream(a, ...progressLines("Enabling feature")), null) });
     const user = userEvent.setup();
     const onRefresh = vi.fn();
     render(<Step step="virtualization" report={freshReport("windows")} onRefresh={onRefresh} />);
     expect(screen.queryByRole("status")).toBeNull();
     await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "wsl" });
     expect(text()).toContain("Enabling feature");
@@ -127,6 +129,7 @@ describe("WSL step", () => {
     const user = userEvent.setup();
     render(<Step step="virtualization" report={freshReport("windows")} />);
     await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
     await flush();
     expect(text()).toContain("✗ elevation refused");
   });
@@ -204,10 +207,11 @@ describe("WSL step, from the machine check", () => {
   });
 
   it("offers the restart once Turn on WSL 2 finished, whatever the last check said", async () => {
-    installTauri({ install_dependency: (a) => (stream(a, "The requested operation is successful."), null) });
+    installTauri({ install_dependency: (a) => (stream(a, ...progressLines("The requested operation is successful.")), null) });
     const user = userEvent.setup();
     render(<SetupAtWsl report={windows("missing")} />);
     await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
     await flush();
     expect(button(/restart now/i)).toBeTruthy();
     expect(button(/restart later/i)).toBeTruthy();
@@ -223,6 +227,7 @@ describe("WSL step, from the machine check", () => {
     const user = userEvent.setup();
     render(<SetupAtWsl report={windows("missing")} />);
     await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
     await flush();
     expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
   });
@@ -360,6 +365,37 @@ describe("engine step", () => {
     expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: "https://www.docker.com/products/docker-desktop/" });
   });
 
+  it("says, while Docker Desktop starts and while it waits, that its agreement is the player's to accept in its window", async () => {
+    let answer: (() => void) | null = null;
+    installTauri({
+      docker_start_engine: () =>
+        new Promise<null>((_, reject) => {
+          answer = () => {
+            // The core's coded error, as a command rejects with it.
+            reject(
+              Object.assign(new Error("Docker Desktop is waiting for you to accept its Subscription Service Agreement in its window."), {
+                code: "dockerDesktopAgreement",
+              }),
+            );
+          };
+        }),
+    });
+    const user = userEvent.setup();
+    render(<Step step="docker" report={{ ...readyReport(), dockerRunning: false, dockerEngine: null, dockerEnginesRunning: [] }} onRefresh={vi.fn()} />);
+    await user.click(button(/start docker desktop/i));
+    expect(screen.getByTestId("install-hint").textContent).toContain(
+      "If Docker Desktop shows its Subscription Service Agreement, accept it in its window: Cyber CTF never accepts it for you.",
+    );
+    (answer as unknown as () => void)();
+    await flush();
+    // Waiting for the player: a hint of what to do, not a failure, and no link to get it again.
+    expect(screen.getByTestId("install-hint").textContent).toContain(
+      "Docker Desktop is waiting for you to accept its agreement in its window. Accept it there, then check again.",
+    );
+    expect(screen.queryByRole("button", { name: /get docker desktop/i })).toBeNull();
+    expect(button(/start docker desktop/i).hasAttribute("disabled")).toBe(false);
+  });
+
   it("says Docker Desktop is paid in larger companies, and names the free engines", async () => {
     const { user } = freshMacEngineStep();
     expect(text()).toContain("Docker Desktop needs a paid subscription in larger companies");
@@ -393,7 +429,8 @@ describe("engine step", () => {
     const { calls, onRefresh, user } = freshMacEngineStep();
     expect(text()).toContain("Cyber CTF can install Docker Desktop for you.");
     await installDockerDesktop(user, calls);
-    expect(text()).toContain("Finish in Docker’s installer");
+    // Docker Desktop shows its agreement at its first start: the player accepts it there.
+    expect(text()).toContain("Launch Docker Desktop and accept its Subscription Service Agreement in its window");
     await user.click(button(/re-check/i));
     expect(onRefresh).toHaveBeenCalledTimes(2);
   });
@@ -428,6 +465,7 @@ describe("engine step", () => {
     const user = userEvent.setup();
     render(<Step step="docker" report={freshDebian()} />);
     await user.click(button(/install docker engine/i));
+    await agreeToInstall(user);
     await flush();
     expect(text()).toContain("Finish installing Docker Engine, start it, then press Re-check.");
   });
@@ -477,23 +515,27 @@ describe("VM step", () => {
     await user.click(radioWith("VirtualBox"));
     expect(text()).toContain("Cyber CTF can install VirtualBox for you.");
     await user.click(button(/install virtualbox/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "virtualbox" });
     expect(text()).toContain("Installing VirtualBox…");
   });
 
-  it("links to a vendor's site, and re-checks", async () => {
+  it("links to the vendor's download page, and checks again", async () => {
     const calls = installTauri();
     const onRefresh = vi.fn();
     const user = userEvent.setup();
     render(<Step step="vm" report={freshReport("windows")} onRefresh={onRefresh} />);
     await user.click(radioWith("VMware Workstation"));
-    expect(text()).toContain("Install VMware Workstation, then re-check.");
-    await user.click(button(/get vmware workstation/i));
+    expect(text()).toContain("Broadcom offers VMware Workstation only on its own page. Download it there, install it, then come back here and check again.");
+    await user.click(button(/open broadcom's download page/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/^https:\/\/support\.broadcom\.com\//);
-    await user.click(button(/re-check/i));
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(
+      /^https:\/\/support\.broadcom\.com\/group\/ecx\/productdownloads\?subfamily=VMware%20Workstation%20Pro/,
+    );
+    await user.click(button(/check again/i));
     expect(onRefresh).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status").textContent).toBe("Checking this machine…");
   });
 
   it("says why an installed hypervisor can't run here", () => {
@@ -534,6 +576,7 @@ describe("Vagrant step", () => {
     expect(button(/install plugin/i).hasAttribute("disabled")).toBe(true);
     expect(text()).toContain("Vagrant VMware Utility");
     await user.click(button(/install vagrant/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "vagrant" });
     r.unmount();
@@ -594,6 +637,7 @@ describe("Vagrant step", () => {
     await flush();
     expect(calls.find((c) => c.cmd === "install_vagrant_plugin")?.args).toMatchObject({ plugin: "vagrant-vmware-desktop" });
     await user.click(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /^install$/i }));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "vmware-utility" });
     expect(text()).toContain("Installing the Vagrant VMware Utility…");
@@ -639,6 +683,7 @@ describe("Vagrant step", () => {
       />,
     );
     await user.click(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /^install$/i }));
+    await agreeToInstall(user);
     await flush();
     const row = requirement("Vagrant VMware Utility");
     expect(row.dataset.requirement).toBe("failed");
@@ -767,6 +812,7 @@ describe("MachineSetup window", () => {
     render(<MachineSetup report={freshReport("macos")} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "docker", nonce: 1 }} />);
     await flush();
     await user.click(button(/install docker desktop/i));
+    await agreeToInstall(user);
     await flush();
     expect(button(/back/i).hasAttribute("disabled")).toBe(true);
     await settle(() => {

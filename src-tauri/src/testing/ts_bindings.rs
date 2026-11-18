@@ -76,6 +76,7 @@ fn export_types(cfg: &Config) -> Foreign {
         crate::run_service::Cursored,
         tools::install::Dependency,
         tools::ovftool::Outcome,
+        tools::steps::Progress,
         tools::uninstall::Installed,
         runtime::Check,
         runtime::AttackStatus,

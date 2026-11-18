@@ -189,7 +189,14 @@ enum Change {
 /// its output streamed.
 async fn tool_change(ctx: &Context, out: &mut Output<'_>, tool: &str, change: Change) -> Exit {
     let verb = if change == Change::Install { "Install" } else { "Remove" };
-    if let Err(e) = ctx.confirm(out, &format!("{verb} {tool}")) {
+    // What the install asks of the player (a password prompt, the agreement a vendor's app will
+    // show them to accept there, a restart) is said in the question.
+    let asks = match by_id::<Dependency>("tool", tool) {
+        Ok(d) if change == Change::Install => install::asks(d).await.iter().map(crate::machine::tools::steps::asks_said).collect::<Vec<_>>().join(" "),
+        _ => String::new(),
+    };
+    let question = if asks.is_empty() { format!("{verb} {tool}") } else { format!("{verb} {tool} ({asks})") };
+    if let Err(e) = ctx.confirm(out, &question) {
         return out.fail(&e);
     }
     let plugin = tool.strip_prefix("plugin:");
@@ -210,7 +217,9 @@ async fn tool_change(ctx: &Context, out: &mut Output<'_>, tool: &str, change: Ch
     let mut on_line = |line: String| out.event(&json!({ "event": "line", "item": tool, "line": line }), Some(&format!("    {line}")));
     let done = match (plugin, dependency) {
         (Some(name), _) => install::install_vagrant_plugin(name.to_owned(), &mut on_line).await,
-        (None, Some(d)) if change == Change::Install => install::install_dependency(ctx.dirs.clone(), d, &mut on_line).await,
+        (None, Some(d)) if change == Change::Install => {
+            install::install_dependency(ctx.dirs.clone(), d, crate::machine::tools::steps::as_lines(&mut on_line)).await
+        }
         (None, Some(d)) => uninstall::uninstall_dependency(ctx.dirs.clone(), d, &mut on_line).await,
         (None, None) => Err(Error::Invalid(format!("unknown tool `{tool}`"))),
     };

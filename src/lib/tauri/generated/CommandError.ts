@@ -28,7 +28,7 @@ detail: string, } } | { "code": "offlineReady", "args": {
 /**
  * The technical why, as for `Unreachable`.
  */
-detail: string, } } | { "code": "dockerNotRunning" } | { "code": "dockerDenied", "args": { 
+detail: string, } } | { "code": "dockerNotRunning" } | { "code": "dockerDesktopAgreement" } | { "code": "dockerDenied", "args": { 
 /**
  * The account's user name, for the `usermod` command the message gives.
  */

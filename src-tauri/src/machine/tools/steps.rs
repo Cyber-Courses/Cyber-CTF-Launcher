@@ -3,7 +3,8 @@
 //! said here in the player's words.
 
 use isothrum_machine::install::exit_codes::{Done, Known};
-use isothrum_machine::install::{NotServed, Note, Step, StepFailed};
+use isothrum_machine::install::{Interaction, NotServed, Note, Prompt, Step, StepFailed};
+use serde::Serialize;
 
 use crate::error::{Code, Error, Result};
 
@@ -26,15 +27,69 @@ const BREW_XCODE_OUTDATED: &str = "Homebrew needs a newer Xcode than the one ins
 /// An install's or a removal's steps.
 pub type Plan = Vec<Step>;
 
+/// What an install tells the webview as it runs: a line of its log, or a step starting that asks
+/// something of the player (a password prompt opening, a vendor's agreement they accept in its
+/// window, a restart after it),
+/// which the setup window shows as a live hint above the log.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[ts(rename = "InstallProgress")]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Progress {
+    /// A line of the log.
+    Line {
+        /// The line.
+        line: String,
+    },
+    /// A step starts that asks these of the player, in order.
+    Asks {
+        /// What it asks.
+        interactions: Vec<Interaction>,
+    },
+}
+
+/// `on_line` as a [`Progress`] sink, for a caller that shows only a log (the command line, a
+/// headless setup): what a step asks said as a line of it ([`asks_said`]).
+pub fn as_lines(mut on_line: impl FnMut(String)) -> impl FnMut(Progress) {
+    move |progress| match progress {
+        Progress::Line { line } => on_line(line),
+        Progress::Asks { interactions } => interactions.iter().for_each(|i| on_line(asks_said(i))),
+    }
+}
+
+/// What a step asks of the player, as a line of an English log.
+pub fn asks_said(interaction: &Interaction) -> String {
+    match interaction {
+        Interaction::AdminPassword { via: Prompt::Mac } => "macOS asks for your password in a window of its own.".into(),
+        Interaction::AdminPassword { via: Prompt::Uac } => "Windows asks for an administrator's approval in a window of its own.".into(),
+        Interaction::AdminPassword { via: Prompt::Pkexec } => "Your system asks for your password in a window of its own.".into(),
+        Interaction::VendorAgreement { app, name, url } => {
+            format!("{app} shows the {name} when it first starts: accept it there to use it ({url}). Cyber CTF never accepts it for you.")
+        }
+        Interaction::VendorWindow { app } => format!("{app} opens a window of its own: finish there."),
+        Interaction::AllowSystemExtension { vendor } => {
+            format!("Then allow {vendor}'s system extension in System Settings > Privacy & Security.")
+        }
+        Interaction::Restart => "Restart the computer once it is done.".into(),
+        Interaction::Relogin => "Sign out and back in once it is done.".into(),
+        Interaction::LongBuild { minutes } => format!("This builds from source and can take about {minutes} minutes."),
+        other => format!("{other:?}"),
+    }
+}
+
 /// Runs `plan`'s steps in order, each announced as `$ program args` (redacted) unless it says what
-/// it is ([`said`]).
-pub async fn run_plan(plan: &[Step], on_line: &mut impl FnMut(String)) -> Result<()> {
+/// it is ([`said`]), and, first, what it asks of the player when it asks something
+/// ([`Progress::Asks`]).
+pub async fn run_plan(plan: &[Step], on: &mut impl FnMut(Progress)) -> Result<()> {
     for step in plan {
-        on_line(match step.note {
+        if !step.interactions.is_empty() {
+            on(Progress::Asks { interactions: step.interactions.clone() });
+        }
+        let line = match step.note {
             Some(note) => said(note),
             None => crate::platform::redact::redact(&isothrum_machine::install::command_line(step)).into_owned(),
-        });
-        run_step(step, on_line).await?;
+        };
+        on(Progress::Line { line });
+        run_step(step, &mut |line| on(Progress::Line { line })).await?;
     }
     Ok(())
 }
@@ -79,15 +134,9 @@ fn said(note: isothrum_machine::install::Note) -> String {
     use isothrum_machine::install::Dependency as Machine;
     let name = |dep| super::install::name_on(dep, isothrum_machine::HostOs::Macos);
     match note {
-        // Nothing accepts the vendor's agreement for the player: its app shows it, and they accept
-        // it there.
-        Note::InstallingFromVendor { dependency, agreement: Some(agreement) } => format!(
-            "Installing {0} (macOS asks for your password). {0} shows the {1} when it first starts: accept it there to use it ({2}).",
-            name(dependency),
-            agreement.name,
-            agreement.url
-        ),
-        Note::InstallingFromVendor { dependency, agreement: None } => format!("Installing {} (macOS asks for your password)…", name(dependency)),
+        // What it asks (macOS's password prompt, the agreement its app shows) is said before it
+        // (`Progress::Asks`).
+        Note::InstallingFromVendor { dependency, .. } => format!("Installing {} from its vendor's package…", name(dependency)),
         Note::QemuUpdatingHomebrewFirst => "Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into(),
         Note::BuildsFromSource(dependency) => {
             format!("Installing {} with Homebrew, which builds it from source on this Mac: this can take a quarter of an hour or more.", name(dependency))

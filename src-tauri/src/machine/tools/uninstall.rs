@@ -154,7 +154,7 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
         }
         _ => None,
     };
-    super::steps::run_plan(&plan_on(dependency, &host, &added, dmg.as_deref())?, &mut on_line).await?;
+    super::steps::run_plan(&plan_on(dependency, &host, &added, dmg.as_deref())?, &mut super::steps::as_lines(&mut on_line)).await?;
     update(&dirs, |tools| tools.retain(|t| t.dependency != dependency));
     on_line("Removed.".into());
     Ok(())

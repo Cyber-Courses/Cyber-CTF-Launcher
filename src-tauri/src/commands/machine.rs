@@ -16,6 +16,7 @@ use crate::machine::system::metrics::{self, MachineMetrics};
 use crate::machine::system::{self, SystemReport, docker, wsl};
 use crate::machine::tools::install::{self, Dependency};
 use crate::machine::tools::ovftool;
+use crate::machine::tools::steps::Progress;
 use crate::machine::tools::uninstall::{self, Installed};
 use crate::machine::workloads::{self, Workload};
 use crate::platform::AppDirs;
@@ -128,10 +129,11 @@ pub(crate) async fn storage_clean_in(dirs: AppDirs, extra_images: Vec<String>) -
     storage::machine_storage_clean(dirs, extra_images).await
 }
 
-/// Installs `dependency`, each command and its output sent on `logs`.
+/// Installs `dependency`, each command, its output and what each step asks of the player sent on
+/// `events`. It accepts nothing on their behalf.
 #[tauri::command]
-pub async fn install_dependency(app: AppHandle, dependency: Dependency, logs: Channel<String>) -> Result<()> {
-    install::install_dependency(AppDirs::from(&app), dependency, lines(logs)).await
+pub async fn install_dependency(app: AppHandle, dependency: Dependency, events: Channel<Progress>) -> Result<()> {
+    install::install_dependency(AppDirs::from(&app), dependency, progress(events)).await
 }
 
 /// Installs the Vagrant plugin `plugin`, its output sent on `logs`.
@@ -140,11 +142,18 @@ pub async fn install_vagrant_plugin(plugin: String, logs: Channel<String>) -> Re
     install::install_vagrant_plugin(plugin, lines(logs)).await
 }
 
-/// Lets VirtualBox share the CPU's virtualization with KVM (Linux), each command and its output
-/// sent on `logs`.
+/// Lets VirtualBox share the CPU's virtualization with KVM (Linux), each command, its output and
+/// its password prompt sent on `events`.
 #[tauri::command]
-pub async fn machine_share_virtualization(logs: Channel<String>) -> Result<()> {
-    install::share_virtualization(lines(logs)).await.map(drop)
+pub async fn machine_share_virtualization(events: Channel<Progress>) -> Result<()> {
+    install::share_virtualization(progress(events)).await.map(drop)
+}
+
+/// An install's progress sent on `events`.
+fn progress(events: Channel<Progress>) -> impl FnMut(Progress) + Send {
+    move |p| {
+        let _ = events.send(p);
+    }
 }
 
 /// The tools Cyber CTF installed, which Cleanup may remove.

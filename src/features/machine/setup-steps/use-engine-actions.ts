@@ -4,7 +4,7 @@ import { useState } from "react";
 import { dockerStartEngine, dockerUseEngine, type DockerEngine } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
-import { describeError } from "@/lib/errors";
+import { describeError, errorCode } from "@/lib/errors";
 
 /** Switch Docker to an engine already running, or start the installed one that is stopped. Both
  *  re-read the machine when done. */
@@ -24,20 +24,23 @@ export function useEngineActions(onRefresh: () => void) {
   // Installed but stopped: start it from here instead of sending the player to do it.
   const [starting, setStarting] = useState(false);
   // Kept with the engine it is about: another engine picked since doesn't show this one's failure.
-  const [startFailure, setStartFailure] = useState<{ engine: DockerEngine; message: string } | null>(null);
-  const startError = (engine: DockerEngine) => (startFailure?.engine === engine ? startFailure.message : null);
+  // `waiting`: Docker Desktop waits for the player to accept its agreement in its own window,
+  // which nothing accepts for them: a hint of what to do, not a failure.
+  const [startFailure, setStartFailure] = useState<{ engine: DockerEngine; message: string; waiting: boolean } | null>(null);
+  const startError = (engine: DockerEngine) => (startFailure?.engine === engine && !startFailure.waiting ? startFailure.message : null);
+  const waitingForAgreement = (engine: DockerEngine) => startFailure?.engine === engine && startFailure.waiting;
   const start = (engine: DockerEngine) => {
     setStarting(true);
     setStartFailure(null);
     dockerStartEngine(engine)
       .catch((e: unknown) => {
-        setStartFailure({ engine, message: describeError(e) });
+        setStartFailure({ engine, message: describeError(e), waiting: errorCode(e) === "dockerDesktopAgreement" });
       })
       .finally(() => {
         setStarting(false);
         onRefresh();
       });
   };
-  return { switching, switchTo, starting, startError, start };
+  return { switching, switchTo, starting, startError, waitingForAgreement, start };
 }
 export type EngineActions = ReturnType<typeof useEngineActions>;

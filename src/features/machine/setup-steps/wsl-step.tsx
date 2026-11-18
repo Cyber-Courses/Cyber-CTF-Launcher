@@ -97,7 +97,7 @@ function TurnOnWsl({ report, setup, unknown }: { report: SystemReport; setup: Ma
           size="sm"
           disabled={setup.busy || setup.installs.installsOff}
           onClick={() => {
-            setup.installs.install("wsl", "wsl", t("machine.body.wsl.log"));
+            setup.installs.install("wsl", "wsl", t("machine.body.wsl.log"), "WSL 2");
           }}
         >
           {setup.installs.installing === "wsl" ? t("machine.body.wsl.turningOn") : t("machine.body.wsl.turnOn")}

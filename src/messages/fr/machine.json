@@ -308,6 +308,7 @@
     "notRunning": "{engine} est installé mais ne tourne pas.",
     "get": "Obtenir {name}",
     "startingButton": "Démarrage…",
+    "startingDockerDesktop": "Si Docker Desktop affiche son Subscription Service Agreement, acceptez-le dans sa fenêtre : Cyber CTF ne l’accepte jamais à votre place.",
     "start": "Démarrer {engine}",
     "canInstall": "Cyber CTF peut installer {name} pour vous.",
     "dockerDesktopLicence": "Docker Desktop demande un abonnement payant dans les grandes entreprises (plus de 250 salariés ou 10 millions de dollars de chiffre d'affaires annuel). Cyber CTF fait aussi tourner les labs sur Colima et Podman, qui sont gratuits, et sur OrbStack (gratuit pour un usage personnel).",
@@ -316,7 +317,7 @@
     "install": "Installer {name}",
     "recheck": "Revérifier",
     "installThenRecheck": "Installez {engine}, démarrez-le, puis revérifiez.",
-    "finishDockerDesktop": "Terminez dans le programme d'installation de Docker, lancez Docker Desktop, puis cliquez sur Revérifier.",
+    "finishDockerDesktop": "Lancez Docker Desktop et acceptez son Subscription Service Agreement dans sa fenêtre, puis cliquez sur Revérifier.",
     "finishOther": "Terminez l'installation de {engine}, démarrez-le, puis cliquez sur Revérifier.",
     "windowsReboot": "Un redémarrage peut être nécessaire après l'activation de WSL. Si Docker indique que la virtualisation est désactivée, revenez une étape en arrière.",
     "linuxPostInstall": "Une fois Docker Engine installé, autorisez votre utilisateur à l'utiliser et démarrez le service :",
@@ -394,5 +395,45 @@
     "kernelRestart": "Le pilote noyau de VirtualBox est compilé pour le noyau plus récent installé avec lui ({kernel}) : redémarrez l'ordinateur pour démarrer ce noyau, puis vérifiez à nouveau.",
     "kvmHoldsVirtualization": "KVM occupe la virtualisation matérielle de cet ordinateur (VT-x ou AMD-V) : Linux l'active dès le chargement du module de KVM (le comportement par défaut depuis Linux 6.12), donc VirtualBox ne peut pas démarrer de VM (« VT-x is being used by another hypervisor »). Utilisez libvirt ou QEMU, qui fonctionnent avec KVM, ou laissez KVM la partager avec VirtualBox : KVM ne l'utilise alors que pendant qu'une de ses propres VM tourne.",
     "kvmSharesAfterRestart": "KVM est réglé pour partager la virtualisation matérielle de cet ordinateur avec VirtualBox à son prochain chargement : redémarrez l'ordinateur pour que cela s'applique."
+  },
+  "asks": {
+    "title": "Avant d'installer {name}",
+    "lead": "Voici ce qui va se passer, pour que rien ne vous surprenne :",
+    "before": {
+      "passwordMac": "macOS vous demandera votre mot de passe, dans sa propre fenêtre.",
+      "passwordUac": "Windows vous demandera d'autoriser les modifications (contrôle de compte d'utilisateur).",
+      "passwordPkexec": "Votre système vous demandera votre mot de passe, dans sa propre fenêtre.",
+      "vendorAgreement": "{app} affichera le {agreement} à son premier démarrage. Acceptez-le là pour l’utiliser : Cyber CTF ne l’accepte jamais à votre place.",
+      "vendorWindow": "{app} ouvre sa propre fenêtre : suivez-la jusqu'au bout.",
+      "systemExtension": "Vous devrez autoriser l'extension système de {vendor} dans Réglages Système › Confidentialité et sécurité.",
+      "restart": "Vous devrez ensuite redémarrer votre ordinateur.",
+      "relogin": "Vous devrez ensuite vous déconnecter puis vous reconnecter.",
+      "longBuild": "Cela compile depuis les sources et peut prendre environ {minutes} minutes.",
+      "downloadByHand": "{vendor} ne le propose que sur sa propre page : vous le téléchargez et l'installez vous-même."
+    },
+    "readAgreement": "Lire le {agreement}",
+    "install": "Installer",
+    "cancel": "Annuler",
+    "nowTitle": "En ce moment",
+    "now": {
+      "passwordMac": "macOS vous demande votre mot de passe dans une fenêtre qui vient de s'ouvrir.",
+      "passwordUac": "Windows vous demande d'autoriser les modifications dans une fenêtre qui vient de s'ouvrir.",
+      "passwordPkexec": "Votre système vous demande votre mot de passe dans une fenêtre qui vient de s'ouvrir.",
+      "vendorAgreement": "Au premier démarrage de {app}, il affiche le {agreement} : acceptez-le dans sa fenêtre.",
+      "agreementWaiting": "{app} attend que vous acceptiez son contrat dans sa fenêtre. Acceptez-le là, puis vérifiez à nouveau.",
+      "vendorWindow": "{app} a ouvert sa propre fenêtre : terminez-y l'installation.",
+      "systemExtension": "Une fois terminé, autorisez l'extension système de {vendor} dans Réglages Système › Confidentialité et sécurité.",
+      "restart": "Une fois terminé, redémarrez votre ordinateur.",
+      "relogin": "Une fois terminé, déconnectez-vous puis reconnectez-vous.",
+      "longBuild": "Compilation depuis les sources : cela peut prendre environ {minutes} minutes. Vous pouvez laisser cette fenêtre ouverte.",
+      "downloadByHand": "Téléchargez-le depuis la page de {vendor}, installez-le, puis vérifiez à nouveau."
+    },
+    "byHand": {
+      "steps": "{vendor} ne propose {name} que sur sa propre page. Téléchargez-le là-bas, installez-le, puis revenez ici et vérifiez à nouveau.",
+      "open": "Ouvrir la page de téléchargement de {vendor}",
+      "check": "Vérifier à nouveau",
+      "checking": "Vérification de cet ordinateur…",
+      "notYet": "{name} n'est pas encore installé. Terminez son installation, puis vérifiez à nouveau."
+    }
   }
 }

@@ -20,8 +20,15 @@ cyberauth.co from any device. [How sign-in works](signing-in.md).
 
 ## 3. Set up this machine
 
-The setup checks what this machine can run and installs what is missing, one step at a time. Each
-install asks for your password or an administrator's approval through your system's own prompt.
+The setup checks what this machine can run and installs what is missing, one step at a time.
+Before an install starts, the launcher lists what it will ask of you: your password or an
+administrator's approval in your system's own window, a setting to allow, a restart or a new
+sign-in afterwards, or a long wait. The launcher never accepts a licence, an agreement or terms
+for you: Docker Desktop shows its Subscription Service Agreement when it first starts, and you
+accept it there, in Docker Desktop's own window, to use Docker. While the install runs, a note
+above its log says what is happening right now, such as "macOS is asking for your password in a
+window that just opened". When you start Docker Desktop from the setup, the same note says when
+it is waiting for you to accept its agreement in its window.
 
 1. **Package manager**: Homebrew on macOS, winget (App Installer) on Windows, apt on Linux. The
    launcher installs the other tools with it.
