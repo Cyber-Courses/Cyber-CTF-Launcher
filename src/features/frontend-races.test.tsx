@@ -82,7 +82,7 @@ describe("lab health check", () => {
   });
 });
 
-describe("lab page actions during a worker operation", () => {
+describe("lab page actions during a runner service operation", () => {
   const detail = (id: string) =>
     render(
       <LabDetail
@@ -103,7 +103,7 @@ describe("lab page actions during a worker operation", () => {
     installTauri({
       lab_status: () => status(),
       busy_labs: () => ["lab-w"],
-      // A worker's operation: its job names the runtime.
+      // The runner service's operation: it names the runtime.
       active_operations: () => [{ labId: "lab-w", op: "provision", machine: null, deploying: true, step: null, runtime: "DOCKER" }],
     });
     detail("lab-w");

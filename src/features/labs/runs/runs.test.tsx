@@ -15,7 +15,7 @@ import {
 } from "@/features/labs/runs/deploy-runs";
 import { forgetLastRun, getLastPlace, getLastRun, setLastRun } from "@/features/labs/runs/last-run";
 import { deployingOf, keepsRunningPhase, operationLabel, operationStatus, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
-import { useWorkerLog } from "@/features/labs/runs/worker-log";
+import { useOperationLog } from "@/features/labs/runs/operation-log";
 import { takeIn } from "@/lib/tauri/run-events";
 import { setLocalePreference } from "@/lib/i18n";
 import type { ActiveOperation } from "@/lib/tauri";
@@ -238,11 +238,11 @@ describe("operations", () => {
     const inFlight = new Map([
       op("here-resume", "resume", true),
       op("here-provision", "provision", true),
-      op("worker-pause", "pause", true),
+      op("service-pause", "pause", true),
       op("here-stop", "stop", false),
       op("here-pause", "pause", false),
     ]);
-    expect([...deployingOf(inFlight)].sort()).toEqual(["here-provision", "here-resume", "worker-pause"]);
+    expect([...deployingOf(inFlight)].sort()).toEqual(["here-provision", "here-resume", "service-pause"]);
   });
 
   it("reads the labs deploying from the run events, not a poll of their own", async () => {
@@ -268,12 +268,12 @@ describe("operations", () => {
   });
 });
 
-describe("worker log", () => {
+describe("operation log", () => {
   const started = { kind: "started", operation: "op-1", labId: "lab-goad", op: "launch", machine: null, runtime: null, deploying: true, at: 5 } as const;
 
   it("follows the lab's operation from the run events, with no command of its own", async () => {
     const calls = installTauri({ active_operations: () => [] });
-    const { result } = renderHook(({ active }) => useWorkerLog("lab-goad", active), { initialProps: { active: true } });
+    const { result } = renderHook(({ active }) => useOperationLog("lab-goad", active), { initialProps: { active: true } });
     await flush();
     expect(result.current.lines).toEqual([]);
     act(() => {
@@ -290,7 +290,7 @@ describe("worker log", () => {
 
   it("ends a failed operation's log on its ✗ line and reads its error's code", async () => {
     installTauri({ active_operations: () => [] });
-    const { result } = renderHook(() => useWorkerLog("lab-goad", true));
+    const { result } = renderHook(() => useOperationLog("lab-goad", true));
     await flush();
     act(() => {
       takeIn([

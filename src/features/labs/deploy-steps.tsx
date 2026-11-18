@@ -32,7 +32,7 @@ function operationText(t: T, operation: Operation): OperationText | undefined {
 
 /**
  * The run read from its log: its timed lines (each line's arrival time comes with it: the deploy
- * store stamps its own lines, `useWorkerLog` a worker's), the ✓ or ✗ line that ended it, its
+ * store stamps its own lines, `useOperationLog` one the runner service ran), the ✓ or ✗ line that ended it, its
  * span (`end` null while it still runs: the clock ticks in `LiveDuration` alone), and its steps
  * (the ones the runner said, `marks`, or one step named after an operation on the built lab),
  * with the one that failed. Derived again only when the log changes, not on every tick of the
@@ -192,7 +192,7 @@ export function DeploySteps({
   /** When the run began: its durations count from there (else from its first line). */
   startedAt?: number;
   /** The step the backend reports, for a run with no log here (it runs in another window, or
-   *  its worker's log is empty): shown in place of "Preparing…", as the sidebar shows it. */
+   *  its operation's log is empty): shown in place of "Preparing…", as the sidebar shows it. */
   liveStep?: string | null;
 }) {
   const timeline = useDeployTimeline({ lines, times, marks, busy, operation, startedAt });

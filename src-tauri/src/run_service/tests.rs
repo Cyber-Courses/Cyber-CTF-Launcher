@@ -127,7 +127,7 @@ async fn the_commands_refuse_what_they_can_check_before_asking_the_service() {
 async fn the_launchers_own_service_tells_an_operation_and_its_failure_by_its_id() {
     let t = TestApp::new();
     let _tools = crate::runtime::providers::testing::no_tools();
-    // A resume of a lab that isn't installed fails in the app, before any worker.
+    // A resume of a lab that isn't installed fails in the app, before the runner service.
     let id = crate::app::runs::of(t.handle()).start(Request::Resume { lab_id: "local-x".into(), runtime: Runtime::Docker }).unwrap();
     let (outcome, _lines) = finished(t.handle(), &id).await;
     let error = outcome.unwrap_err();

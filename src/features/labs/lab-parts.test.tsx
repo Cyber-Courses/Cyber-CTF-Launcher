@@ -561,7 +561,7 @@ describe("LabRow", () => {
     expect(screen.getByRole("button", { name: "Provisioning…" })).toBeTruthy();
   });
 
-  it("reads an operation the backend runs as the lab page does: a worker's pause after a reload, a provisioning run as running", () => {
+  it("reads an operation the backend runs as the lab page does: the runner service's pause after a reload, a provisioning run as running", () => {
     installTauri();
     const op = (o: ActiveOperation["op"]): ActiveOperation => ({ labId: lab.id, op: o, machine: null, deploying: true, step: null });
     const ctx = (operations: [string, ActiveOperation][], runs: RowContext["runs"] = {}): RowContext => ({
@@ -578,7 +578,7 @@ describe("LabRow", () => {
       onStop: vi.fn(),
       onResume: vi.fn(),
     });
-    // Regression: after a reload the row knew only this window's runs, so a worker's pause read
+    // Regression: after a reload the row knew only this window's runs, so the service's pause read
     // "Starting…" while the page said "Pausing…".
     const paused = render(<LabRow {...catalogueRowProps(lab, ctx([[lab.id, op("pause")]]))} />);
     expect(screen.getByRole("button", { name: "Pausing…" })).toBeTruthy();

@@ -381,7 +381,7 @@ mod tests {
 
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
 
-    /// Starts an installed lab on Docker the way a launch does, minus the worker and the token.
+    /// Starts an installed lab on Docker the way a launch does, minus the backend and its token.
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {
         let dirs = t.dirs();
         let dir = super::lab_dir(&dirs, id)?;
@@ -546,7 +546,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_lab_that_isnt_installed_reads_as_not_running() {
-        // Regression (Windows): a launch whose worker died in its download left the lab not
+        // Regression (Windows): a launch that died in its download left the lab not
         // installed, and the attack box started with each lab, reading its status when the launch
         // ended, told "The attack box couldn't be added with the lab: lab … is not installed".
         let t = TestApp::new();
@@ -732,7 +732,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cyberctf-notalab-cmd-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        // No isoloom.yml: there is no local id, so the command refuses before it reaches a worker.
+        // No isoloom.yml: there is no local id, so the command refuses before it runs anything.
         let err = lab_launch_local(t.handle().clone(), dir.to_string_lossy().into_owned()).await;
         let _ = std::fs::remove_dir_all(&dir);
         assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");

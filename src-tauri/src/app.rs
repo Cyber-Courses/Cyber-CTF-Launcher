@@ -49,7 +49,7 @@ const REAP_EVERY: Duration = Duration::from_secs(300);
 /// What this process is, read from its arguments before anything else starts.
 #[derive(Debug, PartialEq, Eq)]
 enum Role {
-    /// `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a deploy's Terraform so it
+    /// `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a Terraform so it
     /// stops cleanly, from a throwaway process (see `platform::console`). Nothing of the app starts.
     #[cfg(windows)]
     Interrupter(u32),
@@ -345,7 +345,7 @@ fn setup(app: &mut App) {
     // folder and the two effects it reaches the player through (the launch prompt, a system
     // notification).
     let dirs = platform::AppDirs::from(app.handle());
-    let agent = account::agent::Deps::new(dirs.clone(), agent_prompt(app.handle()), agent_notify(app.handle()), agent_end_workers(dirs));
+    let agent = account::agent::Deps::new(dirs.clone(), agent_prompt(app.handle()), agent_notify(app.handle()), agent_end_operations(dirs));
     tauri::async_runtime::spawn(account::agent::run(agent));
     spawn_reaper(app.handle().clone());
 }
@@ -380,7 +380,7 @@ fn agent_notify(handle: &AppHandle) -> std::sync::Arc<account::agent::Notify> {
 }
 
 /// How the background agent ends what the runner service runs on a lab before it stops the lab.
-fn agent_end_workers(dirs: platform::AppDirs) -> std::sync::Arc<account::agent::EndWorkers> {
+fn agent_end_operations(dirs: platform::AppDirs) -> std::sync::Arc<account::agent::EndOperations> {
     std::sync::Arc::new(move |id: &str| {
         let (dirs, id) = (dirs.clone(), id.to_owned());
         Box::pin(async move { crate::runtime::isothrum::end_operations(&dirs, &id).await })

@@ -39,7 +39,7 @@ pub type Notify = dyn Fn(&str, &str) + Send + Sync;
 
 /// Ends the operations the runner service still runs on lab `id`, if any, before the agent stops
 /// the lab (see `labs::stop_lab_retiring_colocation`).
-pub type EndWorkers = dyn Fn(&str) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync;
+pub type EndOperations = dyn Fn(&str) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync;
 
 /// The app the background agent runs inside: its data folder, the two things it reaches the
 /// player through — a prompt to confirm a website launch and a system notification when one
@@ -52,14 +52,14 @@ pub struct Deps {
     dirs: AppDirs,
     prompt_launch: Arc<PromptLaunch>,
     notify: Arc<Notify>,
-    end_workers: Arc<EndWorkers>,
+    end_operations: Arc<EndOperations>,
 }
 
 impl Deps {
     /// The agent's dependencies: the data folder, the launch prompt, the notification, and the
-    /// ending of a lab's workers.
-    pub fn new(dirs: AppDirs, prompt_launch: Arc<PromptLaunch>, notify: Arc<Notify>, end_workers: Arc<EndWorkers>) -> Deps {
-        Deps { dirs, prompt_launch, notify, end_workers }
+    /// ending of a lab's operations in the runner service.
+    pub fn new(dirs: AppDirs, prompt_launch: Arc<PromptLaunch>, notify: Arc<Notify>, end_operations: Arc<EndOperations>) -> Deps {
+        Deps { dirs, prompt_launch, notify, end_operations }
     }
 
     fn dirs(&self) -> &AppDirs {
@@ -131,8 +131,9 @@ async fn tear_down(deps: &Deps, lab_id: &str, runtime: Runtime) -> Result<()> {
         return Ok(());
     }
     // Boxed: the stop's future is large, and the operation around it adds to it.
-    let stop =
-        |log: crate::run_service::local::Log| Box::pin(labs::stop_lab_retiring_colocation(dirs, lab_id, runtime, (deps.end_workers)(lab_id), move |l| log(l)));
+    let stop = |log: crate::run_service::local::Log| {
+        Box::pin(labs::stop_lab_retiring_colocation(dirs, lab_id, runtime, (deps.end_operations)(lab_id), move |l| log(l)))
+    };
     // Told as an operation of the lab, so its page shows it stopping.
     match crate::run_service::LocalRunService::of(dirs) {
         Ok(service) => Box::pin(service.observe(lab_id, crate::runtime::Operation::Stop, Some(runtime), stop)).await,

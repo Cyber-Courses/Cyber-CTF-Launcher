@@ -1,5 +1,5 @@
 //! The webview's English catalogue (`src/messages/en`), which the core says its coded messages
-//! from too: the log, a worker's ✗ line and the core's own messages say a code's sentence as the
+//! from too: the log, an operation's ✗ line and the core's own messages say a code's sentence as the
 //! English UI shows it, from the one place it is written.
 
 use std::sync::LazyLock;

@@ -184,8 +184,8 @@ impl ProcessRunner for Provisions {
     }
 }
 
-/// Regression: the lab page polls the lab's status from the app while its start runs in the deploy
-/// worker, another process. Two minutes into the start's provisioning, Vagrant refused the status
+/// Regression: the lab page polls the lab's status from the app while its start runs in the runner
+/// service, another process. Two minutes into the start's provisioning, Vagrant refused the status
 /// read (the start's `vagrant up` held the VMs' locks), the runner's retries ran out, and the page
 /// showed "Couldn't read the state of" the lab. The read now says it isn't running yet, as the
 /// start's own progress does. Regression: the app's reads ran `vagrant status` on the VMs the start
@@ -206,10 +206,10 @@ async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_pr
     // The runner that starts the lab, and the app's, which the page reads it
     // through: the lab's status, and the attack box's (the run's status, the box one of its
     // machines).
-    let worker = Deployment::here_with(config, &f.home.dir, "web", Kind::Vm).unwrap();
+    let starting = Deployment::here_with(config, &f.home.dir, "web", Kind::Vm).unwrap();
     let app = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let mut log = |_| {};
-    let start = worker.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut log);
+    let start = starting.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut log);
     tokio::pin!(start);
     // The page reads once the start's `vagrant up` holds the VMs (two minutes into it, in the
     // regression), then the `vagrant up` ends.
@@ -273,8 +273,8 @@ fn timed_reads(model: &Mutex<Reads>, call: &Call) -> Reply {
 #[tokio::test(start_paused = true)]
 async fn the_apps_reads_of_a_vm_lab_never_ask_vagrant_at_once() {
     let f: Scripted<Reads> = Scripted::answered_by(Home::new("-vm-reads", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), timed_reads);
-    let worker = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
-    worker.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
+    let started = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    started.up(Inputs { values: &[], plain: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     f.model().most = 0;
     // The lab page's poll, its read after the start, the auto-start's read, and the attack box's:
     // each command opens the run on its own.

@@ -61,7 +61,7 @@ impl Context {
 /// (`cyberctf serve --home <home>`, internal: `run_service::host`). Returns the process's exit code.
 pub fn main() -> std::process::ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
-    // A worker on Windows interrupts Terraform through this same executable (see the app's `run`).
+    // An interrupter on Windows: Ctrl+C a Terraform through this same executable (`platform::console`).
     #[cfg(windows)]
     if let Some(pid) = crate::platform::console::interrupt_pid(std::env::args()) {
         return std::process::ExitCode::from(u8::from(!crate::platform::console::send_ctrl_c(pid)));

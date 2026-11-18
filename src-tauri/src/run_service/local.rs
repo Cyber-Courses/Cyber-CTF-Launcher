@@ -85,7 +85,7 @@ impl Under {
 
 /// The launcher's own run service (see the module).
 pub(crate) struct LocalRunService {
-    /// The app's folders: its data folder holds the store, the labs and the workers' files.
+    /// The app's folders: its data folder holds the store and the labs.
     dirs: AppDirs,
     /// Every operation's events.
     events: Arc<EventLog>,

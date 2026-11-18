@@ -4,7 +4,7 @@ import type { LabOperation } from "@/features/labs/runs/operations";
 
 // What a failed lab operation's error means, for a hint on what to do about it. The launcher's own
 // failures are known by their code (src-tauri error.rs `Code`): the error this window saw, or the
-// one a worker's log ends on (`✗[code] …`, read back after a reload). What the tools themselves
+// one an operation's log ends on (`✗[code] …`, read back after a reload). What the tools themselves
 // print (Docker's bind error, a full disk, a download that failed) has no code: it is recognised
 // by their words.
 

@@ -1,5 +1,5 @@
 //! One local lab through the launcher's real launch path, end to end, at the adapter layer. It
-//! imports and starts the lab as `lab_launch_local` does (its worker body, `labs::run_local`),
+//! imports and starts the lab as `lab_launch_local` does (its operation's body, `labs::run_local`),
 //! reads it through the `lab_status` and `lab_check` commands, parks and resumes it through the
 //! runtime operations, then stops it and asserts nothing of it is left. This covers the import and
 //! start-locked path a real launch takes, which the engine-level `corpus_docker` tests do not. The
@@ -32,7 +32,7 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {
-            // The worker's log, which the lab page's deploy log shows: counted as it streams.
+            // The operation's log, which the lab page's deploy log shows: counted as it streams.
             let lines = std::cell::Cell::new(0_usize);
             let started = run_local(&dirs, &id, &src, |l: String| {
                 lines.set(lines.get() + 1);

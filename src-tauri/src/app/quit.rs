@@ -49,8 +49,7 @@ const QUIT_AGAIN_WINDOW: Duration = Duration::from_secs(20);
 const LINGER_CAP: Duration = Duration::from_secs(60 * 60);
 
 /// Quit by finishing in the background: the windows go away now; the process exits once the
-/// lab operations of this process ([`busy`]: a stop, a park, or a start when no
-/// worker could be started) are done.
+/// lab operations of this process ([`busy`]: a stop, a park, a start) are done.
 pub fn linger_quit(app: AppHandle) {
     for (_, w) in app.webview_windows() {
         let _ = w.hide();
@@ -63,7 +62,7 @@ pub fn linger_quit(app: AppHandle) {
     }
     tauri::async_runtime::spawn(async move {
         // Bounded: a wedged operation (a hung VBoxManage) must not keep an invisible app alive
-        // for good. Past the cap it exits anyway; a detached worker would have been unaffected.
+        // for good. Past the cap it exits anyway; the runner service's operations go on without it.
         let deadline = Instant::now() + LINGER_CAP;
         while busy(&app) > 0 && Instant::now() < deadline && phase() == Phase::Lingering {
             tokio::time::sleep(Duration::from_secs(2)).await;

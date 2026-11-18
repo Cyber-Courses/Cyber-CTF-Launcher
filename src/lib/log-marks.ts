@@ -22,7 +22,7 @@ export function failureOf(lines: readonly string[]): string | null {
   return line === undefined ? null : failureText(line);
 }
 
-/** A failed line as the backend writes it in a worker's log, its error's code right after the
+/** A failed line as the backend writes it in an operation's log, its error's code right after the
  *  mark (`✗[portInUse] Host port 8000…`, `FAILED_CODE`): the line as shown (`✗ <why>`) and the
  *  code, for a page that reads the run back without its live error. Any other line as it is. */
 export function readFailedLine(line: string): { line: string; code: ErrorCode | null } {

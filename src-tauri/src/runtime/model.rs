@@ -267,7 +267,7 @@ pub enum Control {
 }
 
 impl LabStatus {
-    /// The status of a lab whose last launch or resume `failed` (its worker's verdict): not
+    /// The status of a lab whose last launch or resume `failed` (its operation's verdict): not
     /// running, even if its machines stayed up. A failed setup step leaves it unusable, and showing
     /// it running with a healthy diagram misleads; the lab page and the attack box's auto-start go
     /// by this alone, wherever the lab runs.

@@ -114,7 +114,7 @@ describe("AboutSection", () => {
     expect(button(/check for updates/i).hasAttribute("disabled")).toBe(false);
   });
 
-  // A stop runs in the app, never in a worker, and isn't a deploy: the update waits all the same
+  // A stop is an operation of the app's own and isn't a deploy: the update waits all the same
   // (installing would cut its teardown off).
   it.each([
     ["deploying", deployingOps(() => ["web-sqli"])],

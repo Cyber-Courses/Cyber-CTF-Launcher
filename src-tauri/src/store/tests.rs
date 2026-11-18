@@ -66,9 +66,9 @@ fn read_modify_writes_from_threads_and_processes_each_keep_the_others_change() {
     // for writing from its start, so none saves a stale copy over another's.
     let data = Data::new("race");
     let app = data.store();
-    let worker = super::Store::open_file(&data.0).unwrap();
+    let helper = super::Store::open_file(&data.0).unwrap();
     std::thread::scope(|s| {
-        for (n, store) in [&app, &worker, &app, &worker].into_iter().enumerate() {
+        for (n, store) in [&app, &helper, &app, &helper].into_iter().enumerate() {
             s.spawn(move || {
                 for i in 0..10 {
                     store
