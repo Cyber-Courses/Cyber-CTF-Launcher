@@ -417,6 +417,10 @@ cap_of() {
     # 1200 s cap); on QEMU, arm64 Mac, it passed every check through re-provision and was cut at
     # 480 s before its stop (runner 47b9852). UTM has no complete run yet (its checks hung, F17).
     vm-lab@libvirt | vm-lab@qemu | vm-lab@utm) echo 1000 ;;
+    # attack-box-vm on QEMU, x64 Linux (2026-11-18): every check and its teardown in 356 s and 420 s
+    # at load 6, the controller's set-up 50 to 85 s of it (apt, then pip installing Ansible, bound by
+    # its one CPU). At load 12 to 22 that set-up alone ran past 600 s: the machine's load, not a hang.
+    attack-box-vm@qemu) echo 630 ;;
     attack-box-*) echo "$BOX_CAP" ;;
     # The VM test on the nested Proxmox test server (2026-11-17): its build, the image, the VM up
     # with its address and SSH took past 480 s under load, cut before its command and teardown.
