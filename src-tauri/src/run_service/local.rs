@@ -407,16 +407,18 @@ async fn execute(dirs: &AppDirs, request: Request, earlier_ended: impl Future<Ou
             let line = |l: String| log(l);
             let crate::labs::PreparedLaunch { launch, place, .. } = crate::labs::prepare_launch(dirs, launch, &line).await?;
             let (id, runtime) = (launch.lab_id.clone(), launch.runtime);
-            Box::pin(crate::labs::run(dirs, launch, place.destination(), line)).await?;
-            with_attack_box(dirs, &id, runtime, log).await;
-            Ok(())
+            let up = crate::labs::run(dirs, launch, place.destination(), line);
+            Box::pin(up_with_box(dirs, &id, runtime, up, Arc::clone(&log))).await
         }
-        Request::LaunchLocal { lab_id, src } => Box::pin(crate::labs::run_local(dirs, &lab_id, &src, move |l| log(l))).await.map(drop),
+        Request::LaunchLocal { lab_id, src } => {
+            let line = Arc::clone(&log);
+            let up = crate::labs::run_local(dirs, &lab_id, &src, move |l| line(l));
+            Box::pin(up_with_box(dirs, &lab_id, Runtime::Docker, up, log)).await
+        }
         Request::Resume { lab_id, runtime } => {
             let line = Arc::clone(&log);
-            Box::pin(crate::runtime::resume_lab(dirs, &lab_id, runtime, move |l| line(l))).await?;
-            with_attack_box(dirs, &lab_id, runtime, log).await;
-            Ok(())
+            let up = crate::runtime::resume_lab(dirs, &lab_id, runtime, move |l| line(l));
+            Box::pin(up_with_box(dirs, &lab_id, runtime, up, log)).await
         }
         Request::Park { lab_id, runtime, mode } => Box::pin(crate::runtime::park_lab(dirs, &lab_id, runtime, mode, move |l| log(l))).await,
         Request::Provision { lab_id, runtime, machine } => {
@@ -434,9 +436,19 @@ async fn execute(dirs: &AppDirs, request: Request, earlier_ended: impl Future<Ou
     }
 }
 
-/// Once lab `id` is up (a launch or a resume, from the app, the command line or the website), its
-/// attack box is added in the same operation when the player's setting says so ("start it with
-/// each lab"), wherever the launcher reaches a run to put it in ([`auto_attack_box`]).
+/// Brings lab `id` up with `up` (a launch, an imported lab's too, or a resume), then adds its
+/// attack box as the player's setting says ([`with_attack_box`]): the lab's failure is the
+/// operation's, the box's never is.
+async fn up_with_box<T>(dirs: &AppDirs, id: &str, runtime: Runtime, up: impl Future<Output = Result<T>>, log: Log) -> Result<()> {
+    Box::pin(up).await?;
+    with_attack_box(dirs, id, runtime, log).await;
+    Ok(())
+}
+
+/// Once lab `id` is up (a launch, an imported lab's too, or a resume, from the app, the command
+/// line or the website), its attack box is added in the same operation when the player's setting
+/// says so ("start it with each lab"), wherever the launcher reaches a run to put it in
+/// ([`auto_attack_box`]).
 async fn with_attack_box(dirs: &AppDirs, id: &str, runtime: Runtime, log: Log) {
     let settings = match crate::settings::settings_get(dirs) {
         Ok(settings) => settings,
