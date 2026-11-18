@@ -1,4 +1,4 @@
-//! Win32: the console's Ctrl+C, the environment, the registry and elevation (UAC).
+//! Win32: the standard handles, the environment, the registry and elevation (UAC).
 
 mod elevation;
 mod registry;
@@ -36,28 +36,6 @@ pub fn set_path(path: &OsStr) {
     // call on Windows"): the environment block is guarded by the OS and std's lock. The data
     // race that makes it unsafe is libc's getenv, on Unix only.
     unsafe { std::env::set_var("PATH", path) };
-}
-
-/// Sends Ctrl+C to every process on `pid`'s console (the program and what it started there, e.g.
-/// Terraform and its providers). Whether it was sent. Attaching to another console changes this
-/// process's own console state: run it in a throwaway process (see `platform::console`).
-pub fn send_ctrl_c(pid: u32) -> bool {
-    use windows_sys::Win32::System::Console::{AttachConsole, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent, SetConsoleCtrlHandler};
-    // SAFETY: plain Win32 calls on this process's console; none takes pointers.
-    unsafe {
-        // A process attaches to one console at most: leave ours (if any) first.
-        FreeConsole();
-        if AttachConsole(pid) == 0 {
-            return false;
-        }
-        // The event reaches every process on the console, this one included: ignore it here.
-        SetConsoleCtrlHandler(None, 1);
-        let sent = GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0) != 0;
-        // Delivery is asynchronous: stay attached a moment, so the console outlives the event.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        FreeConsole();
-        sent
-    }
 }
 
 /// `s` as a NUL-terminated UTF-16 string, for the `W` calls.

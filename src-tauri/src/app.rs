@@ -46,29 +46,6 @@ pub(crate) fn record_tools(app: &AppHandle) -> Option<PathBuf> {
 /// How often expired cloud labs are looked for and torn down.
 const REAP_EVERY: Duration = Duration::from_secs(300);
 
-/// What this process is, read from its arguments before anything else starts.
-#[derive(Debug, PartialEq, Eq)]
-enum Role {
-    /// `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a Terraform so it
-    /// stops cleanly, from a throwaway process (see `platform::console`). Nothing of the app starts.
-    #[cfg(windows)]
-    Interrupter(u32),
-    /// The launcher itself.
-    App,
-}
-
-impl Role {
-    /// The role `args` (the process's, program first) give this process.
-    fn of(args: &[String]) -> Role {
-        #[cfg(windows)]
-        if let Some(pid) = platform::console::interrupt_pid(args.iter().cloned()) {
-            return Role::Interrupter(pid);
-        }
-        let _ = args;
-        Role::App
-    }
-}
-
 /// What the start of the process sets up for either role that runs Tauri: the context (the
 /// embedded config and assets, pointed at an end-to-end run's folders) and what was found of the
 /// system proxy, for the log once it is up.
@@ -85,21 +62,13 @@ struct Started {
 pub fn run() -> tauri::Result<()> {
     // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
     logging::install_panic_hook();
-    // SAFETY: called only first thing in a role's arm, before anything starts a thread (Tauri,
-    // tokio and the plugins all start later).
+    // SAFETY: called first thing, before anything starts a thread (Tauri, tokio and the plugins
+    // all start later).
     #[allow(unsafe_code, reason = "the start's claim to be the only thread, which only `run` can make")]
-    let started = || start(unsafe { platform::sys::SingleThreaded::assume() });
-    match Role::of(&std::env::args().collect::<Vec<_>>()) {
-        // Exit code 0 when it was sent, else 1 (the app reads only whether it succeeded).
-        #[cfg(windows)]
-        Role::Interrupter(pid) => std::process::exit(i32::from(!platform::console::send_ctrl_c(pid))),
-        Role::App => {
-            let Started { context, proxy_note } = started();
-            let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
-            app.run(|app, event| on_run_event(app, &event));
-            Ok(())
-        }
-    }
+    let Started { context, proxy_note } = start(unsafe { platform::sys::SingleThreaded::assume() });
+    let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
+    app.run(|app, event| on_run_event(app, &event));
+    Ok(())
 }
 
 /// The start both Tauri roles share, while `only` this thread runs: GUI launches don't get the
@@ -551,15 +520,5 @@ mod tests {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let img = conf["app"]["security"]["csp"]["img-src"].as_str().unwrap();
         assert_eq!(img.split_whitespace().collect::<Vec<_>>(), ["'self'", "data:", "https://avatars.githubusercontent.com"]);
-    }
-
-    #[test]
-    fn the_role_is_read_from_the_arguments_alone() {
-        let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
-        assert_eq!(super::Role::of(&args(&["app"])), super::Role::App);
-        #[cfg(windows)]
-        assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::Interrupter(4242));
-        #[cfg(not(windows))]
-        assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::App);
     }
 }
