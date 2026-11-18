@@ -61,6 +61,13 @@ async fn shared_both_ways(placed: &Placed, folder: &Path, f: &mut Vec<String>) {
     if let Err(e) = std::fs::write(folder.join("to-box"), "tools in") {
         return check(false, format!("a file is put in the shared folder: {e}"), f);
     }
+    // The folder outlives a run: what an earlier run's box wrote (another hypervisor's, owned by
+    // the account it maps to) would be read back as this run's, or refuse this box's write.
+    if let Err(e) = std::fs::remove_file(folder.join("from-box"))
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        return check(false, format!("an earlier run's file is taken out of the shared folder: {e}"), f);
+    }
     let mount = crate::shared_folder::MOUNT_POINT;
     let seen = in_box(&console, &format!("cat {mount}/to-box && echo loot out > {mount}/from-box")).await;
     check(seen.as_deref().is_ok_and(|o| o.contains("tools in")), format!("the box sees the shared folder at {mount} ({seen:?})"), f);
