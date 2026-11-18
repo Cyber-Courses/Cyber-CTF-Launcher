@@ -64,4 +64,8 @@ fn each_step_is_said_in_the_apps_words() {
         "VirtualBox has a VM named \"CyberCTF test VM\" that isn't this test's, so it was left alone. Rename or remove it in VirtualBox, then test again."
     );
     assert_eq!(error(Failure::NoReply { address: ADDRESSES[0], last: "no reply".into() }).to_string(), "192.168.56.250 did not answer ping: no reply");
+    assert_eq!(
+        error(Failure::NoTestBox { hypervisor: "hyperv", arch: isothrum_runner::Arch::Arm64 }).to_string(),
+        "no test VM exists yet for hyperv on arm64 computers, so the test has nothing to boot here"
+    );
 }

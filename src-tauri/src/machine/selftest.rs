@@ -104,7 +104,11 @@ pub async fn machine_selftest_prefetch(dirs: AppDirs, kind: Kind, provider: Opti
         Kind::Docker => docker::prefetch(&dirs).await,
         Kind::Vm => {
             let Some(p) = vm::test_provider(provider).await.and_then(Provider::vagrant) else { return Ok(()) };
-            let (bx, held) = isothrum_machine::selftest::hypervisor::box_for(&crate::runtime::providers::machine_selftest(), p).await;
+            // No test box for this hypervisor on this CPU (Hyper-V on Arm): nothing to fetch; the
+            // test itself says so.
+            let Some((bx, held)) = isothrum_machine::selftest::hypervisor::box_for(&crate::runtime::providers::machine_selftest(), p).await else {
+                return Ok(());
+            };
             if held {
                 return Ok(());
             }
