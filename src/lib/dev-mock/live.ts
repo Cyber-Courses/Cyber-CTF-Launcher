@@ -70,7 +70,7 @@ export const labArg = (args: Args, key: "id" | "labId" = "id") => argText(args?.
 /** An operation `op` on the lab `id`: in flight (as the core reports it) while its `lines`
  *  stream down the command's channel, and then while the test holds it (`hold=launch`,
  *  `hold=provision`). */
-export async function operation({ id, op, lines }: { id: string; op: Operation; lines: string[] }, args: Args, live: Live) {
+export async function operation({ id, op, lines }: { id: string; op: Operation; lines: readonly unknown[] }, args: Args, live: Live) {
   live.ops.set(id, op);
   try {
     for (const line of lines) {
