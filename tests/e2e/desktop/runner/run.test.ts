@@ -18,6 +18,7 @@ import {
   skipReason,
   withoutSecrets,
 } from "./plan.mjs";
+import { WDIO_BUILD_MARK } from "./preflight.mjs";
 
 // The desktop end-to-end's plan (cases.tsv, the specs' declared needs, the groups; runner/plan.mjs)
 // held to the specs, and its runner (run.mjs) run for real on a fake plan: fake specs, a fake
@@ -135,9 +136,10 @@ describe("the desktop cases", () => {
       env: { ...process.env, CARGO_TARGET_DIR: target },
       timeout: 60000,
     });
-    // Nothing built there yet: the runner stops on the app it looked for, in that folder.
+    // Nothing built there yet: the runner stops on the app it looked for, its own copy of the wdio
+    // build in that folder, never the cargo build a `cargo test` relinks without the feature.
     expect(sh.status).toBe(2);
-    expect(sh.stderr).toContain(`app binary not found or not executable: ${join(target, "debug", "cyberctf-desktop")}`);
+    expect(sh.stderr).toContain(`app binary not found or not executable: ${join(target, "debug", "wdio", "cyberctf-desktop")}`);
   });
 
   it("are the cases run.sh and run.ps1 list through run.mjs, with their groups and needs", () => {
@@ -152,8 +154,10 @@ describe("the desktop cases", () => {
     expect(group.stdout.trim().split("\n").length).toBe(12);
     for (const runner of [readFileSync(join(HERE, "run.sh"), "utf8"), readFileSync(join(HERE, "run.ps1"), "utf8")]) {
       expect(runner).toMatch(/run\.mjs/);
-      // The built app is where cargo put it (support/host.mjs builtApp), never a fixed path.
-      expect(runner).toMatch(/host\.mjs"?\)? --built-app/);
+      // The app is the runner's copy of the wdio build it just made, where cargo builds
+      // (support/host.mjs wdioApp, keepWdioBuild), never a fixed path.
+      expect(runner).toMatch(/node "?\$(HOST|HostJs)"? --keep-wdio-build/);
+      expect(runner).toMatch(/node "?\$(HOST|HostJs)"? --wdio-app/);
       expect(runner).not.toMatch(/src-tauri[\\/]target[\\/]debug/);
       // Nothing of the user's: their data folder, their session file, a clean-up by name.
       expect(runner).not.toMatch(/Application Support|XDG_DATA_HOME|USERPROFILE|\$HOME\/\.cyberctf|--filter "name=/);
@@ -269,22 +273,30 @@ function fakePlan(specs: Record<string, { needs?: string[]; provides?: string[];
   return dir;
 }
 
-/** A fake app: a script that serves /status on TAURI_WEBDRIVER_PORT, unless the `dead` file is there. */
-function fakeApp(dir: string): string {
+/**
+ * A fake app: a script that serves /status on TAURI_WEBDRIVER_PORT, unless the `dead` file is
+ * there, each start counted in the `started` file beside it. A wdio build's, holding its mark,
+ * unless `wdio` is false: a build without the feature, which the runner must never start.
+ */
+function fakeApp(dir: string, { wdio = true }: { wdio?: boolean } = {}): string {
   const server = join(dir, "app.mjs");
   writeFileSync(
     server,
     `import { createServer } from "node:http";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
+appendFileSync(${JSON.stringify(join(dir, "started"))}, "started\\n");
 if (existsSync(${JSON.stringify(join(dir, "dead"))})) process.exit(3);
 createServer((req, res) => { res.end("{}"); }).listen(Number(process.env.TAURI_WEBDRIVER_PORT), "127.0.0.1");
 setInterval(() => {}, 1000);`,
   );
   const bin = join(dir, "cyberctf-desktop");
-  writeFileSync(bin, `#!/bin/sh\nexec "${process.execPath}" "${server}"\n`);
+  writeFileSync(bin, `#!/bin/sh\n${wdio ? `# ${WDIO_BUILD_MARK}\n` : ""}exec "${process.execPath}" "${server}"\n`);
   chmodSync(bin, 0o755);
   return bin;
 }
+
+/** How many times the fake app in `dir` started. */
+const startsOf = (dir: string) => (existsSync(join(dir, "started")) ? readFileSync(join(dir, "started"), "utf8").trim().split("\n").length : 0);
 
 /**
  * An app that won't go when asked: it ignores SIGTERM, serves WebDriver's /status on
@@ -550,6 +562,55 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
     expect(r.out).toContain("its own message above says why it stopped");
     expect(r.out).not.toContain("the app must be built with --features wdio");
     expect(r.records).toEqual([]);
+  });
+
+  it("refuses an app that isn't a wdio build before it starts it, making nothing of the run", () => {
+    const planDir = fakePlan({ a: { body: ok } });
+    const dir = mkdtempSync(join(tmpdir(), "desktop-plain-"));
+    dirs.push(dir);
+    const app = fakeApp(dir, { wdio: false });
+    const r = runRunner(planDir, ["--all"], { env: { CYBERCTF_TEST_DESKTOP_APP: app } });
+    expect(r.status).toBe(2);
+    expect(r.out).toContain(`run.mjs: ${app} isn't a wdio build (it doesn't hold "${WDIO_BUILD_MARK}")`);
+    expect(r.out).toContain("it would ignore the run's folder and use your own data folder and runner service, so it isn't started");
+    expect(r.out).toContain("rebuild it with --features wdio: tests/e2e/desktop/runner/run.sh (run.ps1) without --skip-build or --app");
+    // Never started, not even for the preflight; no run's folder made, no spec run.
+    expect(startsOf(dir)).toBe(0);
+    expect(readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e."))).toEqual([]);
+    expect(r.records).toEqual([]);
+  });
+
+  it("checks the binary a wrapper runs when it is named apart (an AppImage's), naming both", () => {
+    const planDir = fakePlan({ a: { body: ok } });
+    const dir = mkdtempSync(join(tmpdir(), "desktop-plain-"));
+    dirs.push(dir);
+    const binary = fakeApp(dir, { wdio: false });
+    const r = runRunner(planDir, ["--all"], { env: { CYBERCTF_TEST_DESKTOP_BINARY: binary } });
+    expect(r.status).toBe(2);
+    expect(r.out).toContain(`cyberctf-desktop (its binary ${binary}) isn't a wdio build`);
+    expect(r.records).toEqual([]);
+    const marked = runRunner(planDir, ["--all"], { env: { CYBERCTF_TEST_DESKTOP_BINARY: fakeApp(dir) } });
+    expect(marked.status, marked.out).toBe(0);
+  });
+
+  it("reads the app's file again when it changes under the run: relinked without wdio, it ends the run unstarted", () => {
+    // A spec standing for a `cargo test` relinking the binary given as --app: a new file, no mark.
+    const dir = mkdtempSync(join(tmpdir(), "desktop-relinked-"));
+    dirs.push(dir);
+    const app = fakeApp(dir);
+    const relinks = `import { renameSync, writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(`${app}.new`)}, "#!/bin/sh\\nexit 0\\n", { mode: 0o755 }); renameSync(${JSON.stringify(`${app}.new`)}, ${JSON.stringify(app)}); ${ok}`;
+    const planDir = fakePlan({ a: { body: ok }, relink: { body: relinks }, b: { body: ok }, c: { body: ok } });
+    const r = runRunner(planDir, ["--all"], { env: { CYBERCTF_TEST_DESKTOP_APP: app } });
+    expect(r.status).toBe(1);
+    const v = verdicts(r.records);
+    expect([v.a, v.relink]).toEqual([
+      ["pass", ""],
+      ["pass", ""],
+    ]);
+    expect(v.b).toEqual(["fail", expect.stringMatching(/isn't a wdio build .* so it isn't started/) as unknown]);
+    expect(v.c).toEqual(["skip", expect.stringMatching(/isn't a wdio build .*: the run ended$/) as unknown]);
+    // Started once, by the preflight; never after the relink.
+    expect(startsOf(dir)).toBe(1);
   });
 
   it("places the session where the run's app reads it, and keeps the folder when asked", () => {

@@ -15,6 +15,10 @@
 //!   stored (a lab's last run, a spec's hooks) shows in the next run;
 //! - nothing registered with the system (the `cyberctf://` scheme), no Store build's files moved.
 //!
+//! A build that won't keep to the folder it is given (one without `wdio`, which ignores it)
+//! refuses to start rather than use the user's folders ([`refusal`]); the runner never starts
+//! one anyway: it reads the binary for `BUILD_MARK` first.
+//!
 //! The app shell points Tauri's folders and the windows there (`app::test_root_config`); the rest
 //! of the app asks here. The desktop runner (`tests/e2e/desktop/runner/run.sh`, `run.ps1`) makes the folder
 //! for each run and removes it afterwards.
@@ -37,9 +41,41 @@ pub fn webview_store_of(root: &Path) -> [u8; 16] {
     id
 }
 
+/// What a `wdio` build's binary holds, as it is, and no other build's: the desktop runner reads
+/// the app's file for it before it starts the app (`tests/e2e/desktop/runner/preflight.mjs`
+/// `WDIO_BUILD_MARK`, the same text), so a build without the feature, which would ignore the
+/// run's folder and use the user's, is never started by a run. Read in [`root`], so it stays in
+/// the binary.
+#[cfg(feature = "wdio")]
+pub static BUILD_MARK: &str = "cyberctf-wdio-build: keeps an end-to-end run's folder (CYBERCTF_WDIO_ROOT)";
+
 /// The run's folder, when this is a `wdio` build started with one.
 pub fn root() -> Option<PathBuf> {
+    #[cfg(feature = "wdio")]
+    std::hint::black_box(BUILD_MARK);
     root_of(cfg!(feature = "wdio"), std::env::var_os(VAR))
+}
+
+/// Why this app must not start: it was given a run's folder it won't keep to (a build without
+/// the `wdio` feature, or a folder that isn't absolute), so it would use the user's own folders
+/// under an end-to-end run. `None` when `CYBERCTF_WDIO_ROOT` isn't set, as for every player.
+pub fn refusal() -> Option<String> {
+    refusal_of(cfg!(feature = "wdio"), std::env::var_os(VAR))
+}
+
+fn refusal_of(wdio: bool, value: Option<OsString>) -> Option<String> {
+    let value = value?;
+    if root_of(wdio, Some(value.clone())).is_some() {
+        return None;
+    }
+    Some(if wdio {
+        format!("{VAR} is {}, not an absolute folder: the app would use your own folders instead", PathBuf::from(value).display())
+    } else {
+        format!(
+            "{VAR} is set (an end-to-end run's folder), but this build was made without the `wdio` feature and would use your own folders \
+             instead: build it with `cargo build --manifest-path src-tauri/Cargo.toml --features wdio`"
+        )
+    })
 }
 
 /// The folder `value` names, in a `wdio` build only, and only an absolute one: a relative path
@@ -86,6 +122,25 @@ mod tests {
         assert_eq!(webview_store(), None);
         let dir = absolute();
         assert_eq!((app_dir(&dir), home(&dir)), (dir.join("app"), dir.join("home")));
+    }
+
+    #[test]
+    fn an_app_given_a_run_folder_it_wont_keep_to_refuses_to_start() {
+        let abs = absolute().into_os_string();
+        // A player's app: no run's folder, nothing to refuse, whatever the build.
+        assert_eq!(refusal_of(false, None), None);
+        assert_eq!(refusal_of(true, None), None);
+        // A wdio build keeps to an absolute folder.
+        assert_eq!(refusal_of(true, Some(abs.clone())), None);
+        // A build without wdio would use the user's folders under a run: it refuses, saying how to build.
+        let without = refusal_of(false, Some(abs)).unwrap();
+        assert!(without.contains("without the `wdio` feature") && without.contains("--features wdio"), "{without}");
+        // A relative folder would follow where the app was started from: refused too.
+        assert!(refusal_of(true, Some("relative/run".into())).unwrap().contains("not an absolute folder"));
+        // These unit tests aren't a wdio build: the runner's process sets no run's folder for them.
+        if std::env::var_os(VAR).is_none() {
+            assert_eq!(refusal(), None);
+        }
     }
 
     #[test]

@@ -1,10 +1,22 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { builtApp, dockerPluginDirs, engineSilence, portFree, portHolder, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "./host.mjs";
+import {
+  builtApp,
+  dockerPluginDirs,
+  engineSilence,
+  keepWdioBuild,
+  portFree,
+  portHolder,
+  portStillHeld,
+  runBounded,
+  utmUnreachable,
+  waitPortFree,
+  wdioApp,
+} from "./host.mjs";
 import { deadDockerEnv } from "./app.mjs";
 
 // What the desktop end-to-end reads of the machine (support/host.mjs): the app's WebDriver port, and
@@ -68,6 +80,30 @@ describe("the app cargo builds", () => {
   it("is under the checkout's src-tauri/target otherwise", () => {
     const repo = join(import.meta.dirname, "..", "..", "..", "..");
     expect(builtApp(noCargo, "linux")).toBe(join(repo, "src-tauri", "target", "debug", "cyberctf-desktop"));
+  });
+
+  it("is kept as the runner's own copy of the wdio build, which a later build without the feature never replaces", () => {
+    const target = mkdtempSync(join(tmpdir(), "cyberctf-target-"));
+    try {
+      const env = { ...noCargo, CARGO_TARGET_DIR: target };
+      expect(wdioApp(env, "linux")).toBe(join(target, "debug", "wdio", "cyberctf-desktop"));
+      expect(wdioApp(env, "win32")).toBe(join(target, "debug", "wdio", "cyberctf-desktop.exe"));
+      mkdirSync(join(target, "debug"));
+      writeFileSync(builtApp(env, "linux"), "the wdio build");
+      expect(keepWdioBuild(env, "linux")).toBe(wdioApp(env, "linux"));
+      // A `cargo test` relinks cargo's own: the runner's copy is still the wdio build.
+      writeFileSync(builtApp(env, "linux"), "a build without wdio");
+      expect(readFileSync(wdioApp(env, "linux"), "utf8")).toBe("the wdio build");
+      // Kept again, the copy is a new file renamed into place: an app running from the old one keeps it.
+      const before = statSync(wdioApp(env, "linux")).ino;
+      writeFileSync(builtApp(env, "linux"), "the next wdio build");
+      keepWdioBuild(env, "linux");
+      expect(readFileSync(wdioApp(env, "linux"), "utf8")).toBe("the next wdio build");
+      expect(statSync(wdioApp(env, "linux")).ino).not.toBe(before);
+      expect(readdirSync(join(target, "debug", "wdio"))).toEqual(["cyberctf-desktop"]);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
   });
 });
 
