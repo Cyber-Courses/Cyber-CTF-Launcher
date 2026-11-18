@@ -87,6 +87,11 @@ fn of_tool(report: &ErrorReport) -> Error {
         (ErrorCode::CredentialsExpired, _) => expired_sign_in(None, message),
         (ErrorCode::AddressPoolOverlap, Some(Detail::AddressPoolOverlap { reason })) => pool_overlap(&tool_failed(step, reason)),
         (ErrorCode::AddressPoolOverlap, _) => pool_overlap(&tool_failed(step, message)),
+        // The provider's Vagrant plugin isn't installed: a missing tool, which the Machine page's
+        // setup installs (its plugin step), not words telling the player to run a command.
+        (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Plugin) })) => {
+            Error::coded(Code::ToolMissing { tool: plugin_of(provider) })
+        }
         // The machine changed after its check (virtiofsd removed): the hypervisor's refusal as
         // the check says it, not vagrant-libvirt's stack trace or vagrant-qemu's words.
         (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Virtiofsd) })) => {
@@ -254,6 +259,15 @@ fn pool_overlap(failed: &Error) -> Error {
 }
 
 /// A hypervisor as the machine check names it, by the runner's provider id (`qemu` is QEMU).
+/// The Vagrant plugin provider `provider` (its id, `qemu`) runs through: `vagrant-qemu`; the id
+/// itself for one Isothrum doesn't know.
+fn plugin_of(provider: &str) -> String {
+    serde_json::from_value::<isothrum_runner::Provider>(serde_json::Value::String(provider.to_owned()))
+        .ok()
+        .and_then(isothrum_runner::Provider::plugin)
+        .map_or_else(|| provider.to_owned(), str::to_owned)
+}
+
 fn hypervisor_name(provider: &str) -> String {
     match provider {
         "qemu" => "QEMU".into(),

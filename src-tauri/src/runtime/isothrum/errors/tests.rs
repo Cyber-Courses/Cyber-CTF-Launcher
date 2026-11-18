@@ -73,6 +73,18 @@ fn a_tools_failure_reaches_the_webview_as_the_code_it_translates() {
             None,
         ),
         (report("provider_refused", None, Some(json!({ "kind": "provider_refused", "provider": "utm" }))), Code::Other, Some("m")),
+        // The provider's Vagrant plugin missing: a missing tool, named by the plugin, which the
+        // Machine page's setup installs.
+        (
+            report("provider_refused", step, Some(json!({ "kind": "provider_refused", "provider": "qemu", "need": "plugin" }))),
+            Code::ToolMissing { tool: "vagrant-qemu".into() },
+            None,
+        ),
+        (
+            report("provider_refused", step, Some(json!({ "kind": "provider_refused", "provider": "nope", "need": "plugin" }))),
+            Code::ToolMissing { tool: "nope".into() },
+            None,
+        ),
         // macOS refusing the Apple events that drive UTM: the Automation permission.
         (
             report("provider_refused", step, Some(json!({ "kind": "provider_refused", "provider": "utm", "need": "automation" }))),
