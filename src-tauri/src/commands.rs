@@ -71,6 +71,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         machine::hyperv_join_admins,
         cloud::oci_config,
         machine::install_vagrant_plugin,
+        machine::machine_share_virtualization,
         machine::ovftool_place,
         labs::lab_launch,
         labs::imported_labs,

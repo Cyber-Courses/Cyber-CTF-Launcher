@@ -53,12 +53,24 @@ function loginGroups(provider: Provider, os: Os): string[] {
 }
 
 function get(r: Machine, p: ProviderStatus, hypervRestart: boolean): SetupAction[] {
+  // KVM holding the CPU's virtualization: VirtualBox's install when it is missing, then KVM set to
+  // share it (or the restart that applies that).
+  const reason = p.reason;
+  if (reason?.code === "kvmHoldsVirtualization" || reason?.code === "kvmSharesAfterRestart") {
+    const first: SetupAction[] = p.hypervisor === true ? [] : [getHypervisor(r, p)];
+    return [...first, reason.code === "kvmSharesAfterRestart" ? { kind: "blocked", reason } : { kind: "shareVirtualization" }];
+  }
   const groups = loginGroups(p.provider, r.os);
   if (p.hypervisor === true && r.groupsPending.some((g) => groups.includes(g))) return [{ kind: "relogin" }];
   if (p.hypervisor === true) return cantRun(p) && p.reason ? [{ kind: "blocked", reason: p.reason }] : [];
   if (p.provider === "hyperv" && hypervRestart) return [{ kind: "restart", feature: "hyperv" }];
+  return [getHypervisor(r, p)];
+}
+
+/** What brings hypervisor `p` here: its install, else its vendor's site. */
+function getHypervisor(r: Machine, p: ProviderStatus): SetupAction {
   const dependency = installable(p.provider, r.os);
-  return [dependency ? install(r, dependency) : { kind: "manual", reason: "vendor", dependency: null, url: VENDOR_URLS[p.provider] ?? null }];
+  return dependency ? install(r, dependency) : { kind: "manual", reason: "vendor", dependency: null, url: VENDOR_URLS[p.provider] ?? null };
 }
 
 function vagrant(r: Machine, p: ProviderStatus): SetupAction[] {
@@ -80,6 +92,7 @@ export function setupOptions(r: Machine, hypervRestart = false): SetupOptions {
   const hypervisor =
     hypervisors.find((o) => installed(o.provider) && o.get.length === 0) ??
     hypervisors.find((o) => installed(o.provider)) ??
+    hypervisors.find((o) => o.get[0]?.kind === "install" && !o.get.some((a) => a.kind === "shareVirtualization")) ??
     hypervisors.find((o) => o.get[0]?.kind === "install") ??
     hypervisors.at(0);
   return {

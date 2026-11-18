@@ -140,6 +140,13 @@ pub async fn install_vagrant_plugin(plugin: String, logs: Channel<String>) -> Re
     install::install_vagrant_plugin(plugin, lines(logs)).await
 }
 
+/// Lets VirtualBox share the CPU's virtualization with KVM (Linux), each command and its output
+/// sent on `logs`.
+#[tauri::command]
+pub async fn machine_share_virtualization(logs: Channel<String>) -> Result<()> {
+    install::share_virtualization(lines(logs)).await.map(drop)
+}
+
 /// The tools Cyber CTF installed, which Cleanup may remove.
 #[tauri::command]
 pub async fn installed_tools(app: AppHandle) -> Vec<Installed> {
@@ -218,6 +225,17 @@ mod tests {
         let outcome = ovftool_place(t.handle().clone(), picked.display().to_string()).await.unwrap();
         assert_eq!(outcome, ovftool::Outcome::Refused { reason: isothrum_machine::tools::ovftool::Refusal::NoTool, detail: None });
         assert!(!ovftool::managed_dir(t.data()).exists());
+    }
+
+    #[tokio::test]
+    async fn sharing_the_cpus_virtualization_with_kvm_is_linux_only() {
+        // On Linux it would change this computer (a modprobe option, KVM loaded again): the
+        // core's own tests run it against a model of the host.
+        if !cfg!(target_os = "linux") {
+            let logs = Channel::new(|_| Ok(()));
+            let err = machine_share_virtualization(logs).await.unwrap_err();
+            assert!(err.to_string().contains("only on Linux"), "{err}");
+        }
     }
 
     #[tokio::test]

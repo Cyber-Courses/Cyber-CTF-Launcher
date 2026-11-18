@@ -7,6 +7,7 @@ import {
   installVagrantPlugin,
   machineRestart,
   machineSelftestPrefetch,
+  shareVirtualization,
   type Dependency,
   type DockerEngine,
   type SystemReport,
@@ -82,11 +83,16 @@ function useInstalls(onRefresh: () => void) {
     if (installsOff) return;
     void run(plugin, translate("machine.vm.pluginLog", { plugin }), (onLog) => installVagrantPlugin(plugin, onLog));
   };
+  /** Lets VirtualBox share the CPU's virtualization with KVM, under `id` (its hypervisor). */
+  const share = (id: string) => {
+    if (installsOff) return;
+    void run(id, translate("machine.vm.shareLog"), (onLog) => shareVirtualization(onLog));
+  };
   /** No install runs, and the policy allows one. */
   const canInstall = installing === null && !installsOff;
   /** Why install `id` failed in this flow, if it did (and wasn't run again since). */
   const failure = (id: string): string | null => failures[id] ?? null;
-  return { installing, installsOff, canInstall, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin, failure };
+  return { installing, installsOff, canInstall, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin, share, failure };
 }
 
 /** Windows counts down to the restart that finishes WSL 2 (or Hyper-V): kept with the flow, not

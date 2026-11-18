@@ -5,7 +5,7 @@
 Every feature the launcher offers its user, area by area, and how well each test tier checks it. The registry is
 [registry.yml](registry.yml); [tests/README.md](../README.md#the-feature-registry) says how a feature or a test is added.
 
-**194 features: 71 Strong, 122 Partial, 1 Unchecked.**
+**195 features: 71 Strong, 123 Partial, 1 Unchecked.**
 
 - A tier: ✔ its tests check the feature's behaviour; ◐ they check part of it (what is missing is under the table); ✖ no test.
 - **Strong**: unit tests, and a tier above that covers it: a real-host one (desktop E2E, integration, setup, package) when the feature depends on the
@@ -46,7 +46,7 @@ Every feature the launcher offers its user, area by area, and how well each test
 | [The lab page](#the-lab-page)                                                 | 9        | 6      | 3       | 0         |
 | [The attack box](#the-attack-box)                                             | 12       | 4      | 8       | 0         |
 | [The VM screen](#the-vm-screen)                                               | 3        | 0      | 3       | 0         |
-| [This machine](#this-machine)                                                 | 13       | 6      | 7       | 0         |
+| [This machine](#this-machine)                                                 | 14       | 6      | 8       | 0         |
 | [Guided machine setup](#guided-machine-setup)                                 | 18       | 5      | 13      | 0         |
 | [Maintenance and clean-up](#maintenance-and-clean-up)                         | 4        | 1      | 3       | 0         |
 | [Servers](#servers)                                                           | 13       | 4      | 9       | 0         |
@@ -430,7 +430,7 @@ What the partial and missing tiers leave out:
 
 ## This machine
 
-13 features: 6 Strong, 7 Partial, 0 Unchecked.
+14 features: 6 Strong, 8 Partial, 0 Unchecked.
 
 | Feature                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig                          | Level       |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | ---------------------------- | ----------- |
@@ -447,6 +447,7 @@ What the partial and missing tiers leave out:
 | `machine.image-download-size` See how big an attack box image is to download before picking it (Settings and the setup's attack machine step).                                                                                                                                                                                                                                                                                                               | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –                            | **Partial** |
 | `machine.open-setup` Fix, Test or Add a provider on the Machine page opens the guided setup window at the matching step (or brings it forward and jumps there).                                                                                                                                                                                                                                                                                              | all       | ✔    | ✔       | ✔           | ✖           | ✖     | ✖       | Linux ·, macOS ·, Windows ·  | **Strong**  |
 | `machine.hyperv-admins` On Windows, let an account that may not manage Hyper-V join Hyper-V Administrators from the hypervisor row (one UAC prompt).                                                                                                                                                                                                                                                                                                         | Windows   | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –                            | **Partial** |
+| `machine.share-virtualization` On Linux 6.12 and later, where KVM holds the CPU's virtualization, let VirtualBox share it from the setup's VM step (KVM then takes it only while one of its own VMs runs; asks for the password).                                                                                                                                                                                                                            | Linux     | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –                            | **Partial** |
 
 What the partial and missing tiers leave out:
 
@@ -462,6 +463,7 @@ What the partial and missing tiers leave out:
 - `machine.vm-test`: Desktop E2E ◐ needs CYBERCTF_TEST_VM_PROVIDER; skips without it; Integration ✖ real VM test run only on Debian 13 with libvirt (setup run); every other hypervisor's test VM never booted by a test
 - `machine.image-download-size`: Web E2E ✖ no spec checks a size shown; Integration ✖ Docker Hub is never asked by a test; a proxy or offline answer is untested
 - `machine.hyperv-admins`: Integration ✖ never run on a real Windows (UAC prompt, localized group name by SID); The join itself (one UAC prompt, the group by its SID) is isothrum-machine's setup::join_hyperv_admins, tested there.
+- `machine.share-virtualization`: The action itself (the modprobe option as root, KVM loaded again or a restart) is isothrum-machine's setup::share_virtualization, tested there and on a real Debian 13 host by its machine-tier e2e test.
 
 <details><summary>The tests</summary>
 
@@ -478,6 +480,7 @@ What the partial and missing tiers leave out:
 - `machine.image-download-size`: Unit: `src-tauri/src/machine/images.rs > the_size_is_this_architectures_and_never_zero`, `src-tauri/src/machine/images.rs > an_invalid_or_foreign_image_has_no_size_without_asking`, `src/lib/use-image-sizes.test.tsx`.
 - `machine.open-setup`: Unit: `src-tauri/src/commands/machine.rs > the_open_setup_window_is_brought_forward`, `src/features/machine/machine-interaction.test.tsx > jumps again on a later Fix while the window is open`, `src/features/machine/machine-interaction.test.tsx > opens at a step asked for before the machine check answered`, `src/features/machine/machine-interaction.test.tsx > says so when the setup window can`. Web E2E: `machine-setup.spec.ts > Fix opens the window at its step, a later Fix jumps there`, `persistence.spec.ts > a fresh Windows machine lists what to set up`. Desktop E2E: `machine/add-provider`, `machine/guided-open`. Rig: `desktop-e2e`.
 - `machine.hyperv-admins` (Windows; hyperv): Unit: `src-tauri/src/commands/machine.rs > joining_hyperv_administrators_is_windows_only`, `src/features/settings/settings-rows.test.tsx > lets a Windows account that may not manage Hyper-V join Hyper-V Administrators (#185)`, `src/features/settings/settings-rows.test.tsx > shows a declined Hyper-V rights prompt in the log`.
+- `machine.share-virtualization` (Linux; virtualbox): Unit: `src-tauri/src/commands/machine.rs > sharing_the_cpus_virtualization_with_kvm_is_linux_only`, `src-tauri/src/machine/setup/tests.rs > virtualbox_while_kvm_holds_the_cpus_virtualization_gives_way_unless_installed_then_kvm_shares_it`.
 
 </details>
 

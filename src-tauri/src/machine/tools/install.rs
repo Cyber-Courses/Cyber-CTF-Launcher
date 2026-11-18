@@ -168,6 +168,45 @@ pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Depe
     Ok(())
 }
 
+/// Lets VirtualBox share the CPU's virtualization with KVM, which holds it from its module's load
+/// on Linux 6.12 and later: isothrum-machine's
+/// [`share_virtualization`](isothrum_machine::setup::share_virtualization), its root step
+/// elevated as an install's are ([`elevation`]), streaming its output. Refused, as installs are,
+/// when this computer's policy turns them off.
+pub async fn share_virtualization(mut on_line: impl FnMut(String)) -> Result<isothrum_machine::setup::Shared> {
+    use isothrum_machine::setup::{ShareFailed, Shared};
+    installs_allowed(&mut on_line)?;
+    crate::platform::remembered::forget_all();
+    let cx = crate::runtime::providers::machine_setup().await;
+    // Its lines come through a channel, as an install step's do: the future stays `Send`.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let run = async move {
+        let mut send = |line: &str| {
+            tx.send(line.to_owned()).ok();
+        };
+        isothrum_machine::setup::share_virtualization(&cx, elevation(), &mut send).await
+    };
+    let shown = async {
+        while let Some(line) = rx.recv().await {
+            on_line(crate::platform::redact::redact(&line).into_owned());
+        }
+    };
+    let (shared, ()) = tokio::join!(run, shown);
+    crate::platform::remembered::forget_all();
+    let shared = shared.map_err(|failed| match failed {
+        ShareFailed::NotHere => Error::Invalid("KVM is only on Linux.".into()),
+        ShareFailed::BuiltIn => Error::Invalid(
+            "KVM is built into this Linux kernel: start Linux with kvm.enable_virt_at_load=0 for VirtualBox to use the CPU's virtualization.".into(),
+        ),
+        failed => Error::Invalid(format!("KVM couldn't be set to share the CPU's virtualization ({failed}).")),
+    })?;
+    on_line(match shared {
+        Shared::Now => "Done. Re-checking this machine…".into(),
+        Shared::AfterRestart => "Done: it applies from the next restart.".into(),
+    });
+    Ok(shared)
+}
+
 /// Installs a Vagrant plugin (userland, no admin), streaming the output. isothrum-machine refuses
 /// a name that isn't a `vagrant-*` / `vagrant_*` identifier.
 pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(String)) -> Result<()> {

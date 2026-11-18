@@ -90,6 +90,9 @@ export const hypervJoinAdmins = () => invokeUnit("hyperv_join_admins");
 /** Installs a Vagrant plugin (userland), streaming the output. */
 export const installVagrantPlugin = (plugin: string, onLog: (line: string) => void) => invokeStreaming("install_vagrant_plugin", { plugin }, onLog);
 
+/** Lets VirtualBox share the CPU's virtualization with KVM (Linux), streaming the output. */
+export const shareVirtualization = (onLog: (line: string) => void) => invokeStreaming("machine_share_virtualization", {}, onLog);
+
 /** Runs a setup self-test: `docker` boots a throwaway two-container lab on the Docker CLI
  *  `context` (one engine among several; null for the current one), `vm` a throwaway VM on
  *  `provider` through Vagrant. */

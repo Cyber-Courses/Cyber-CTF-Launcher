@@ -28,7 +28,7 @@ engine: DockerEngine, } | { "kind": "restart",
 /**
  * The feature the restart starts.
  */
-feature: WindowsFeature, } | { "kind": "relogin" } | { "kind": "manual", 
+feature: WindowsFeature, } | { "kind": "shareVirtualization" } | { "kind": "relogin" } | { "kind": "manual", 
 /**
  * Why it is the user's to get.
  */

@@ -62,6 +62,7 @@ const COMMANDS: &[&str] = &[
     "machine_restart",
     "machine_selftest",
     "machine_selftest_prefetch",
+    "machine_share_virtualization",
     "machine_storage",
     "machine_storage_clean",
     "machine_workload_stop",

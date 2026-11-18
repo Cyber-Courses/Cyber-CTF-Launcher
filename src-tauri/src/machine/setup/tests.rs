@@ -30,6 +30,7 @@ fn steps(p: &Plan) -> Vec<String> {
                 Action::Plugin { plugin } => format!("plugin {plugin}"),
                 Action::StartEngine { engine } => format!("start {}", engine.id()),
                 Action::UseEngine { engine } => format!("use {}", engine.id()),
+                Action::ShareVirtualization => "share".into(),
                 Action::Restart { feature } => format!("restart {feature:?}"),
                 Action::Relogin => "relogin".into(),
                 Action::Manual { reason, .. } => format!("manual {reason:?}"),
@@ -233,23 +234,31 @@ fn the_setups_own_hypervisor_that_cant_run_here_gives_way_to_one_that_can() {
 }
 
 #[test]
-fn virtualbox_is_never_installed_while_kvm_holds_the_cpus_virtualization() {
-    // Regression: Linux 6.12 turns VT-x on as KVM's module loads, so VirtualBox can't start a VM
-    // ("VT-x is being used by another hypervisor"); the setup installed it anyway, asked for a
-    // restart for its driver, then dropped it.
+fn virtualbox_while_kvm_holds_the_cpus_virtualization_gives_way_unless_installed_then_kvm_shares_it() {
+    // Linux 6.12 turns VT-x on as KVM's module loads, so VirtualBox can't start a VM ("VT-x is
+    // being used by another hypervisor"). Regression: the setup installed it anyway, then left the
+    // player stuck with no action; it now lets KVM share the CPU's virtualization.
     let r = virtualbox_reads(shapes::bare_debian(), &Unavailable::KvmHoldsVirtualization);
-    let held = Action::Blocked { reason: Unavailable::KvmHoldsVirtualization };
-    assert_eq!(get_of(&r, Provider::Virtualbox), std::slice::from_ref(&held));
-    assert!(!held.ends_pass(), "no restart mends it");
-    assert_eq!(r.setup.hypervisor, Some(Provider::Libvirt), "the window starts on one that can run here");
+    assert_eq!(get_of(&r, Provider::Virtualbox), [Action::Install { dependency: Dependency::Virtualbox }, Action::ShareVirtualization]);
+    assert_eq!(r.setup.hypervisor, Some(Provider::Libvirt), "the window starts on one that just installs");
     let p = plan_of(&r, &wanted(&BOTH, &[]));
     assert_eq!(p.hypervisor, Some(Provider::Libvirt));
     assert!(!steps(&p).iter().any(|s| s.starts_with("virtualbox:")), "{:?}", steps(&p));
-    assert!(!p.steps.iter().any(|s| s.action.ends_pass() && s.item == "virtualbox"), "no restart for VirtualBox");
-    // Installed already: blocked too, and nothing of Vagrant's is set up for it.
+    // Named by the player: installed, then shared.
+    let named = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Virtualbox]));
+    assert_eq!(named.hypervisor, Some(Provider::Virtualbox));
+    assert!(steps(&named).iter().any(|s| s.starts_with("virtualbox: install")), "{:?}", steps(&named));
+    assert!(named.steps.iter().any(|s| s.action == Action::ShareVirtualization), "{:?}", steps(&named));
+    // Installed already: the one set up, KVM set to share with it.
     let installed = virtualbox_reads(with_virtualbox(shapes::bare_debian()), &Unavailable::KvmHoldsVirtualization);
-    assert_eq!(get_of(&installed, Provider::Virtualbox), [held]);
-    assert_eq!(plan_of(&installed, &wanted(&[SetupPath::Vm], &[])).hypervisor, Some(Provider::Libvirt));
+    assert_eq!(get_of(&installed, Provider::Virtualbox), [Action::ShareVirtualization]);
+    assert_eq!(plan_of(&installed, &wanted(&[SetupPath::Vm], &[])).hypervisor, Some(Provider::Virtualbox));
+    assert_eq!(run::would(&Action::ShareVirtualization).as_deref(), Some("would let VirtualBox share the CPU's virtualization with KVM"));
+    // KVM was in use: a restart away, which ends the pass.
+    let restart = virtualbox_reads(with_virtualbox(shapes::bare_debian()), &Unavailable::KvmSharesAfterRestart);
+    let blocked = Action::Blocked { reason: Unavailable::KvmSharesAfterRestart };
+    assert_eq!(get_of(&restart, Provider::Virtualbox), std::slice::from_ref(&blocked));
+    assert!(blocked.ends_pass());
 }
 
 /// `r` with VirtualBox installed (Vagrant and its needs as `r` has them).
