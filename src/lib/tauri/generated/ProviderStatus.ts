@@ -24,8 +24,8 @@ remote: boolean,
 available: boolean, 
 /**
  * Whether the hypervisor itself is installed (for Hyper-V, whether the Windows feature is
- * on; for QEMU on Linux, with the `mkisofs` its VMs need, [`needs_mkisofs`], and for libvirt
- * and QEMU on Linux, with the virtiofsd they share folders through, [`needs_virtiofsd`]).
+ * on; for libvirt and QEMU on Linux, with the programs their VMs need beside them,
+ * [`helpers`]: `mkisofs`, virtiofsd).
  * `None` where nothing local is checked: a server.
  */
 hypervisor: boolean | null, 

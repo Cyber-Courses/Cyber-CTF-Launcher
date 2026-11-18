@@ -97,6 +97,7 @@ pub(super) fn refusal(refused: Refusal) -> Error {
         }
         Refusal::WindowsFeature { dependency: Dependency::Wsl } => Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into()),
         Refusal::WindowsFeature { .. } => Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into()),
+        Refusal::NothingAdded { .. } => uninstall::not_ours(),
         other => Error::Io(std::io::Error::other(other.to_string())),
     }
 }
@@ -145,17 +146,18 @@ pub(super) fn installs_allowed(on_line: &mut impl FnMut(String)) -> Result<()> {
 pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
     installs_allowed(&mut on_line)?;
     let steps = plan(dependency).await.inspect_err(|e| on_line(e.to_string()))?;
-    let before = uninstall::present(dependency).await;
+    // What of the tool is here before its plan runs (its packages, or the tool itself), so what
+    // the install added is known after it: isothrum-machine's.
+    let before = isothrum_machine::install::before(&crate::runtime::providers::machine_setup().await, dependency).await;
     run_plan(&steps, &mut on_line).await?;
     // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
     crate::platform::env_path::refresh(&crate::runtime::providers::machine()).await;
-    // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: a tool
-    // that was already there is never recorded, and one whose installer was only opened (macOS
-    // casks) or isn't found yet counts once a later check finds it.
-    if let Some(before) = before {
-        let after = uninstall::present(dependency).await.unwrap_or(false);
-        uninstall::record_outcome(&dirs, dependency, isothrum_machine::install::record::outcome(before, after));
-    }
+    // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: what was
+    // already there (a tool, or a package of it: a QEMU installed by hand whose helpers this
+    // install added) is never recorded, and a tool whose installer was only opened (macOS casks)
+    // or isn't found yet counts once a later check finds it.
+    let installed = before.installed(&crate::runtime::providers::machine_setup().await).await;
+    uninstall::record_installed(&dirs, dependency, &installed);
     // Its features start at the next restart: the check asks for one until then, even if the
     // app is reopened first.
     if dependency == Dependency::Wsl {

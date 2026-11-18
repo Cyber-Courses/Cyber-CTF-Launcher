@@ -432,6 +432,11 @@ launcher never asks for or stores a password itself.
   `docker`, `hashicorp` (Terraform, Vagrant and the Vagrant VMware Utility), `virtualbox`,
   `azure-cli` or `google-cloud-sdk`. (Earlier versions put some of the keys under `/usr/share/keyrings/`.)
   Removing a tool from Settings > Maintenance leaves its repository and key in place.
+- Settings > Maintenance removes only what the launcher's installs added: a package that was there
+  before the install stays (QEMU installed by hand, whose `genisoimage` and `virtiofsd` the setup
+  added, keeps QEMU), and the removal stops, removing nothing, when another package needs one of
+  them. Tools an earlier version recorded are no longer offered for removal: its record
+  can't tell what the install added.
 - On Ubuntu, Debian, Raspbian and the distributions built on them, Docker comes from Docker's
   repository for the Ubuntu or Debian release the system is built on. Only where that repository
   answers that it has no packages for the release (an HTTP 404 for its `Release` file: Kali's

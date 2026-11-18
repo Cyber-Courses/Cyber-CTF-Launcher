@@ -34,7 +34,7 @@ fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
             let said = plan_on(dep, &host, None).err().map(|e| e.to_string()).unwrap_or_default();
             assert_eq!(said, super::not_here(dep, host.os).to_string(), "{host:?}");
             assert!(said.starts_with(&format!("{} doesn't run on {}", name_on(dep, host.os), isothrum_machine::host::os_name(host.os))), "{said}");
-            assert_eq!(uninstall::plan_on(dep, &host, None).err().map(|e| e.to_string()), Some(said), "{host:?}");
+            assert_eq!(uninstall::plan_on(dep, &host, &[], None).err().map(|e| e.to_string()), Some(said), "{host:?}");
         }
     }
 }
@@ -65,12 +65,25 @@ static APT: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Linux, Arch::Amd64
 static DNF: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Linux, Arch::Amd64, Some(Packages::Linux(LinuxPackages::Dnf))));
 static BARE_LINUX: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Linux, Arch::Amd64, None));
 
+/// Everything `dep`'s install on `host` may add, as its record would list it: each of its items,
+/// a package that stands for several by one of its names.
+fn all_added(dep: Dependency, host: &Host) -> Vec<isothrum_machine::install::Item> {
+    use isothrum_machine::install::Item;
+    isothrum_machine::install::items(dep, host)
+        .into_iter()
+        .map(|item| match item {
+            Item::Package(name) => Item::Package(name.trim_end_matches('*').to_owned()),
+            other @ Item::Tool(_) => other,
+        })
+        .collect()
+}
+
 #[test]
 fn every_tool_on_every_computer_installs_or_says_why_and_each_install_has_a_way_out() {
     for host in hosts() {
         for dep in Dependency::ALL {
             let install = plan_on(dep, &host, Some("ada"));
-            let removal = uninstall::plan_on(dep, &host, Some("/x/VirtualBox.dmg"));
+            let removal = uninstall::plan_on(dep, &host, &all_added(dep, &host), Some("/x/VirtualBox.dmg"));
             if let Ok(steps) = &install {
                 assert!(!steps.is_empty(), "{dep:?} on {host:?}");
                 // A Windows feature is turned off by the player in Windows Features.
@@ -163,7 +176,10 @@ fn macos_installs_through_isothrum_machine_and_says_why_not_in_the_players_words
             _ => assert!(!plan.unwrap().is_empty(), "{dep:?}"),
         }
     }
-    assert_eq!(uninstall::plan_on(Dependency::Terraform, &without, None).err().unwrap().to_string(), "Homebrew is needed to remove this tool.");
+    assert_eq!(
+        uninstall::plan_on(Dependency::Terraform, &without, &all_added(Dependency::Terraform, &without), None).err().unwrap().to_string(),
+        "Homebrew is needed to remove this tool."
+    );
 }
 
 #[test]
@@ -219,13 +235,28 @@ fn not_here() -> Dependency {
     if isothrum_runner::this_host() == HostOs::Windows { Dependency::Utm } else { Dependency::Wsl }
 }
 
-/// Scripted tools for an install of Terraform: `terraform version` answers once `installed`
-/// is set, and the install step (whichever package manager runs it) sets it when `works`. The
-/// package manager's own `--version` (Linux's lookup of apt or dnf) only answers.
+/// What the package manager lists installed (Linux: dpkg's `dpkg-query`, rpm's `rpm -qa`):
+/// `terraform` once `installed` is set, beside a package of no tool's.
+fn listed(call: &isothrum_runner::fake::Call, installed: bool) -> Option<Reply> {
+    let terraform = if installed { "terraform\n" } else { "" };
+    match call.program.as_str() {
+        "dpkg-query" => Some(Reply::ok(&format!("ii \tbash\n{}", if installed { "ii \tterraform\n" } else { "" }))),
+        "rpm" => Some(Reply::ok(&format!("bash\n{terraform}"))),
+        _ => None,
+    }
+}
+
+/// Scripted tools for an install of Terraform: `terraform version` answers, and the package
+/// manager lists it, once `installed` is set, and the install step (whichever package manager
+/// runs it) sets it when `works`. The package manager's own `--version` (Linux's lookup of apt or
+/// dnf) only answers.
 fn terraform_tools(installed: Arc<AtomicBool>, works: bool) -> FakeProcesses {
     FakeProcesses::model(move |call| {
         if matches!(call.program.as_str(), "apt-get" | "dnf") && call.args == ["--version"] {
             return Reply::ok("apt 2.9.8 (amd64)");
+        }
+        if let Some(reply) = listed(call, installed.load(Ordering::Relaxed)) {
+            return reply;
         }
         if call.program == "terraform" {
             return if installed.load(Ordering::Relaxed) { Reply::ok("Terraform v1.9.8") } else { Reply::fail(1, "terraform: not found") };
@@ -306,17 +337,22 @@ async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
     let present = Arc::new(AtomicBool::new(false));
     // The step "works" but the tool isn't on PATH yet (an installer left open).
     let probe = present.clone();
-    let _tools =
-        fake(FakeProcesses::model(
-            move |call| {
-                if call.program == "terraform" && !probe.load(Ordering::Relaxed) { Reply::fail(1, "not found") } else { Reply::ok("") }
-            },
-        ));
+    let _tools = fake(FakeProcesses::model(move |call| {
+        let found = probe.load(Ordering::Relaxed);
+        if let Some(reply) = listed(call, found) {
+            return reply;
+        }
+        if call.program == "terraform" && !found { Reply::fail(1, "not found") } else { Reply::ok("") }
+    }));
     install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
     assert!(uninstall::installed_tools(t.dirs()).await.is_empty(), "pending, not shown");
     present.store(true, Ordering::Relaxed);
     let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
-    assert_eq!(ours, [Dependency::Terraform]);
+    // Where the tool is a package (Linux), the package manager says right away what an install
+    // added: one it doesn't list then was not added, and a later one is someone else's.
+    let whole = isothrum_machine::install::items(Dependency::Terraform, &crate::runtime::providers::host().await)
+        .contains(&isothrum_machine::install::Item::Tool(Dependency::Terraform));
+    assert_eq!(ours, if whole { vec![Dependency::Terraform] } else { vec![] });
 }
 
 #[tokio::test]
@@ -361,6 +397,6 @@ fn linux_installs_and_removals_are_isothrum_machines_said_in_the_players_words()
     }
     let apt_only = plan_on(Dependency::Gcloud, &DNF, None).err().unwrap().to_string();
     assert_eq!(apt_only, "The guided setup installs Google Cloud CLI through apt only for now: install it yourself, then re-check.");
-    let removal = uninstall::plan_on(Dependency::Vagrant, &DNF, None).unwrap();
+    let removal = uninstall::plan_on(Dependency::Vagrant, &DNF, &all_added(Dependency::Vagrant, &DNF), None).unwrap();
     assert!(removal[0].args.last().unwrap().ends_with("dnf remove -y vagrant"), "{removal:?}");
 }
