@@ -5,43 +5,13 @@ import type { ManualReason } from "./ManualReason";
 import type { Unavailable } from "./Unavailable";
 import type { WindowsFeature } from "./WindowsFeature";
 
-/**
- * One thing a setup does, or leaves to its user, on this computer.
- */
 export type SetupAction = { "kind": "install", 
-/**
- * The tool to install.
- */
 dependency: Dependency, } | { "kind": "plugin", 
-/**
- * The plugin's name (`vagrant-qemu`, …).
- */
 plugin: string, } | { "kind": "startEngine", 
-/**
- * The engine to start.
- */
 engine: DockerEngine, } | { "kind": "useEngine", 
-/**
- * The engine Docker is to use.
- */
 engine: DockerEngine, } | { "kind": "restart", 
-/**
- * The feature the restart starts.
- */
 feature: WindowsFeature, } | { "kind": "shareVirtualization" } | { "kind": "relogin" } | { "kind": "manual", 
-/**
- * Why it is the user's to get.
- */
 reason: ManualReason, 
-/**
- * The tool, when it is one a setup installs elsewhere.
- */
 dependency: Dependency | null, 
-/**
- * Where to get it, when there is a page for it.
- */
 url: string | null, } | { "kind": "blocked", 
-/**
- * Why it can't run here, as a code a UI says in its own words.
- */
 reason: Unavailable, };

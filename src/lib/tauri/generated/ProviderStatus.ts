@@ -5,53 +5,14 @@ import type { Unavailable } from "./Unavailable";
 import type { UtilityState } from "./UtilityState";
 import type { VagrantProvider } from "./VagrantProvider";
 
-/**
- * One provider's readiness on this machine: whether VMs can run on it here, and what is still
- * missing.
- */
 export type ProviderStatus = { 
-/**
- * The provider.
- */
 provider: VagrantProvider, 
-/**
- * A server, run elsewhere: nothing of it is installed here.
- */
 remote: boolean, 
-/**
- * Whether VMs can run on it now (`reason` says why not).
- */
 available: boolean, 
-/**
- * Whether the hypervisor itself is installed (for Hyper-V, whether the Windows feature is
- * on; for libvirt and QEMU on Linux, with the programs their VMs need beside them,
- * [`helpers`]: `mkisofs`, virtiofsd).
- * `None` where nothing local is checked: a server.
- */
 hypervisor: boolean | null, 
-/**
- * The Vagrant plugin it needs, if it is not built in.
- */
 plugin: string | null, 
-/**
- * Whether that plugin is installed at a version that works (true when the provider is built
- * in): an older one reads as not installed, so a setup installs it again, which updates it.
- */
 pluginInstalled: boolean, 
-/**
- * Where HashiCorp's Vagrant VMware Utility stands; `None` when the provider doesn't use it.
- */
 utility: UtilityState | null, 
-/**
- * What is still to install for Vagrant to drive it here ([`needs()`]): empty when nothing is.
- */
 needs: Array<Need>, 
-/**
- * Why it can't run VMs yet, `None` when it can.
- */
 reason: Unavailable | null, 
-/**
- * What this account lacks to use it although it is installed (the right to manage Hyper-V,
- * a new login after joining libvirt's groups), whatever else is missing.
- */
 accountLacks?: AccountLacks | null, };

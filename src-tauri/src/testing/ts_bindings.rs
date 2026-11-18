@@ -6,12 +6,18 @@
 //!
 //! A command taking or returning a new struct or enum: derive `ts_rs::TS` on it (`#[ts(rename)]`
 //! when the frontend knows it by another name) and list it below. The types it uses come along.
+//!
+//! The types of Isothrum's and Isoloom's crates come without their doc comments ([`FOREIGN`]):
+//! their shape is the launcher's to follow, their wording isn't, so a reworded comment there
+//! leaves these files as they are (it made `dev` red once, `ProviderStatus.ts`).
 
+use std::any::{TypeId, type_name};
+use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use ts_rs::{Config, TS};
+use ts_rs::{Config, TS, TypeVisitor};
 
 use crate::machine::tools;
 use crate::{account, cloud_cli, error, labs, machine, runtime, shared_folder, terminal};
@@ -35,9 +41,17 @@ fn export(dir: &Path) -> Vec<std::ffi::OsString> {
 fn generate(dir: &Path) {
     fs::create_dir_all(dir).unwrap();
     let cfg = Config::new().with_out_dir(dir).with_large_int("number"); // serde_json reads a u64 into a JS number, not a bigint.
+    export_types(&cfg).strip_docs(dir);
+    write_values(dir);
+    write_index(dir);
+}
+
+/// Exports every command type and the types they use; the [`Foreign`] ones among them.
+fn export_types(cfg: &Config) -> Foreign {
+    let mut foreign = Foreign::default();
     macro_rules! export {
         ($($t:ty),* $(,)?) => {
-            $( <$t>::export_all(&cfg).unwrap_or_else(|e| panic!("exporting {}: {e}", stringify!($t))); )*
+            $( export_one::<$t>(cfg, &mut foreign); )*
         };
     }
     export!(
@@ -90,15 +104,68 @@ fn generate(dir: &Path) {
         terminal::TermEvent,
         crate::screen::Connection,
     );
-    export_settings(&cfg);
-    write_values(dir);
-    write_index(dir);
+    export_one::<crate::settings::Settings>(cfg, &mut foreign);
+    export_one::<crate::settings::Change>(cfg, &mut foreign);
+    foreign
 }
 
-/// Exports the settings' types: the settings themselves and their changes (`crate::settings`).
-fn export_settings(cfg: &Config) {
-    crate::settings::Settings::export_all(cfg).unwrap();
-    crate::settings::Change::export_all(cfg).unwrap();
+/// The crates whose types are exported without their doc comments: Isothrum's and Isoloom's.
+const FOREIGN: [&str; 2] = ["isothrum_", "isoloom_"];
+
+/// The files of the exported types defined in a [`FOREIGN`] crate, found by walking the exported
+/// types as `export_all` does (a type without a file of its own, an `Option` or a `Vec`, isn't
+/// walked: its parameters are visited by the type holding it).
+#[derive(Default)]
+struct Foreign {
+    seen: HashSet<TypeId>,
+    files: HashSet<PathBuf>,
+}
+
+impl TypeVisitor for Foreign {
+    fn visit<T: TS + 'static + ?Sized>(&mut self) {
+        let Some(path) = T::output_path() else { return };
+        if !self.seen.insert(TypeId::of::<T>()) {
+            return;
+        }
+        if FOREIGN.iter().any(|c| type_name::<T>().starts_with(c)) {
+            self.files.insert(path);
+        }
+        T::visit_dependencies(self);
+    }
+}
+
+impl Foreign {
+    /// Rewrites each of its files in `dir` without doc comments.
+    fn strip_docs(&self, dir: &Path) {
+        for file in &self.files {
+            let path = dir.join(file);
+            fs::write(&path, without_docs(&fs::read_to_string(&path).unwrap())).unwrap();
+        }
+    }
+}
+
+/// `ts` without its `/** ... */` comments, as ts-rs writes them: on lines of their own.
+fn without_docs(ts: &str) -> String {
+    let mut out = String::new();
+    let mut inside = false;
+    for line in ts.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if !inside && trimmed.starts_with("/**") {
+            inside = true;
+        }
+        if inside {
+            inside = !trimmed.ends_with("*/");
+            continue;
+        }
+        out.push_str(line);
+    }
+    out
+}
+
+/// Exports `T` and the types it uses, and notes the [`Foreign`] ones among them.
+fn export_one<T: TS + 'static>(cfg: &Config, foreign: &mut Foreign) {
+    T::export_all(cfg).unwrap_or_else(|e| panic!("exporting {}: {e}", type_name::<T>()));
+    foreign.visit::<T>();
 }
 
 /// Writes the files of values (not types) the webview reads from the core's own tables.
@@ -466,6 +533,18 @@ fn the_generated_typescript_types_are_written_and_were_committed() {
     // `dev` (Workload.ts after #521). Rewritten now: commit it.
     let changed = export(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/tauri/generated"));
     assert_eq!(changed, [] as [std::ffi::OsString; 0], "the generated TypeScript was stale and is rewritten now: commit src/lib/tauri/generated");
+}
+
+#[test]
+fn foreign_types_lose_their_doc_comments_and_the_launchers_keep_theirs() {
+    let ts = "import type { A } from \"./A\";\n\n/**\n * The type.\n */\nexport type T = { \n/**\n * A field.\n */\na: A, \n/** Short. */\nb: string, };\n";
+    assert_eq!(without_docs(ts), "import type { A } from \"./A\";\n\nexport type T = { \na: A, \nb: string, };\n");
+    let mut foreign = Foreign::default();
+    foreign.visit::<runtime::providers::ProviderStatus>();
+    foreign.visit::<crate::settings::Settings>();
+    let files: Vec<_> = foreign.files.iter().map(|f| f.to_string_lossy().into_owned()).collect();
+    assert!(files.iter().any(|f| f == "ProviderStatus.ts"), "Isothrum's type, and the ones it uses: {files:?}");
+    assert!(files.iter().all(|f| f != "Settings.ts"), "the launcher's own types keep their docs: {files:?}");
 }
 
 #[test]

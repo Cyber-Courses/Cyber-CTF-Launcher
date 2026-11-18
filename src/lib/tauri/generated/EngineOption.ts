@@ -2,15 +2,6 @@
 import type { DockerEngine } from "./DockerEngine";
 import type { SetupAction } from "./SetupAction";
 
-/**
- * A container engine, and what makes it the one Docker uses here.
- */
 export type EngineOption = { 
-/**
- * Which engine it is (Docker Desktop, Colima, the Linux daemon…).
- */
 engine: DockerEngine, 
-/**
- * What makes it the one Docker uses here, in order: nothing when it is.
- */
 actions: Array<SetupAction>, };
