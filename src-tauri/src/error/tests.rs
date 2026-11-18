@@ -137,11 +137,12 @@ fn form(code: &Code) -> usize {
         Code::RunnerUnreachable { .. } => 48,
         Code::HypervisorNotPermitted { .. } => 49,
         Code::HypervisorNotApproved { .. } => 52,
+        Code::DockerDesktopAgreement => 53,
     }
 }
 
 /// How many forms [`form`] tells apart.
-const FORMS: usize = 53;
+const FORMS: usize = 54;
 
 #[test]
 fn every_form_has_a_sample() {
@@ -167,6 +168,7 @@ fn sample_codes() -> Vec<Code> {
         Code::PortInUse { port: isothrum_runner::HostPort::new(443), holder: None },
         Code::PortInUse { port: isothrum_runner::HostPort::new(8000), holder: Some("nginx (pid 4123)".into()) },
         Code::DockerNotRunning,
+        Code::DockerDesktopAgreement,
         Code::DockerDenied { user: "player".into() },
         Code::DockerDeniedWindows { user: "Ada Lovelace".into() },
         Code::DockerOtherDistribution,

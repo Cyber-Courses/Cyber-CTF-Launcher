@@ -26,6 +26,16 @@ const pathRow = (page: Page, name: string) =>
     .filter({ has: page.getByRole("button") })
     .last();
 
+/** The dialog that says, before an install, what it will ask of the player. */
+const consent = (page: Page, name: string) => page.getByRole("dialog", { name: `Before ${name} installs` });
+
+/** Agrees to what installing `name` asks (macOS's password prompt here): Install. */
+async function agree(page: Page, name: string) {
+  const dialog = consent(page, name);
+  await expect(dialog).toContainText("macOS will ask for your password, in a window of its own.");
+  await dialog.getByRole("button", { name: "Install", exact: true }).click();
+}
+
 /** The setup window the click opens. */
 async function opens(context: BrowserContext, click: () => Promise<void>) {
   const [setup] = await Promise.all([context.waitForEvent("page"), click()]);
@@ -130,6 +140,7 @@ test.describe("machine setup window", () => {
     await expect(stepTitle(setup)).toHaveText("Virtual machines");
     await expect(setup.getByRole("radio", { name: /^UTM/ })).toHaveAttribute("aria-checked", "true");
     await button(setup, "Install UTM").click();
+    await agree(setup, "UTM");
     await expect(setup.getByText("utm was successfully installed!", { exact: false })).toBeVisible();
     await expect(setup.getByRole("radio", { name: /^UTM/ })).toContainText("installed");
     await button(setup, "Continue").click();
@@ -139,6 +150,7 @@ test.describe("machine setup window", () => {
     await expect(button(setup, "Continue")).toBeDisabled();
     await expect(button(setup, "Install plugin")).toBeDisabled();
     await button(setup, "Install Vagrant").click();
+    await agree(setup, "Vagrant");
     await expect(setup.getByText("vagrant was successfully installed!", { exact: false })).toBeVisible();
     await button(setup, "Install plugin").click();
     await expect(setup.getByText("Installed the plugin 'vagrant_utm (0.3.1)'!")).toBeVisible();
@@ -170,8 +182,20 @@ test.describe("machine setup window", () => {
     await expect(stepTitle(setup)).toHaveText("Container engine");
     await expect(button(setup, "Continue")).toBeDisabled();
     await button(setup, "Install Docker Desktop").click();
+    // Before it starts: what it asks of the player, and that Docker Desktop will show its
+    // agreement, theirs to accept in its window. Nothing here accepts it: there is nothing to tick.
+    const dialog = consent(setup, "Docker Desktop");
+    await expect(dialog).toContainText("macOS will ask for your password, in a window of its own.");
+    await expect(dialog).toContainText(
+      "Docker Desktop will show the Docker Subscription Service Agreement when it first starts. Accept it there to use it: Cyber CTF never accepts it for you.",
+    );
+    await expect(dialog.getByRole("checkbox")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Install", exact: true }).click();
+    // While its step runs: what it asks right now, above its log.
+    await expect(setup.getByTestId("install-hint")).toContainText("macOS is asking for your password in a window that just opened.");
     await expect(setup.getByText("==> Installing docker")).toBeVisible();
     await expect(setup.getByText("docker was successfully installed!", { exact: false })).toBeVisible();
+    await expect(setup.getByTestId("install-hint")).toBeHidden();
     await expect(setup.getByRole("radio", { name: /^Docker Desktop/ })).toContainText("in use");
     await button(setup, "Continue").click();
 

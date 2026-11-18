@@ -8,6 +8,7 @@ import { BusyLabel, CmdRow } from "@/features/machine/setup-steps/parts";
 import { engineActions } from "@/features/machine/setup-steps/plan";
 import { type EngineActions } from "@/features/machine/setup-steps/use-engine-actions";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
+import { LiveHint } from "@/features/machine/install-asks";
 import { openExternal } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
@@ -69,15 +70,30 @@ function SwitchEngine({ report, choice, engines, actions }: ActionProps) {
   );
 }
 
+/** Starts the installed engine. Docker Desktop shows Docker's agreement at its first start, which
+ *  the player accepts in its own window (nothing accepts it for them): a live hint says so while
+ *  it starts, and while it waits for them. */
 function StartEngine({ choice, actions }: ActionProps) {
   const t = useT();
   const { starting } = actions;
   const startError = actions.startError(choice.id);
+  const desktop = choice.id === "docker-desktop";
+  const hint = actions.waitingForAgreement(choice.id)
+    ? [t("machine.asks.now.agreementWaiting", { app: choice.name })]
+    : desktop && starting
+      ? [t("machine.engine.starting", { engine: choice.name }), t("machine.engine.startingDockerDesktop")]
+      : null;
   return (
     <>
-      <span className="text-[0.8125rem] text-muted-foreground">
-        {startError ?? (starting ? t("machine.engine.starting", { engine: choice.name }) : t("machine.engine.notRunning", { engine: choice.name }))}
-      </span>
+      {hint ? (
+        <div className="min-w-0 flex-1">
+          <LiveHint said={hint} />
+        </div>
+      ) : (
+        <span className="text-[0.8125rem] text-muted-foreground">
+          {startError ?? (starting ? t("machine.engine.starting", { engine: choice.name }) : t("machine.engine.notRunning", { engine: choice.name }))}
+        </span>
+      )}
       <span className="flex shrink-0 gap-2">
         {startError && <GetButton engine={choice} />}
         <Button
@@ -108,7 +124,7 @@ function InstallEngine({ setup, choice }: ActionProps) {
           variant="primary"
           size="sm"
           onClick={() => {
-            install("docker", "docker", t("machine.engine.installLog"));
+            install("docker", "docker", t("machine.engine.installLog"), choice.name);
           }}
           disabled={!canInstall}
         >

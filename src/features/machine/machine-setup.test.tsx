@@ -12,6 +12,7 @@ import { must } from "@/components/test-support";
 import { installTauri } from "@/test/tauri";
 import { button, clickEverything, flush } from "@/test/ui";
 import { installDockerDesktop } from "@/features/machine/machine-test-kit";
+import { agreeToInstall } from "@/test/install-consent";
 
 const enabled = () => screen.queryAllByRole("button").filter((b) => !b.hasAttribute("disabled"));
 const text = (b: HTMLElement = document.body) => b.textContent.trim();
@@ -141,6 +142,7 @@ describe("MachineSetup window", () => {
     expect(text()).toContain("Installed");
     expect(button(/get orbstack/i)).toBeTruthy();
     await user.click(button(/install virtualbox/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.filter((c) => c.cmd === "install_dependency").at(-1)?.args).toMatchObject({ dependency: "virtualbox" });
   });
@@ -199,6 +201,7 @@ describe("MachineSetup window", () => {
     const { rerender } = render(<MachineSetup report={before} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
     await flush();
     await user.click(button(/install libvirt/i));
+    await agreeToInstall(user);
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "libvirt" });
     // Installed: Vagrant and the plugin are next, nothing to test yet.

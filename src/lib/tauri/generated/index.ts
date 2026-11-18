@@ -26,6 +26,7 @@ export type * from "./GcpOrganization";
 export type * from "./HostCapacity";
 export type * from "./HypervisorOption";
 export type * from "./ImportedLab";
+export type * from "./InstallProgress";
 export type * from "./InstalledTool";
 export type * from "./Interaction";
 export type * from "./LabChallenge";

@@ -308,6 +308,7 @@
     "notRunning": "{engine} is installed but not running.",
     "get": "Get {name}",
     "startingButton": "Starting…",
+    "startingDockerDesktop": "If Docker Desktop shows its Subscription Service Agreement, accept it in its window: Cyber CTF never accepts it for you.",
     "start": "Start {engine}",
     "canInstall": "Cyber CTF can install {name} for you.",
     "dockerDesktopLicence": "Docker Desktop needs a paid subscription in larger companies (more than 250 employees or $10 million in yearly revenue). Cyber CTF also runs labs on Colima and Podman, which are free, and on OrbStack (free for personal use).",
@@ -316,7 +317,7 @@
     "install": "Install {name}",
     "recheck": "Re-check",
     "installThenRecheck": "Install {engine}, start it, then re-check.",
-    "finishDockerDesktop": "Finish in Docker’s installer, launch Docker Desktop, then press Re-check.",
+    "finishDockerDesktop": "Launch Docker Desktop and accept its Subscription Service Agreement in its window, then press Re-check.",
     "finishOther": "Finish installing {engine}, start it, then press Re-check.",
     "windowsReboot": "A reboot may be needed after enabling WSL. If Docker says virtualization is off, go back a step.",
     "linuxPostInstall": "After Docker Engine installs, let your user run it and start the service:",
@@ -394,5 +395,45 @@
     "kernelRestart": "VirtualBox's kernel driver is built for the newer kernel installed with it ({kernel}): restart the computer to start that kernel, then re-check.",
     "kvmHoldsVirtualization": "KVM holds this computer's hardware virtualization (VT-x or AMD-V): Linux turns it on as soon as KVM's module loads (the default since Linux 6.12), so VirtualBox can't start VMs (\"VT-x is being used by another hypervisor\"). Use libvirt or QEMU, which run on KVM, or let KVM share it with VirtualBox: KVM then uses it only while one of its own VMs runs.",
     "kvmSharesAfterRestart": "KVM is set to share this computer's hardware virtualization with VirtualBox from the next time it loads: restart the computer for it to apply."
+  },
+  "asks": {
+    "title": "Before {name} installs",
+    "lead": "Here's what will happen, so nothing catches you off guard:",
+    "before": {
+      "passwordMac": "macOS will ask for your password, in a window of its own.",
+      "passwordUac": "Windows will ask you to allow the changes (User Account Control).",
+      "passwordPkexec": "Your system will ask for your password, in a window of its own.",
+      "vendorAgreement": "{app} will show the {agreement} when it first starts. Accept it there to use it: Cyber CTF never accepts it for you.",
+      "vendorWindow": "{app} opens a window of its own: follow it to the end.",
+      "systemExtension": "You'll need to allow the system extension from {vendor} in System Settings › Privacy & Security.",
+      "restart": "You'll need to restart your computer afterwards.",
+      "relogin": "You'll need to sign out and back in afterwards.",
+      "longBuild": "This builds from source and can take about {minutes} minutes.",
+      "downloadByHand": "{vendor} offers it only on its own page: you download and install it yourself."
+    },
+    "readAgreement": "Read the {agreement}",
+    "install": "Install",
+    "cancel": "Cancel",
+    "nowTitle": "Right now",
+    "now": {
+      "passwordMac": "macOS is asking for your password in a window that just opened.",
+      "passwordUac": "Windows is asking you to allow the changes in a window that just opened.",
+      "passwordPkexec": "Your system is asking for your password in a window that just opened.",
+      "vendorAgreement": "When {app} first starts, it shows the {agreement}: accept it in its window.",
+      "agreementWaiting": "{app} is waiting for you to accept its agreement in its window. Accept it there, then check again.",
+      "vendorWindow": "{app} opened a window of its own: finish it there.",
+      "systemExtension": "When it's done, allow the system extension from {vendor} in System Settings › Privacy & Security.",
+      "restart": "When it's done, restart your computer.",
+      "relogin": "When it's done, sign out and back in.",
+      "longBuild": "Building from source: this can take about {minutes} minutes. You can leave this window open.",
+      "downloadByHand": "Download it from {vendor}'s page, install it, then check again."
+    },
+    "byHand": {
+      "steps": "{vendor} offers {name} only on its own page. Download it there, install it, then come back here and check again.",
+      "open": "Open {vendor}'s download page",
+      "check": "Check again",
+      "checking": "Checking this machine…",
+      "notYet": "{name} isn't installed yet. Finish its install, then check again."
+    }
   }
 }

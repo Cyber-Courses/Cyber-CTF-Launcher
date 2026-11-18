@@ -308,6 +308,7 @@
     "notRunning": "{engine} ist installiert, läuft aber nicht.",
     "get": "{name} holen",
     "startingButton": "Startet…",
+    "startingDockerDesktop": "Wenn Docker Desktop sein Subscription Service Agreement zeigt, akzeptiere es in seinem Fenster: Cyber CTF akzeptiert es nie für dich.",
     "start": "{engine} starten",
     "canInstall": "Cyber CTF kann {name} für dich installieren.",
     "dockerDesktopLicence": "Docker Desktop braucht in größeren Unternehmen ein kostenpflichtiges Abonnement (mehr als 250 Beschäftigte oder 10 Millionen US-Dollar Jahresumsatz). Cyber CTF führt Labs auch auf Colima und Podman aus, die kostenlos sind, und auf OrbStack (kostenlos für den privaten Gebrauch).",
@@ -316,7 +317,7 @@
     "install": "{name} installieren",
     "recheck": "Erneut prüfen",
     "installThenRecheck": "Installiere {engine}, starte es und prüfe dann erneut.",
-    "finishDockerDesktop": "Schließe die Installation von Docker ab, starte Docker Desktop und klicke dann auf Erneut prüfen.",
+    "finishDockerDesktop": "Starte Docker Desktop, akzeptiere sein Subscription Service Agreement in seinem Fenster und klicke dann auf Erneut prüfen.",
     "finishOther": "Schließe die Installation von {engine} ab, starte es und klicke dann auf Erneut prüfen.",
     "windowsReboot": "Nach dem Aktivieren von WSL ist eventuell ein Neustart nötig. Meldet Docker, dass die Virtualisierung aus ist, geh einen Schritt zurück.",
     "linuxPostInstall": "Erlaube nach der Installation von Docker Engine deinem Benutzer, es zu nutzen, und starte den Dienst:",
@@ -394,5 +395,45 @@
     "kernelRestart": "Der Kerneltreiber von VirtualBox wird für den neueren Kernel gebaut, der mit ihm installiert wurde ({kernel}): Starte den Computer neu, damit dieser Kernel läuft, und prüfe dann erneut.",
     "kvmHoldsVirtualization": "KVM belegt die Hardware-Virtualisierung dieses Computers (VT-x oder AMD-V): Linux schaltet sie ein, sobald das KVM-Modul geladen wird (Standard seit Linux 6.12), daher kann VirtualBox keine VMs starten („VT-x is being used by another hypervisor“). Verwende libvirt oder QEMU, die auf KVM laufen, oder lass KVM sie mit VirtualBox teilen: KVM nutzt sie dann nur, solange eine eigene VM läuft.",
     "kvmSharesAfterRestart": "KVM ist so eingestellt, dass es die Hardware-Virtualisierung dieses Computers ab dem nächsten Laden mit VirtualBox teilt: Starte den Computer neu, damit es wirkt."
+  },
+  "asks": {
+    "title": "Bevor {name} installiert wird",
+    "lead": "Das passiert gleich, damit dich nichts überrascht:",
+    "before": {
+      "passwordMac": "macOS fragt nach deinem Passwort, in einem eigenen Fenster.",
+      "passwordUac": "Windows fragt, ob du die Änderungen zulässt (Benutzerkontensteuerung).",
+      "passwordPkexec": "Dein System fragt nach deinem Passwort, in einem eigenen Fenster.",
+      "vendorAgreement": "{app} zeigt beim ersten Start das {agreement}. Akzeptiere es dort, um es zu nutzen: Cyber CTF akzeptiert es nie für dich.",
+      "vendorWindow": "{app} öffnet ein eigenes Fenster: folge ihm bis zum Ende.",
+      "systemExtension": "Du musst die Systemerweiterung von {vendor} in Systemeinstellungen › Datenschutz & Sicherheit erlauben.",
+      "restart": "Danach musst du deinen Computer neu starten.",
+      "relogin": "Danach musst du dich ab- und wieder anmelden.",
+      "longBuild": "Das wird aus dem Quellcode gebaut und kann etwa {minutes} Minuten dauern.",
+      "downloadByHand": "{vendor} bietet es nur auf seiner eigenen Seite an: Du lädst es herunter und installierst es selbst."
+    },
+    "readAgreement": "{agreement} lesen",
+    "install": "Installieren",
+    "cancel": "Abbrechen",
+    "nowTitle": "Gerade jetzt",
+    "now": {
+      "passwordMac": "macOS fragt in einem gerade geöffneten Fenster nach deinem Passwort.",
+      "passwordUac": "Windows fragt in einem gerade geöffneten Fenster, ob du die Änderungen zulässt.",
+      "passwordPkexec": "Dein System fragt in einem gerade geöffneten Fenster nach deinem Passwort.",
+      "vendorAgreement": "Beim ersten Start zeigt {app} das {agreement}: Akzeptiere es in seinem Fenster.",
+      "agreementWaiting": "{app} wartet darauf, dass du seine Vereinbarung in seinem Fenster akzeptierst. Akzeptiere sie dort und prüfe dann erneut.",
+      "vendorWindow": "{app} hat ein eigenes Fenster geöffnet: schließ die Installation dort ab.",
+      "systemExtension": "Wenn es fertig ist, erlaube die Systemerweiterung von {vendor} in Systemeinstellungen › Datenschutz & Sicherheit.",
+      "restart": "Wenn es fertig ist, starte deinen Computer neu.",
+      "relogin": "Wenn es fertig ist, melde dich ab und wieder an.",
+      "longBuild": "Wird aus dem Quellcode gebaut: Das kann etwa {minutes} Minuten dauern. Du kannst dieses Fenster offen lassen.",
+      "downloadByHand": "Lade es von der Seite von {vendor} herunter, installiere es und prüfe dann erneut."
+    },
+    "byHand": {
+      "steps": "{vendor} bietet {name} nur auf seiner eigenen Seite an. Lade es dort herunter, installiere es und komm dann hierher zurück, um erneut zu prüfen.",
+      "open": "Downloadseite von {vendor} öffnen",
+      "check": "Erneut prüfen",
+      "checking": "Dieser Computer wird geprüft…",
+      "notYet": "{name} ist noch nicht installiert. Schließ die Installation ab und prüfe dann erneut."
+    }
   }
 }

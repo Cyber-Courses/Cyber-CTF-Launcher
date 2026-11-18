@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
 import { Requirement } from "@/features/machine/setup-steps/parts";
 import { PROVIDER_NAMES, installDependency, installVagrantPlugin } from "@/lib/tauri";
+import { progressAsLog } from "@/features/machine/install-asks";
 import { Step } from "@/features/servers/host-setup/form";
 import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
 import { OvftoolRequirement } from "@/features/servers/host-setup/ovftool-requirement";
@@ -92,7 +93,7 @@ function CloudTools({ s }: { s: HostSetup }) {
               size="xs"
               disabled={!canInstallTools}
               onClick={() => {
-                installTool(`${cloudCli.program} CLI`, (log) => installDependency(cloudCli.dependency, log));
+                installTool(`${cloudCli.program} CLI`, (log) => installDependency(cloudCli.dependency, progressAsLog(log)));
               }}
             >
               {t("servers.setup.tools.install", { name: cloudCli.program })}
@@ -124,7 +125,7 @@ function EsxiTools({ s }: { s: HostSetup }) {
             size="xs"
             disabled={!canInstallTools}
             onClick={() => {
-              installTool("Vagrant", (log) => installDependency("vagrant", log));
+              installTool("Vagrant", (log) => installDependency("vagrant", progressAsLog(log)));
             }}
           >
             {t("servers.setup.tools.install", { name: "Vagrant" })}
@@ -169,7 +170,7 @@ function TerraformRequirement({ s, detail }: { s: HostSetup; detail: string | nu
           size="xs"
           disabled={!canInstallTools}
           onClick={() => {
-            installTool("Terraform", (log) => installDependency("terraform", log));
+            installTool("Terraform", (log) => installDependency("terraform", progressAsLog(log)));
           }}
         >
           {t("servers.setup.tools.install", { name: "Terraform" })}

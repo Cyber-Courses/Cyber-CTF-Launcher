@@ -308,6 +308,7 @@
     "notRunning": "{engine} está instalado, mas não está rodando.",
     "get": "Obter {name}",
     "startingButton": "Iniciando…",
+    "startingDockerDesktop": "Se o Docker Desktop mostrar o Subscription Service Agreement dele, aceite-o na janela dele: o Cyber CTF nunca aceita por você.",
     "start": "Iniciar {engine}",
     "canInstall": "O Cyber CTF pode instalar {name} para você.",
     "dockerDesktopLicence": "O Docker Desktop exige uma assinatura paga em empresas maiores (mais de 250 funcionários ou 10 milhões de dólares de faturamento anual). O Cyber CTF também roda labs no Colima e no Podman, que são gratuitos, e no OrbStack (gratuito para uso pessoal).",
@@ -316,7 +317,7 @@
     "install": "Instalar {name}",
     "recheck": "Verificar de novo",
     "installThenRecheck": "Instale {engine}, inicie-o e depois verifique de novo.",
-    "finishDockerDesktop": "Conclua no instalador do Docker, abra o Docker Desktop e depois clique em Verificar de novo.",
+    "finishDockerDesktop": "Abra o Docker Desktop e aceite o Subscription Service Agreement dele na janela dele; depois clique em Verificar de novo.",
     "finishOther": "Conclua a instalação de {engine}, inicie-o e depois clique em Verificar de novo.",
     "windowsReboot": "Pode ser preciso reiniciar depois de ativar o WSL. Se o Docker disser que a virtualização está desativada, volte uma etapa.",
     "linuxPostInstall": "Depois que o Docker Engine for instalado, permita que seu usuário o rode e inicie o serviço:",
@@ -394,5 +395,45 @@
     "kernelRestart": "O driver de kernel do VirtualBox é compilado para o kernel mais novo instalado com ele ({kernel}): reinicie o computador para iniciar esse kernel e verifique de novo.",
     "kvmHoldsVirtualization": "O KVM está usando a virtualização de hardware deste computador (VT-x ou AMD-V): o Linux a ativa assim que o módulo do KVM é carregado (o padrão desde o Linux 6.12), então o VirtualBox não consegue iniciar VMs (\"VT-x is being used by another hypervisor\"). Use libvirt ou QEMU, que rodam sobre o KVM, ou deixe o KVM compartilhá-la com o VirtualBox: o KVM passa a usá-la só enquanto uma de suas próprias VMs roda.",
     "kvmSharesAfterRestart": "O KVM está configurado para compartilhar a virtualização de hardware deste computador com o VirtualBox a partir do próximo carregamento: reinicie o computador para que isso se aplique."
+  },
+  "asks": {
+    "title": "Antes de instalar {name}",
+    "lead": "Veja o que vai acontecer, para que nada te pegue de surpresa:",
+    "before": {
+      "passwordMac": "O macOS vai pedir sua senha, em uma janela própria.",
+      "passwordUac": "O Windows vai pedir que você permita as alterações (Controle de Conta de Usuário).",
+      "passwordPkexec": "Seu sistema vai pedir sua senha, em uma janela própria.",
+      "vendorAgreement": "O {app} vai mostrar o {agreement} quando abrir pela primeira vez. Aceite-o lá para usá-lo: o Cyber CTF nunca aceita por você.",
+      "vendorWindow": "{app} abre uma janela própria: siga-a até o fim.",
+      "systemExtension": "Você vai precisar permitir a extensão de sistema de {vendor} em Ajustes do Sistema › Privacidade e Segurança.",
+      "restart": "Depois, você vai precisar reiniciar o computador.",
+      "relogin": "Depois, você vai precisar sair e entrar de novo na sua sessão.",
+      "longBuild": "Isso compila a partir do código-fonte e pode levar cerca de {minutes} minutos.",
+      "downloadByHand": "{vendor} só o oferece na própria página: você baixa e instala por conta própria."
+    },
+    "readAgreement": "Ler o {agreement}",
+    "install": "Instalar",
+    "cancel": "Cancelar",
+    "nowTitle": "Agora",
+    "now": {
+      "passwordMac": "O macOS está pedindo sua senha em uma janela que acabou de abrir.",
+      "passwordUac": "O Windows está pedindo que você permita as alterações em uma janela que acabou de abrir.",
+      "passwordPkexec": "Seu sistema está pedindo sua senha em uma janela que acabou de abrir.",
+      "vendorAgreement": "Quando o {app} abrir pela primeira vez, ele mostra o {agreement}: aceite-o na janela dele.",
+      "agreementWaiting": "O {app} está esperando você aceitar o contrato dele na janela dele. Aceite-o lá e verifique de novo.",
+      "vendorWindow": "{app} abriu uma janela própria: termine por lá.",
+      "systemExtension": "Quando terminar, permita a extensão de sistema de {vendor} em Ajustes do Sistema › Privacidade e Segurança.",
+      "restart": "Quando terminar, reinicie o computador.",
+      "relogin": "Quando terminar, saia e entre de novo na sua sessão.",
+      "longBuild": "Compilando a partir do código-fonte: pode levar cerca de {minutes} minutos. Você pode deixar esta janela aberta.",
+      "downloadByHand": "Baixe-o na página de {vendor}, instale-o e verifique de novo."
+    },
+    "byHand": {
+      "steps": "{vendor} só oferece {name} na própria página. Baixe-o lá, instale-o e volte aqui para verificar de novo.",
+      "open": "Abrir a página de download de {vendor}",
+      "check": "Verificar de novo",
+      "checking": "Verificando este computador…",
+      "notYet": "{name} ainda não está instalado. Termine a instalação e verifique de novo."
+    }
   }
 }

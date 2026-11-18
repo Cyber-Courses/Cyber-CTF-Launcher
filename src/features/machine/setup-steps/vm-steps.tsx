@@ -3,7 +3,7 @@
 import { ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-pill";
-import { type ProviderStatus, type SystemReport } from "@/lib/tauri";
+import { type ProviderStatus, type SetupAction, type SystemReport } from "@/lib/tauri";
 import { cantRun, providerLabel, localHypervisors } from "@/features/machine/hypervisors";
 import { BusyLabel, Log } from "@/features/machine/setup-steps/parts";
 import { getActions } from "@/features/machine/setup-steps/plan";
@@ -15,6 +15,7 @@ import { unavailableText } from "@/features/machine/unavailable";
 import { openExternal } from "@/lib/failure";
 import { confirmDestructive } from "@/lib/confirm";
 import { useT, type T } from "@/lib/i18n";
+import { DownloadByHand, downloadOf } from "@/features/machine/download-by-hand";
 
 /** A hypervisor's card note: installed (able to run here or not), else what the core's plan says
  *  gets it: the setup (installed for you), the player (this distribution), or its vendor. */
@@ -110,7 +111,7 @@ export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatu
           variant="primary"
           size="sm"
           onClick={() => {
-            setup.installs.install(choice.provider, dependency, t("machine.vm.installLog", { name: label }));
+            setup.installs.install(choice.provider, dependency, t("machine.vm.installLog", { name: label }), label);
           }}
           disabled={!setup.installs.canInstall}
         >
@@ -122,6 +123,57 @@ export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatu
     );
   }
   if (get?.kind !== "manual") return null;
+  return <GetByHand action={get} label={label} report={report} setup={setup} />;
+}
+
+/** Hyper-V turned on by the setup: Windows restarts to finish, once the player confirms in the
+ *  system's own dialog (open apps close without saving), as WSL 2's restart does. */
+function RestartToFinish({ name, reopens, setup }: { name: string; reopens: boolean; setup: MachineSetupState }) {
+  const t = useT();
+  const ask = () => {
+    void confirmDestructive({
+      title: t("machine.body.wsl.confirmTitle"),
+      message: `${t("machine.body.wsl.confirmBody")} ${reopens ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
+      confirm: t("machine.body.wsl.restartNow"),
+    }).then((yes) => {
+      if (yes) setup.restarts.restart(t("machine.vm.restartReason", { name }), "hyperv");
+    });
+  };
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+    >
+      <StatusDot tone="warn" />
+      <span className="min-w-0 flex-1">{setup.restarts.restarting ? t("machine.body.wsl.restarting") : t("machine.vm.restartToFinish", { name })}</span>
+      <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarts.restarting} onClick={ask}>
+        <RotateCcw className="size-3.5" /> {t("machine.body.wsl.restartNow")}
+      </Button>
+    </div>
+  );
+}
+
+/** A hypervisor its player gets themselves: from its vendor's download page, or on a distribution
+ *  the setup doesn't install on, as they install the rest. */
+function GetByHand({
+  action: get,
+  label,
+  report,
+  setup,
+}: {
+  action: Extract<SetupAction, { kind: "manual" }>;
+  label: string;
+  report: SystemReport;
+  setup: MachineSetupState;
+}) {
+  const t = useT();
+  const page = downloadOf(get.interactions);
+  if (page)
+    return (
+      <ChoiceAction>
+        <DownloadByHand name={label} page={page} report={report} onCheck={setup.onRefresh} />
+      </ChoiceAction>
+    );
   const download = get.url;
   return (
     <ChoiceAction>
@@ -151,32 +203,5 @@ export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatu
         </Button>
       </span>
     </ChoiceAction>
-  );
-}
-
-/** Hyper-V turned on by the setup: Windows restarts to finish, once the player confirms in the
- *  system's own dialog (open apps close without saving), as WSL 2's restart does. */
-function RestartToFinish({ name, reopens, setup }: { name: string; reopens: boolean; setup: MachineSetupState }) {
-  const t = useT();
-  const ask = () => {
-    void confirmDestructive({
-      title: t("machine.body.wsl.confirmTitle"),
-      message: `${t("machine.body.wsl.confirmBody")} ${reopens ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
-      confirm: t("machine.body.wsl.restartNow"),
-    }).then((yes) => {
-      if (yes) setup.restarts.restart(t("machine.vm.restartReason", { name }), "hyperv");
-    });
-  };
-  return (
-    <div
-      role="status"
-      className="flex items-center gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
-    >
-      <StatusDot tone="warn" />
-      <span className="min-w-0 flex-1">{setup.restarts.restarting ? t("machine.body.wsl.restarting") : t("machine.vm.restartToFinish", { name })}</span>
-      <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarts.restarting} onClick={ask}>
-        <RotateCcw className="size-3.5" /> {t("machine.body.wsl.restartNow")}
-      </Button>
-    </div>
   );
 }

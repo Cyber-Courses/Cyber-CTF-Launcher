@@ -89,8 +89,11 @@ test.describe("machine page", () => {
     const [add] = await Promise.all([context.waitForEvent("page"), empty.getByRole("button", { name: "Add a provider" }).click()]);
     await expect(add.getByRole("heading", { level: 1, name: "Add a provider" })).toBeVisible();
     await expect(add.getByRole("button", { name: "Install Docker Desktop" })).toBeVisible();
-    for (const hypervisor of ["Install VirtualBox", "Get VMware Workstation", "Install Hyper-V"]) {
+    for (const hypervisor of ["Install VirtualBox", "Install Hyper-V"]) {
       await expect(add.getByRole("button", { name: hypervisor })).toBeVisible();
     }
+    // VMware Workstation only comes from Broadcom: its page, and Check again once it is installed.
+    await expect(add.getByRole("button", { name: "Open Broadcom's download page" })).toBeVisible();
+    await expect(add.getByText("Broadcom offers VMware Workstation only on its own page.", { exact: false })).toBeVisible();
   });
 });

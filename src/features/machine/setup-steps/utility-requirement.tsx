@@ -47,7 +47,7 @@ export function UtilityRequirement({
             variant={first ? "primary" : "outline"}
             size="xs"
             onClick={() => {
-              setup.installs.install(UTILITY, UTILITY, t("machine.vm.utilityLog"));
+              setup.installs.install(UTILITY, UTILITY, t("machine.vm.utilityLog"), t("machine.vm.utilityTitle"));
             }}
             disabled={!setup.installs.canInstall}
           >

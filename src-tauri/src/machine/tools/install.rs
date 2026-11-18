@@ -8,13 +8,13 @@
 //! names each tool ([`name`]), says why a plan can't be made in the player's words ([`refusal`])
 //! and records what it installed. Every plan is built on any OS, so the tests read every row.
 
-use super::steps::{Plan, run_plan, run_step};
+use super::steps::{Plan, Progress, run_plan, run_step};
 use super::uninstall;
 use crate::error::{Error, Result};
 use crate::platform::policy::{self, Key};
 use crate::runtime::providers::Provider;
-use isothrum_machine::install::{Elevation, Refusal, linux};
-use isothrum_machine::{Arch, Host, HostOs, Packages};
+use isothrum_machine::install::{Elevation, Interaction, Prompt, Refusal};
+use isothrum_machine::{Host, HostOs};
 
 /// A tool the guided setup installs, as the webview names it: isothrum-machine's, whose rows say
 /// where each runs and what proves it installed.
@@ -50,39 +50,10 @@ pub fn runs_on(dep: Dependency, os: HostOs) -> bool {
     dep.runs_on(os)
 }
 
-/// The install on macOS: isothrum-machine's Homebrew formulae, vendors' disk images and packages
-/// (installed as an administrator, [`elevation`]'s way) and HashiCorp's signed package.
-fn macos_plan(dep: Dependency, host: &Host) -> Result<Plan> {
-    isothrum_machine::install::macos::install(dep, host.packages, host.arch, elevation()).map_err(refusal)
-}
-
-/// The install on Windows: isothrum-machine's winget packages and elevated installers.
-fn windows_plan(dep: Dependency, arch: Arch) -> Result<Plan> {
-    isothrum_machine::install::windows::install(dep, arch).map_err(refusal)
-}
-
 /// How root steps run on this Linux machine: through pkexec's prompt, or unattended (see
 /// `platform::elevation`) as root or through `sudo -n`.
 pub(crate) fn elevation() -> Elevation {
     if crate::platform::elevation::unattended() { Elevation::Unattended { root: crate::platform::elevation::is_root() } } else { Elevation::Prompt }
-}
-
-/// What letting VirtualBox share the CPU's virtualization with KVM asks of the player: its root
-/// step's password prompt, unless it runs unattended (as `setup::Action::ShareVirtualization`
-/// says it).
-#[cfg(test)]
-pub(crate) fn share_asks() -> Vec<isothrum_machine::install::Interaction> {
-    use isothrum_machine::install::{Interaction, Prompt};
-    match elevation() {
-        Elevation::Prompt => vec![Interaction::AdminPassword { via: Prompt::Pkexec }],
-        Elevation::Unattended { .. } => Vec::new(),
-    }
-}
-
-/// How root steps run on this Linux machine (isothrum-machine's [`linux::Root`]): [`elevation`]'s
-/// way, with this process's proxy, which a root step reads from a private file.
-pub(super) fn linux_root() -> linux::Root {
-    linux::Root { elevation: elevation(), proxy: linux::proxy_assignments(|name| std::env::var(name).ok()) }
 }
 
 /// Why isothrum-machine can't make a plan here, in the player's words.
@@ -114,23 +85,11 @@ pub(super) fn refusal(refused: Refusal) -> Error {
     }
 }
 
-/// The install on Linux: isothrum-machine's root script, for the player `user` (Linux joins them
-/// to the groups a tool's devices need).
-fn linux_plan(dep: Dependency, packages: Option<Packages>, arch: Arch, user: Option<&str>) -> Result<Plan> {
-    linux::install(dep, packages, arch, user, &linux_root()).map_err(refusal)
-}
-
 /// The ordered install steps for a dependency on `host`, for the player `user` (Linux joins
-/// them to the groups a tool's devices need).
+/// them to the groups a tool's devices need): isothrum-machine's ([`isothrum_machine::install::plan`]),
+/// its administrator's steps elevated [`elevation`]'s way, each saying what it asks of the player.
 pub(super) fn plan_on(dep: Dependency, host: &Host, user: Option<&str>) -> Result<Plan> {
-    if !runs_on(dep, host.os) {
-        return Err(not_here(dep, host.os));
-    }
-    match host.os {
-        HostOs::Macos => macos_plan(dep, host),
-        HostOs::Windows => windows_plan(dep, host.arch),
-        HostOs::Linux => linux_plan(dep, host.packages, host.arch, user),
-    }
+    isothrum_machine::install::plan(dep, host, user, elevation()).map_err(refusal)
 }
 
 /// The ordered install steps for a dependency on this computer. One that doesn't run here is
@@ -141,6 +100,12 @@ async fn plan(dep: Dependency) -> Result<Plan> {
         return Err(not_here(dep, os));
     }
     plan_on(dep, &crate::runtime::providers::host().await, crate::platform::exec::login_name().as_deref())
+}
+
+/// What installing `dep` on this computer asks of the player ([`isothrum_machine::install::interactions`]).
+pub async fn asks(dep: Dependency) -> Vec<Interaction> {
+    let host = crate::runtime::providers::host().await;
+    isothrum_machine::install::interactions(dep, &host, elevation(), crate::platform::exec::login_name().as_deref())
 }
 
 /// Why `dep` can't be installed or removed on `os`: it doesn't run there ([`Dependency::runs_on`]).
@@ -154,14 +119,18 @@ pub(super) fn installs_allowed(on_line: &mut impl FnMut(String)) -> Result<()> {
     policy::current().check(Key::DisableToolInstalls).inspect_err(|e| on_line(e.to_string()))
 }
 
-/// Installs a dependency, streaming each command and its output to the UI.
-pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
+/// Installs a dependency, streaming each command and its output to the UI, and what each step
+/// asks of the player before it runs. Nothing it runs accepts a licence, an agreement or terms
+/// for the player: a vendor that asks for one shows it in its own window (Docker Desktop at its
+/// first start), and the player accepts it there.
+pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Dependency, mut on: impl FnMut(Progress)) -> Result<()> {
+    let mut on_line = |line: String| on(Progress::Line { line });
     installs_allowed(&mut on_line)?;
     let steps = plan(dependency).await.inspect_err(|e| on_line(e.to_string()))?;
     // What of the tool is here before its plan runs (its packages, or the tool itself), so what
     // the install added is known after it: isothrum-machine's.
     let before = isothrum_machine::install::before(&crate::runtime::providers::machine_setup().await, dependency).await;
-    run_plan(&steps, &mut on_line).await?;
+    run_plan(&steps, &mut on).await?;
     // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
     crate::platform::env_path::refresh(&crate::runtime::providers::machine()).await;
     // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: what was
@@ -178,8 +147,18 @@ pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Depe
     if dependency == Dependency::Hyperv {
         crate::machine::system::wsl::mark_hyperv_on(&dirs);
     }
-    on_line("Done. Re-checking this machine…".into());
+    on(Progress::Line { line: "Done. Re-checking this machine…".into() });
     Ok(())
+}
+
+/// What letting VirtualBox share the CPU's virtualization with KVM asks of the player: its root
+/// step's password prompt, unless it runs unattended (as `setup::Action::ShareVirtualization`
+/// says it).
+pub(crate) fn share_asks() -> Vec<Interaction> {
+    match elevation() {
+        Elevation::Prompt => vec![Interaction::AdminPassword { via: Prompt::Pkexec }],
+        Elevation::Unattended { .. } => Vec::new(),
+    }
 }
 
 /// Lets VirtualBox share the CPU's virtualization with KVM, which holds it from its module's load
@@ -187,9 +166,15 @@ pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Depe
 /// [`share_virtualization`](isothrum_machine::setup::share_virtualization), its root step
 /// elevated as an install's are ([`elevation`]), streaming its output. Refused, as installs are,
 /// when this computer's policy turns them off.
-pub async fn share_virtualization(mut on_line: impl FnMut(String)) -> Result<isothrum_machine::setup::Shared> {
+pub async fn share_virtualization(mut on: impl FnMut(Progress)) -> Result<isothrum_machine::setup::Shared> {
     use isothrum_machine::setup::{ShareFailed, Shared};
+    let mut on_line = |line: String| on(Progress::Line { line });
     installs_allowed(&mut on_line)?;
+    let asks = share_asks();
+    if !asks.is_empty() {
+        on(Progress::Asks { interactions: asks });
+    }
+    let mut on_line = |line: String| on(Progress::Line { line });
     crate::platform::remembered::forget_all();
     let cx = crate::runtime::providers::machine_setup().await;
     // Its lines come through a channel, as an install step's do: the future stays `Send`.

@@ -1,12 +1,12 @@
 // This machine in the browser preview: its system check (down until the test lets it come back,
 // with `hold=check`), the one-click installs (an installer's output, then the tool reported
 // installed; the first fails with `install=fail`), the self-tests and the setup window.
-import type { DockerEngine, Need, SystemReport, UtilityState } from "@/lib/tauri";
+import type { Dependency, DockerEngine, Need, SystemReport, UtilityState } from "@/lib/tauri";
 import { argText, fail, send, sleep } from "@/lib/dev-mock/command";
 import type { BrowserHandler, Live } from "@/lib/dev-mock/live";
 import { type Scenario, scenarioReport } from "@/lib/dev-mock/scenario";
 import { openWindow } from "@/lib/dev-mock/windows";
-import { withSetup } from "@/lib/dev-mock/setup-options";
+import { installAsks, withSetup } from "@/lib/dev-mock/setup-options";
 
 /** What Vagrant still needs to drive a hypervisor, as the core works it out (`providers::needs`). */
 function vagrantNeeds(vagrant: boolean, plugin: boolean, utility: UtilityState | null): Need[] {
@@ -107,21 +107,35 @@ function withReady(r: SystemReport): SystemReport {
 /** The hypervisors ready on the scenario's machine now (with what the preview installed since). */
 export const readyHere = (sc: Scenario, live: Live) => withReady(withInstalls(scenarioReport(sc), live.installed, { pm: null })).readyHypervisors;
 
-/** A one-click install of `what` (a dependency or a Vagrant plugin). */
+/** A one-click install of `what` (a dependency or a Vagrant plugin). A dependency's install
+ *  streams its progress (`events`): what its step asks of the player first (the core's table). It
+ *  accepts nothing for the player, as the core accepts nothing. */
 const install =
   (key: "dependency" | "plugin"): BrowserHandler =>
-  async (args, { live }) => {
+  async (args, { sc, live }) => {
     const what = argText(args?.[key]);
+    const dependency = key === "dependency";
+    const say = (line: string | undefined) => {
+      if (dependency) send(args, { kind: "line", line }, "events");
+      else send(args, line);
+    };
+    if (dependency) {
+      const asks = installAsks(scenarioReport(sc), what as Dependency);
+      if (asks.length) {
+        send(args, { kind: "asks", interactions: asks }, "events");
+        await sleep(400);
+      }
+    }
     const lines = installLines(what);
     for (const line of lines.slice(0, -1)) {
-      send(args, line);
+      say(line);
       await sleep(150);
     }
     if (live.installFails) {
       live.installFails = false;
       fail(`${what}: the installer exited with code 1 (dev mock)`);
     }
-    send(args, lines.at(-1));
+    say(lines.at(-1));
     live.installed.add(what);
     return null;
   };

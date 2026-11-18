@@ -40,7 +40,7 @@ async fn a_plan_streams_its_lines_says_its_notes_and_stops_at_its_first_failure(
     let mut noted = step("first", &["a"]);
     noted.note = Some(Note::QemuUpdatingHomebrewFirst);
     let mut lines = Vec::new();
-    let err = run_plan(&[noted, step("second", &[]), step("third", &[])], &mut |l| lines.push(l)).await.unwrap_err();
+    let err = run_plan(&[noted, step("second", &[]), step("third", &[])], &mut as_lines(|l| lines.push(l))).await.unwrap_err();
     assert_eq!(lines, [said(Note::QemuUpdatingHomebrewFirst).as_str(), "out-1", "out-2", "$ second ", "broken"]);
     assert_eq!(err.to_string(), "`second` exited with exit status: 1");
 }
@@ -98,15 +98,49 @@ fn isothrum_machines_notes_read_as_the_launcher_said_them() {
         let plan = isothrum_machine::install::macos::install(dep, brew, isothrum_machine::Arch::Arm64, isothrum_machine::install::Elevation::Prompt);
         said(plan.unwrap().remove(0).note.unwrap())
     };
-    assert_eq!(vendor(Machine::Utm), "Installing UTM (macOS asks for your password)…");
-    // Docker Desktop's install accepts nothing for the player: Docker Desktop shows its agreement
-    // at its first start, and they accept it there. Its step says so.
-    assert_eq!(
-        vendor(Machine::Docker),
-        "Installing Docker Desktop (macOS asks for your password). Docker Desktop shows the Docker Subscription Service Agreement when it first starts: accept it there to use it (https://www.docker.com/legal/docker-subscription-service-agreement/)."
-    );
+    // What it asks (the password, the agreement Docker Desktop shows) is said before it, as
+    // `Progress::Asks`.
+    assert_eq!(vendor(Machine::Utm), "Installing UTM from its vendor's package…");
+    assert_eq!(vendor(Machine::Docker), "Installing Docker Desktop from its vendor's package…");
     assert_eq!(said(Note::DownloadingVmwareUtility { version: "1.0.24" }), "Downloading HashiCorp's Vagrant VMware Utility 1.0.24…");
     assert_eq!(said(Note::Removing(Machine::Vagrant)), "Removing Vagrant (macOS asks for your password)…");
     assert_eq!(said(Note::Removing(Machine::Docker)), "Running Docker Desktop's own uninstaller…");
     assert!(said(Note::QemuUpdatingHomebrewFirst).starts_with("Installing QEMU (updating Homebrew first"));
+}
+
+#[tokio::test]
+async fn a_step_that_asks_something_says_it_before_it_runs() {
+    use isothrum_machine::install::{Interaction, Prompt};
+    let _tools = fake(
+        FakeProcesses::script()
+            .expect("first", Reply::ok("out"))
+            .expect("second", Reply::ok(""))
+            .allow("apt-get --version", Reply::missing())
+            .allow("dnf --version", Reply::missing())
+            .build(),
+    );
+    let asks = vec![Interaction::AdminPassword { via: Prompt::Uac }, Interaction::Restart];
+    let mut asking = step("second", &[]);
+    asking.interactions.clone_from(&asks);
+    let mut told = Vec::new();
+    run_plan(&[step("first", &[]), asking], &mut |p| told.push(p)).await.unwrap();
+    let line = |l: &str| Progress::Line { line: l.to_owned() };
+    assert_eq!(told, [line("$ first "), line("out"), Progress::Asks { interactions: asks }, line("$ second ")]);
+
+    let mut lines = Vec::new();
+    as_lines(|l| lines.push(l))(Progress::Asks { interactions: vec![Interaction::AdminPassword { via: Prompt::Mac }, Interaction::LongBuild { minutes: 15 }] });
+    assert_eq!(lines, ["macOS asks for your password in a window of its own.", "This builds from source and can take about 15 minutes."]);
+}
+
+#[test]
+fn a_vendors_agreement_is_said_as_the_players_to_accept_in_its_window() {
+    let said = asks_said(&isothrum_machine::install::Interaction::VendorAgreement {
+        app: "Docker Desktop",
+        name: "Docker Subscription Service Agreement",
+        url: "https://www.docker.com/legal/docker-subscription-service-agreement/",
+    });
+    assert_eq!(
+        said,
+        "Docker Desktop shows the Docker Subscription Service Agreement when it first starts: accept it there to use it (https://www.docker.com/legal/docker-subscription-service-agreement/). Cyber CTF never accepts it for you."
+    );
 }

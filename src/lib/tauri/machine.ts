@@ -4,6 +4,7 @@ import type {
   Dependency,
   DockerEngine,
   InstalledTool,
+  InstallProgress,
   MachineMetrics,
   OvftoolPlaced,
   Provider,
@@ -25,6 +26,7 @@ export type {
   EngineStatus,
   HypervisorOption,
   InstalledTool,
+  InstallProgress,
   Interaction,
   MachineMetrics,
   ManualReason,
@@ -75,7 +77,10 @@ export const machineOpenSetup = (step?: string, provider?: Provider) => invokeUn
 export const machineRestart = (reason: string, feature: WindowsFeature) => invokeUnit("machine_restart", { reason, feature });
 
 /** Assisted one-click install of a lab dependency, streaming the installer output. */
-export const installDependency = (dependency: Dependency, onLog: (line: string) => void) => invokeStreaming("install_dependency", { dependency }, onLog);
+/** Installs `dependency`, streaming its log and what each step asks of the player. It accepts
+ *  nothing on their behalf. */
+export const installDependency = (dependency: Dependency, onProgress: (p: InstallProgress) => void) =>
+  invokeStreaming("install_dependency", { dependency }, onProgress, "events");
 
 export const installedTools = () => invoke<InstalledTool[]>("installed_tools");
 
@@ -93,7 +98,7 @@ export const hypervJoinAdmins = () => invokeUnit("hyperv_join_admins");
 export const installVagrantPlugin = (plugin: string, onLog: (line: string) => void) => invokeStreaming("install_vagrant_plugin", { plugin }, onLog);
 
 /** Lets VirtualBox share the CPU's virtualization with KVM (Linux), streaming the output. */
-export const shareVirtualization = (onLog: (line: string) => void) => invokeStreaming("machine_share_virtualization", {}, onLog);
+export const shareVirtualization = (onProgress: (p: InstallProgress) => void) => invokeStreaming("machine_share_virtualization", {}, onProgress, "events");
 
 /** Runs a setup self-test: `docker` boots a throwaway two-container lab on the Docker CLI
  *  `context` (one engine among several; null for the current one), `vm` a throwaway VM on

@@ -4,7 +4,7 @@
 use isothrum_machine::docker::StartFailed;
 pub use isothrum_machine::docker::{Engine, EngineStatus};
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::platform::exec::docker_denied_error;
 use crate::runtime::docker::{context_error, engine_of};
 // A start pins a lab to an engine's context and says the daemon's answers from the runtime,
@@ -40,9 +40,7 @@ fn start_failed(engine: &str, failed: StartFailed) -> Error {
         StartFailed::Step(failed) => crate::machine::tools::steps::step_failed(failed, false),
         // Docker's agreement is the player's to accept, in Docker Desktop's own window: nothing
         // accepts it for them, and its engine starts once they have.
-        StartFailed::AgreementNotAccepted(_) => Error::Invalid(
-            "Docker Desktop is waiting for you to accept its Subscription Service Agreement in its window. Accept it there, then re-check.".into(),
-        ),
+        StartFailed::AgreementNotAccepted(_) => Error::coded(Code::DockerDesktopAgreement),
         StartFailed::WaitingForUser(_) => {
             Error::Invalid("Docker Desktop is waiting for you in its window: accept its agreement or finish its setup there, then re-check.".into())
         }

@@ -308,6 +308,7 @@
     "notRunning": "{engine} はインストールされていますが、起動していません。",
     "get": "{name} を入手",
     "startingButton": "起動中…",
+    "startingDockerDesktop": "Docker Desktop が Subscription Service Agreement を表示したら、そのウィンドウで同意してください。Cyber CTF が代わりに同意することはありません。",
     "start": "{engine} を起動",
     "canInstall": "Cyber CTF が {name} をインストールできます。",
     "dockerDesktopLicence": "Docker Desktop は、大企業（従業員 250 人超、または年間売上 1,000 万ドル超）では有料サブスクリプションが必要です。Cyber CTF は無料の Colima や Podman、個人利用は無料の OrbStack でもラボを実行できます。",
@@ -316,7 +317,7 @@
     "install": "{name} をインストール",
     "recheck": "再確認",
     "installThenRecheck": "{engine} をインストールして起動してから、再確認してください。",
-    "finishDockerDesktop": "Docker のインストーラーで完了させ、Docker Desktop を起動してから「再確認」を押してください。",
+    "finishDockerDesktop": "Docker Desktop を起動し、ウィンドウで Subscription Service Agreement に同意してから、再チェックを押してください。",
     "finishOther": "{engine} のインストールを完了させて起動してから、「再確認」を押してください。",
     "windowsReboot": "WSL を有効にした後、再起動が必要な場合があります。Docker から仮想化がオフだと表示された場合は、前のステップに戻ってください。",
     "linuxPostInstall": "Docker Engine のインストール後、ユーザーが実行できるようにしてサービスを起動します：",
@@ -394,5 +395,45 @@
     "kernelRestart": "VirtualBox のカーネルドライバーは、一緒にインストールされた新しいカーネル（{kernel}）用にビルドされます。コンピューターを再起動してそのカーネルで起動してから、もう一度確認してください。",
     "kvmHoldsVirtualization": "KVM がこのコンピューターのハードウェア仮想化（VT-x または AMD-V）を使用しています。Linux は KVM のモジュールが読み込まれた時点でこれを有効にする（Linux 6.12 以降の既定）ため、VirtualBox は VM を起動できません（「VT-x is being used by another hypervisor」）。KVM で動作する libvirt か QEMU を使うか、KVM に VirtualBox と共有させてください。共有すると、KVM は自身の VM の実行中だけこれを使います。",
     "kvmSharesAfterRestart": "KVM は次に読み込まれたときから、このコンピューターのハードウェア仮想化を VirtualBox と共有するよう設定されています。適用するにはコンピューターを再起動してください。"
+  },
+  "asks": {
+    "title": "{name} をインストールする前に",
+    "lead": "これから起きることを先にお知らせします:",
+    "before": {
+      "passwordMac": "macOS が専用のウインドウでパスワードを求めます。",
+      "passwordUac": "Windows が変更の許可を求めます(ユーザー アカウント制御)。",
+      "passwordPkexec": "システムが専用のウインドウでパスワードを求めます。",
+      "vendorAgreement": "{app} は初回起動時に {agreement} を表示します。使うにはそこで同意してください。Cyber CTF が代わりに同意することはありません。",
+      "vendorWindow": "{app} が専用のウインドウを開きます。最後まで進めてください。",
+      "systemExtension": "システム設定 › プライバシーとセキュリティ で {vendor} のシステム拡張を許可する必要があります。",
+      "restart": "完了後にコンピュータを再起動する必要があります。",
+      "relogin": "完了後に一度サインアウトして、もう一度サインインする必要があります。",
+      "longBuild": "ソースからビルドするため、約 {minutes} 分かかることがあります。",
+      "downloadByHand": "{vendor} は自社のページでのみ提供しています。ご自身でダウンロードしてインストールしてください。"
+    },
+    "readAgreement": "{agreement} を読む",
+    "install": "インストール",
+    "cancel": "キャンセル",
+    "nowTitle": "いま起きていること",
+    "now": {
+      "passwordMac": "いま開いたウインドウで macOS がパスワードを求めています。",
+      "passwordUac": "いま開いたウインドウで Windows が変更の許可を求めています。",
+      "passwordPkexec": "いま開いたウインドウでシステムがパスワードを求めています。",
+      "vendorAgreement": "{app} は初回起動時に {agreement} を表示します。そのウィンドウで同意してください。",
+      "agreementWaiting": "{app} はウィンドウで契約への同意を待っています。そこで同意してから、もう一度確認してください。",
+      "vendorWindow": "{app} が専用のウインドウを開きました。そちらで完了してください。",
+      "systemExtension": "完了したら、システム設定 › プライバシーとセキュリティ で {vendor} のシステム拡張を許可してください。",
+      "restart": "完了したら、コンピュータを再起動してください。",
+      "relogin": "完了したら、一度サインアウトしてもう一度サインインしてください。",
+      "longBuild": "ソースからビルドしています。約 {minutes} 分かかることがあります。このウインドウは開いたままで大丈夫です。",
+      "downloadByHand": "{vendor} のページからダウンロードしてインストールし、もう一度確認してください。"
+    },
+    "byHand": {
+      "steps": "{vendor} は {name} を自社のページでのみ提供しています。そこでダウンロードしてインストールし、ここに戻ってもう一度確認してください。",
+      "open": "{vendor} のダウンロードページを開く",
+      "check": "もう一度確認",
+      "checking": "このコンピュータを確認しています…",
+      "notYet": "{name} はまだインストールされていません。インストールを完了してから、もう一度確認してください。"
+    }
   }
 }

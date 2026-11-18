@@ -13,6 +13,7 @@ import { useMachineSetup } from "@/features/machine/setup-steps/use-machine-setu
 import { osName } from "@/features/machine/machine-status";
 import type { DockerEngine, Provider, SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
+import { PendingInstallConsent } from "@/features/machine/install-asks";
 
 /** What this machine could run but doesn't have yet, as the picker opened: the container engines
  *  of this OS the machine check didn't find, and the hypervisors it can use that aren't installed.
@@ -65,6 +66,7 @@ export function AddProvider({ report, onRefresh, onClose }: { report: SystemRepo
             ))}
           </Panel>
         )}
+        <PendingInstallConsent installs={setup.installs} />
         <div className="flex justify-end">
           <Button variant="primary" size="sm" onClick={onClose} disabled={setup.busy}>
             {t("machine.setup.done")}

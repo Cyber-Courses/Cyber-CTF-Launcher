@@ -129,7 +129,9 @@ async fn an_engine_that_cannot_be_started_here_is_refused() {
 #[test]
 fn docker_desktop_waiting_for_its_agreement_asks_the_player_to_accept_it_in_its_window() {
     let engine = isothrum_machine::docker::Engine::DockerDesktop;
-    let said = start_failed("docker-desktop", StartFailed::AgreementNotAccepted(engine)).to_string();
+    let waits = start_failed("docker-desktop", StartFailed::AgreementNotAccepted(engine));
+    assert_eq!(waits.code(), Code::DockerDesktopAgreement, "the webview tells it apart: a hint, not a failure");
+    let said = waits.to_string();
     assert!(said.contains("waiting for you to accept its Subscription Service Agreement in its window"), "{said}");
     let said = start_failed("docker-desktop", StartFailed::WaitingForUser(engine)).to_string();
     assert!(said.contains("waiting for you in its window"), "{said}");
