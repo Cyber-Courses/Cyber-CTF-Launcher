@@ -28,10 +28,10 @@ pub fn managed_dir(data: &Path) -> PathBuf {
 
 /// The machine check's answer for the OVF Tool, asked with `cx`: its version (when `--version`
 /// runs) and where it was found, a hypervisor's own copy first, then the app's (under `data`),
-/// then the first on the `PATH`.
+/// then the first on the `PATH` ([`providers::search_path`]).
 pub async fn probe(cx: &Context, data: Option<&Path>) -> (Tool, Option<Location>) {
     let managed = data.map(managed_dir);
-    ovftool::probe(cx, managed.as_deref(), std::env::var_os("PATH").as_deref()).await
+    ovftool::probe(cx, managed.as_deref(), providers::search_path().as_deref()).await
 }
 
 /// The OVF Tool a lab on ESXi uploads its VMs with, as the machine check finds it ([`probe`]):

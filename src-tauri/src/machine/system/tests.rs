@@ -23,9 +23,7 @@ async fn the_check_says_where_the_ovf_tool_was_found() {
     let _machine = Machine::set(Arc::new(tools), host(root.path()));
     let t = crate::testing::test_app::TestApp::new();
     let report = super::system_check(t.dirs()).await;
-    if report.ovftool_location.is_none() {
-        assert!(!report.ovftool.installed, "nothing found, nothing installed");
-    }
+    assert!(report.ovftool_location.is_none() && !report.ovftool.installed, "none placed yet: none found, whatever this computer has");
     let exe = isothrum_machine::tools::ovftool::exe(isothrum_runner::this_host());
     std::fs::create_dir_all(managed_dir(t.data())).unwrap();
     std::fs::write(managed_dir(t.data()).join(exe), "").unwrap();
