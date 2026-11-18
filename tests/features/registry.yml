@@ -2674,7 +2674,7 @@ areas:
           unit:
             - src-tauri/src/runtime/providers/tests.rs > the_preferred_hypervisor_is_picked_when_ready_else_the_first_ready_one
             - src/features/machine/setup-steps/vm-steps.test.ts > says who gets one that isn
-            - src/features/machine/setup-steps/setup-steps.test.tsx > links to a vendor
+            - src/features/machine/setup-steps/setup-steps.test.tsx > links to the vendor
           setup:
             - parallels
             - vagrant
