@@ -421,6 +421,9 @@ cap_of() {
     # The VM test on the nested Proxmox test server (2026-11-17): its build, the image, the VM up
     # with its address and SSH took past 480 s under load, cut before its command and teardown.
     server-lab-vm-test-proxmox@proxmox) echo 1200 ;;
+    # A VM lab on the nested ESXi test server passed in 1508 s (2026-11-18, jarvis): each machine's
+    # box uploaded through the OVF Tool, then booted, provisioned, provisioned again and stopped.
+    server-lab-esxi@esxi) echo 2300 ;;
     *) echo "$CAP" ;;
   esac
 }
