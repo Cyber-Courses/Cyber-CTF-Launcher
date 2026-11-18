@@ -399,10 +399,12 @@ async fn running_service(home: &Path) -> Option<Client> {
     Client::connect_running(home).await.ok()
 }
 
-/// The operations of run `name` queued or running in `client`'s service.
+/// The operations of run `name` queued or running in `client`'s service. One that never ended but
+/// whose process is gone (a service killed while it ran a start) runs no more and holds nothing:
+/// the run's next operation ends it `abandoned`, as Isothrum's own lock says.
 async fn under_way(client: &Client, name: &RunName) -> Vec<isothrum_client::v1::OperationId> {
     match client.operations(name, 16).await {
-        Ok(rows) => rows.into_iter().filter(|o| o.ended.is_none()).map(|o| o.id).collect(),
+        Ok(rows) => rows.into_iter().filter(|o| o.ended.is_none() && o.owner.is_alive()).map(|o| o.id).collect(),
         Err(e) => {
             log::warn!("the runner service's operations of {name} can't be read: {e}");
             Vec::new()
