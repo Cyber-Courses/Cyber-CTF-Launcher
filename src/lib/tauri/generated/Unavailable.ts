@@ -14,6 +14,6 @@ version: string,
 min: string, } } | { "code": "pluginMissing", "args": { 
 plugin: string, } } | { "code": "pluginsUnknown", "args": { 
 plugin: string, 
-reason: string, } } | { "code": "vmwareUtilityStopped" } | { "code": "vmwareUtilityMissing" } | { "code": "virtualboxDriver", "args": { 
+reason: string, } } | { "code": "vmwareUtilityStopped" } | { "code": "vmwarePluginWithoutUtility" } | { "code": "vmwareUtilityMissing" } | { "code": "virtualboxDriver", "args": { 
 kernel: string, } } | { "code": "kernelRestart", "args": { 
 kernel: string, } } | { "code": "kvmHoldsVirtualization" } | { "code": "kvmSharesAfterRestart" };

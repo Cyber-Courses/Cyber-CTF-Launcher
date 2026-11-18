@@ -289,9 +289,9 @@ mod tests {
             match (call.program.as_str(), args.as_slice()) {
                 ("vagrant", _) if !vagrant => Reply::missing(),
                 ("vagrant", ["--version"]) => Reply::ok("Vagrant 2.4.3"),
-                ("vagrant", ["plugin", "list", ..]) => Reply::ok(
-                    "1,,plugin-name,vagrant-qemu\n1,,plugin-name,vagrant-parallels\n1,,plugin-name,vagrant-vmware-desktop\n1,,plugin-name,vagrant-libvirt\n1,,plugin-name,vagrant_utm",
-                ),
+                ("vagrant", ["plugin", "list", ..]) => {
+                    Reply::ok("1,,plugin-name,vagrant-qemu\n1,,plugin-name,vagrant-parallels\n1,,plugin-name,vagrant-libvirt\n1,,plugin-name,vagrant_utm")
+                }
                 ("vagrant", ["box", "list"]) => Reply::ok(
                     "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\ngeneric/alpine319 (libvirt, 4.3.12)\nbento/debian-12 (parallels, 1)\nbento/debian-12 (vmware_desktop, 1)\ngeneric/alpine319 (hyperv, 1)\nutm/bookworm (utm, 1)\n",
                 ),

@@ -80,8 +80,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -180,14 +180,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -285,8 +277,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -385,14 +377,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -490,8 +474,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -585,14 +569,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -690,8 +666,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -790,14 +766,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -895,8 +863,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -1026,14 +994,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -1161,8 +1121,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -1287,14 +1247,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -1415,8 +1367,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -1546,16 +1498,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "libvirt",
@@ -1661,8 +1604,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -1787,16 +1730,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "libvirt",
@@ -1904,8 +1838,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -2038,16 +1972,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "libvirt",
@@ -2157,8 +2082,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -2288,16 +2213,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "libvirt",
@@ -2402,8 +2318,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -2528,16 +2444,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "libvirt",
@@ -2643,8 +2550,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -2772,16 +2679,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "libvirt",
@@ -2887,8 +2785,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -3016,16 +2914,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "libvirt",
@@ -3131,8 +3020,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -3262,14 +3151,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -3390,8 +3271,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -3529,16 +3410,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "reason": "distribution",
               "dependency": "vagrant",
               "url": "https://developer.hashicorp.com/vagrant/install"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "manual",
-              "reason": "distribution",
-              "dependency": "vmware-utility",
-              "url": "https://developer.hashicorp.com/vagrant/install/vmware"
             }
           ]
         },
@@ -3660,8 +3531,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -3788,14 +3659,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -3937,8 +3800,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": "missing",
         "needs": [
           "vagrant",
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -4063,14 +3926,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
             }
           ]
         },
@@ -4204,14 +4059,11 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-vmware-desktop"
-          }
+          "code": "vmwareUtilityMissing"
         },
         "accountLacks": null
       },
@@ -4334,12 +4186,12 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [],
           "vagrant": [
             {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
               "kind": "install",
               "dependency": "vmware-utility"
+            },
+            {
+              "kind": "plugin",
+              "plugin": "vagrant-vmware-desktop"
             }
           ]
         },
@@ -4461,8 +4313,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": false,
         "utility": "missing",
         "needs": [
-          "plugin",
-          "vmwareUtility"
+          "vmwareUtility",
+          "plugin"
         ],
         "reason": {
           "code": "notInstalled",
@@ -4591,16 +4443,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
             }
           ],
-          "vagrant": [
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-vmware-desktop"
-            },
-            {
-              "kind": "install",
-              "dependency": "vmware-utility"
-            }
-          ]
+          "vagrant": []
         },
         {
           "provider": "parallels",

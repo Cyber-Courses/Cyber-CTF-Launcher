@@ -84,6 +84,9 @@ fn said(note: isothrum_machine::install::Note) -> String {
         }
         Note::InstallingFromVendor { dependency, accepts: None } => format!("Installing {} (macOS asks for your password)…", name(dependency)),
         Note::QemuUpdatingHomebrewFirst => "Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into(),
+        Note::BuildsFromSource(dependency) => {
+            format!("Installing {} with Homebrew, which builds it from source on this Mac: this can take a quarter of an hour or more.", name(dependency))
+        }
         Note::TrustingAzureTap => "Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into(),
         Note::AzureCliCask => "Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into(),
         Note::DownloadingVmwareUtility { version } => format!("Downloading HashiCorp's Vagrant VMware Utility {version}…"),
