@@ -160,6 +160,29 @@ fn no_seeded_secret_and_no_home_path_is_in_the_bundle() {
     assert_eq!(report["ovftoolLocation"]["path"], tilde(&["bin", "ovftool"]), "{report}");
 }
 
+/// Saving a bundle never reads the store, where a run's launch values are kept (on macOS a
+/// keychain read may be a prompt): it replaces those this process holds, and after a restart, with
+/// web's values only in the store, it still asks nothing, and the shapes the logs' redaction knows
+/// are still replaced.
+#[test]
+fn saving_a_bundle_reads_nothing_from_the_keychain() {
+    use crate::runtime::{launch_values, server::secrets};
+    let seeded = Seeded::new();
+    let before = secrets::reads();
+    let files = seeded.bundle();
+    assert_eq!(secrets::reads(), before, "the bundle read the store");
+    assert!(files.values().all(|text| !text.contains(LAUNCH_TOKEN) && !text.contains(JOB_FLAG)), "the values held here are replaced");
+
+    launch_values::restart();
+    let line = format!("CTF_LAUNCH_TOKEN={LAUNCH_TOKEN} CTF_FLAG_MAIN={JOB_FLAG}\n");
+    Seeded::file(seeded.logs.join("cyberctf.log"), &line);
+    let before = secrets::reads();
+    let files = seeded.bundle();
+    assert_eq!(secrets::reads(), before, "after a restart, the bundle read the store");
+    assert_eq!(files["logs/cyberctf.log"], "CTF_LAUNCH_TOKEN=[redacted] CTF_FLAG_MAIN=[redacted]\n");
+    assert!(secrets::get_named("launch-values:cyberctf-web").unwrap().is_some(), "web's values are still kept, for its resume");
+}
+
 #[test]
 fn the_bundle_holds_the_summary_the_report_and_the_logs() {
     let files = Seeded::new().bundle();

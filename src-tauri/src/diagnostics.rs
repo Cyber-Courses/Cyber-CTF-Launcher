@@ -16,10 +16,18 @@
 //!   (what `cyberctf labs logs <lab> --json` lists).
 //!
 //! Every text in it passes through [`scrub::Scrubber`] (tokens, passwords, keys, flags, the values
-//! each installed lab's run was launched with, e-mail addresses; the home folder written `~`), and
-//! what would identify a host or an account (a server's address, a run's params) is never read into
-//! it. It needs no window or Tauri app: the app's command and the command line build the same
-//! bundle.
+//! the runs were launched with, e-mail addresses; the home folder written `~`), and what would
+//! identify a host or an account (a server's address, a run's params) is never read into it. It
+//! needs no window or Tauri app: the app's command and the command line build the same bundle.
+//!
+//! Saving a bundle never reads the keychain (on macOS each read may be a prompt): the launch values
+//! it replaces by value are those this process holds (`runtime::launch_values::held`, the runs it
+//! started or acted on). A run's values it doesn't hold were masked where they were written: the
+//! app's log replaces every sensitive one the launcher registered before giving it to a tool
+//! (`platform::redact`), the runner service masks the secrets it is given in every event and error
+//! it journals and keeps its tools' output out of `service.log`; and what the bundle carries holds
+//! no run's files, record or params. The shapes the logs' redaction knows (`CTF_FLAG_…=`,
+//! `token=…`, a JWT, `flag{…}`) are replaced whatever process wrote them.
 
 mod collect;
 mod scrub;
@@ -69,7 +77,7 @@ pub(crate) async fn export(sources: &Sources, out: &Path) -> Result<()> {
 ///
 /// The file can't be written.
 pub(crate) fn write(sources: &Sources, host_report: &Value, runner: Result<collect::Runner>, out: &Path) -> Result<()> {
-    let scrubber = scrub::Scrubber::new(sources.home.as_deref(), collect::launch_values(&sources.dirs));
+    let scrubber = scrub::Scrubber::new(sources.home.as_deref(), crate::runtime::launch_values::held());
     let collect::Runner { last, journals, mut problems } =
         runner.unwrap_or_else(|e| collect::Runner { problems: vec![format!("the runs' records: {e}")], ..collect::Runner::default() });
     let mut files = vec![

@@ -141,13 +141,6 @@ pub(crate) fn servers(dirs: &AppDirs) -> crate::error::Result<Value> {
     Ok(Value::Array(hosts))
 }
 
-/// The values each installed lab's run was launched with (its launch token, its flags, kept in
-/// the keychain while the run lasts: `runtime::launch_values`): secrets the bundle replaces
-/// wherever they show.
-pub(crate) fn launch_values(dirs: &AppDirs) -> Vec<String> {
-    installed_labs(dirs).into_iter().flat_map(|lab| runtime::launch_values::kept(&runtime::docker::project(&lab.id))).map(|(_, value)| value).collect()
-}
-
 /// The end of the runner service's log (`<runner home>/service.log`, where the service it starts
 /// writes its output: Isothrum's `ServicePaths::log`), named `runner/service.log` in the bundle;
 /// none when it can't be read.
