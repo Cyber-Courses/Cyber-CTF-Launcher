@@ -39,10 +39,11 @@ fn status(provider: Provider, vagrant: bool, installed: bool, plugin_installed: 
         Some(Unavailable::VagrantMissing)
     } else if hypervisor == Some(false) {
         Some(Unavailable::NotInstalled { program: None })
+    } else if utility.is_some_and(|u| u != UtilityState::Running) {
+        // VMware's utility comes before its plugin, which breaks Vagrant without it.
+        Some(Unavailable::VmwareUtilityMissing)
     } else if !plugin_installed {
         Some(Unavailable::PluginMissing { plugin: plugin.clone().unwrap_or_else(|| "?".into()) })
-    } else if !needs.is_empty() {
-        Some(Unavailable::VmwareUtilityMissing)
     } else {
         None
     };

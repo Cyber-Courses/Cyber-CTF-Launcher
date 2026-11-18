@@ -2,7 +2,7 @@
 //! terminal) asks the player: pkexec's password prompt on Linux, the macOS administrator prompt,
 //! Windows' UAC prompt. Unattended (the command line with `--yes` and no terminal: a script, a
 //! fresh machine set up from a test harness) nobody is there to answer a prompt, so none may be
-//! raised: the process is an administrator already, or (Linux) sudo runs the step without asking
+//! raised: the process is an administrator already, or (Linux, macOS) sudo runs the step without asking
 //! (`sudo -n`, refused at once rather than waiting on a password). [`check_unattended`] tells
 //! whether elevation can happen before anything runs.
 
@@ -50,7 +50,7 @@ pub fn is_root() -> bool {
 const CANT_ELEVATE: &str = "Nothing can be installed unattended here: no prompt may be shown, and this process can't act as an administrator without one.";
 
 /// Whether this process can elevate unattended: it is an administrator (root, an elevated
-/// Windows shell), or on Linux sudo runs a command without a password (`sudo -n true`, through
+/// Windows shell), or on Linux and macOS sudo runs a command without a password (`sudo -n true`, through
 /// the platform's process runner, which a test scripts). Run before a setup starts, so it fails before
 /// anything changed rather than at its first root step.
 ///
@@ -61,7 +61,7 @@ pub async fn check_unattended() -> Result<()> {
     if is_root() {
         return Ok(());
     }
-    if cfg!(target_os = "linux") {
+    if cfg!(unix) {
         if crate::platform::exec::run("sudo", &["-n", "true"], None).await.is_ok() {
             return Ok(());
         }

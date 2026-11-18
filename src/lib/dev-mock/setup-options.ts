@@ -73,11 +73,20 @@ function getHypervisor(r: Machine, p: ProviderStatus): SetupAction {
   return dependency ? install(r, dependency) : { kind: "manual", reason: "vendor", dependency: null, url: VENDOR_URLS[p.provider] ?? null };
 }
 
+/** What Vagrant needs to drive `p`, as the core plans it: a provider driven through VMware's
+ *  utility gets neither the utility nor its plugin before its hypervisor is installed, and its
+ *  plugin only with the utility's install in the same plan (or once the utility is there): the
+ *  plugin without the utility breaks Vagrant for every provider. */
 function vagrant(r: Machine, p: ProviderStatus): SetupAction[] {
+  const throughUtility = p.provider === "vmware_desktop";
+  if (throughUtility && p.hypervisor !== true) return p.needs.includes("vagrant") ? [install(r, "vagrant")] : [];
+  const utility = install(r, "vmware-utility");
+  const utilityInstalls = !p.needs.includes("vmwareUtility") || utility.kind === "install";
   return p.needs.flatMap((need): SetupAction[] => {
     if (need === "vagrant") return [install(r, "vagrant")];
-    if (need === "plugin") return p.plugin ? [{ kind: "plugin", plugin: p.plugin }] : [];
-    return [install(r, "vmware-utility")];
+    if (need === "vmwareUtility") return [utility];
+    if (throughUtility && !utilityInstalls) return [];
+    return p.plugin ? [{ kind: "plugin", plugin: p.plugin }] : [];
   });
 }
 

@@ -2650,7 +2650,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/machine/setup/tests.rs > vmware_gets_its_plugin_and_hashicorps_utility_and_its_install_links_out
+            - src-tauri/src/machine/setup/tests.rs > vmware_gets_hashicorps_utility_then_its_plugin_and_its_install_links_out
             - src-tauri/src/runtime/providers/tests.rs > vmwares_desktop_hypervisor_is_named_for_the_os_and_nothing_else_is
             - src/features/machine/setup-steps/setup-steps.test.tsx > installs both of VMware
             - src/features/machine/setup-steps/setup-steps.test.tsx > reads VMware as set up once the plugin is in and the utility runs

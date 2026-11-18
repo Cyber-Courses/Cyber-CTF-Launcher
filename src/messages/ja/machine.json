@@ -388,6 +388,7 @@
     "pluginMissing": "Vagrant プラグイン `{plugin}` がインストールされていません。",
     "pluginsUnknown": "Vagrant プラグイン `{plugin}` がインストールされているか判断できません。`vagrant plugin list` が失敗しました（{reason}）。ターミナルで実行して原因を確認し、再チェックしてください。",
     "vmwareUtilityStopped": "Vagrant VMware Utility はインストールされていますが、サービスが動いていません。もう一度インストールする（再起動されます）か、コンピューターを再起動してください。",
+    "vmwarePluginWithoutUtility": "Vagrant の VMware プラグイン (vagrant-vmware-desktop) が Vagrant VMware Utility なしでインストールされているため、どのハイパーバイザーでも Vagrant が動きません。Vagrant VMware Utility をインストールするか、プラグインを削除して (vagrant plugin uninstall vagrant-vmware-desktop)、もう一度確認してください。",
     "vmwareUtilityMissing": "Vagrant VMware Utility がインストールされていません。VMware プラグインが VMware を操作するための HashiCorp のサービスです。",
     "virtualboxDriver": "VirtualBox のカーネルドライバー（vboxdrv）がこのカーネル（{kernel}）で読み込まれていないため、VirtualBox は VM を起動できません。カーネルのヘッダー（Debian と Ubuntu では linux-headers-{kernel}）をインストールし、ドライバーをビルドしてから（Oracle の VirtualBox は sudo /sbin/vboxconfig、ディストリビューションの VirtualBox は sudo dpkg-reconfigure virtualbox-dkms）、もう一度確認してください。セキュアブートが有効な場合、ドライバーは署名しないと読み込まれません。",
     "kernelRestart": "VirtualBox のカーネルドライバーは、一緒にインストールされた新しいカーネル（{kernel}）用にビルドされます。コンピューターを再起動してそのカーネルで起動してから、もう一度確認してください。",

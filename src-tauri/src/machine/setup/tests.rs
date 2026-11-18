@@ -342,10 +342,11 @@ fn a_mac_with_docker_and_no_vagrant_sets_up_only_the_vm_path() {
 }
 
 #[test]
-fn vmware_gets_its_plugin_and_hashicorps_utility_and_its_install_links_out() {
+fn vmware_gets_hashicorps_utility_then_its_plugin_and_its_install_links_out() {
     let r = shapes::mac_vmware_without_its_parts();
     let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::VmwareDesktop]));
-    assert_eq!(steps(&p), ["plugin:vagrant-vmware-desktop: plugin vagrant-vmware-desktop", "vmware-utility: install vmware-utility"]);
+    // The utility first: VMware's plugin without it breaks Vagrant for every hypervisor.
+    assert_eq!(steps(&p), ["vmware-utility: install vmware-utility", "plugin:vagrant-vmware-desktop: plugin vagrant-vmware-desktop"]);
     assert_eq!(p.items, ["vagrant", "vmware_desktop", "plugin:vagrant-vmware-desktop", "vmware-utility"]);
     assert!(matches!(get_of(&shapes::bare_windows(), Provider::VmwareDesktop).as_slice(), [Action::Manual { reason: ManualReason::Vendor, url: Some(_), .. }]));
     // A stopped utility is installed again (which restarts it).
