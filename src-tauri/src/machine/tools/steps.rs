@@ -79,10 +79,15 @@ fn said(note: isothrum_machine::install::Note) -> String {
     use isothrum_machine::install::Dependency as Machine;
     let name = |dep| super::install::name_on(dep, isothrum_machine::HostOs::Macos);
     match note {
-        Note::InstallingFromVendor { dependency, accepts: Some(licence) } => {
-            format!("Installing {} (macOS asks for your password). This accepts the {} for you: {}", name(dependency), licence.name, licence.url)
-        }
-        Note::InstallingFromVendor { dependency, accepts: None } => format!("Installing {} (macOS asks for your password)…", name(dependency)),
+        // Nothing accepts the vendor's agreement for the player: its app shows it, and they accept
+        // it there.
+        Note::InstallingFromVendor { dependency, agreement: Some(agreement) } => format!(
+            "Installing {0} (macOS asks for your password). {0} shows the {1} when it first starts: accept it there to use it ({2}).",
+            name(dependency),
+            agreement.name,
+            agreement.url
+        ),
+        Note::InstallingFromVendor { dependency, agreement: None } => format!("Installing {} (macOS asks for your password)…", name(dependency)),
         Note::QemuUpdatingHomebrewFirst => "Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into(),
         Note::BuildsFromSource(dependency) => {
             format!("Installing {} with Homebrew, which builds it from source on this Mac: this can take a quarter of an hour or more.", name(dependency))
@@ -120,6 +125,9 @@ fn known_said(known: Known, removal: bool) -> &'static str {
         Known::NoInternet => "This needs an internet connection. Check your connection, then try again.",
         Known::RestartFirst => "Restart Windows, then try again.",
         Known::Policy => "This is blocked by a policy on this computer. Ask your administrator.",
+        Known::AgreementToAccept => {
+            "winget asks you to accept an agreement for this package, which Cyber CTF never accepts for you. Run the same winget install in a terminal, read the agreement and accept it there, then re-check."
+        }
         _ => "The installer reported an error, so it didn't finish. The details are in the log above.",
     }
 }

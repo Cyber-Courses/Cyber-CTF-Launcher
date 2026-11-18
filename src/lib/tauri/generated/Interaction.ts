@@ -2,7 +2,8 @@
 import type { Prompt } from "./Prompt";
 
 export type Interaction = { "kind": "adminPassword", 
-via: Prompt, } | { "kind": "licence", 
+via: Prompt, } | { "kind": "vendorAgreement", 
+app: string, 
 name: string, 
 url: string, } | { "kind": "vendorWindow", 
 app: string, } | { "kind": "allowSystemExtension", 

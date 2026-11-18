@@ -28,16 +28,29 @@ pub async fn docker_use_engine(engine: String) -> Result<()> {
 pub async fn docker_start_engine(engine: String) -> Result<()> {
     let Some(id) = Engine::from_id(&engine) else { return Err(cant_start(&engine)) };
     let elevation = crate::machine::tools::install::elevation();
-    isothrum_machine::docker::start_engine(&machine(), id, elevation, &mut |_| {}).await.map_err(|failed| match failed {
-        StartFailed::NotHere(_) => cant_start(&engine),
+    isothrum_machine::docker::start_engine(&machine(), id, elevation, &mut |_| {}).await.map_err(|failed| start_failed(&engine, failed))
+}
+
+/// Why `engine` wasn't started, in the player's words.
+fn start_failed(engine: &str, failed: StartFailed) -> Error {
+    match failed {
+        StartFailed::NotHere(_) => cant_start(engine),
         // Running, but not for this account: starting it again can't help.
         StartFailed::Denied(_) => docker_denied_error(),
         StartFailed::Step(failed) => crate::machine::tools::steps::step_failed(failed, false),
+        // Docker's agreement is the player's to accept, in Docker Desktop's own window: nothing
+        // accepts it for them, and its engine starts once they have.
+        StartFailed::AgreementNotAccepted(_) => Error::Invalid(
+            "Docker Desktop is waiting for you to accept its Subscription Service Agreement in its window. Accept it there, then re-check.".into(),
+        ),
+        StartFailed::WaitingForUser(_) => {
+            Error::Invalid("Docker Desktop is waiting for you in its window: accept its agreement or finish its setup there, then re-check.".into())
+        }
         StartFailed::NoAnswer { waited, .. } => {
             Error::Invalid(format!("{engine} didn't answer within {} minutes. Check its window, then re-check.", waited.as_secs() / 60))
         }
         other => Error::Invalid(other.to_string()),
-    })
+    }
 }
 
 /// An engine Cyber CTF doesn't start on this OS.

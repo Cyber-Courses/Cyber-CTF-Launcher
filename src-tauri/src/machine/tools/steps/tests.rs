@@ -73,6 +73,15 @@ fn isothrum_machines_step_failures_read_as_the_launcher_said_them() {
     assert!(step_failed(exited(Some(Known::NoDiskSpace)), false).to_string().starts_with("There isn't enough disk space"));
 }
 
+/// An agreement winget asks for is the player's to accept, in winget itself: Cyber CTF never
+/// passes winget an `--accept-*-agreements` flag.
+#[test]
+fn an_agreement_winget_asks_for_is_the_players_to_accept() {
+    let failed = StepFailed::Exited { program: "winget".into(), code: Some(-1_978_335_167), known: Some(Known::AgreementToAccept) };
+    let said = step_failed(failed, false).to_string();
+    assert!(said.contains("never accepts for you") && said.contains("accept it there"), "{said}");
+}
+
 #[test]
 fn a_step_done_although_it_exited_non_zero_reads_as_the_launcher_said_it() {
     assert_eq!(done_said(Done::AlreadyInstalled, false), "Already installed and up to date: nothing to do.");
@@ -90,10 +99,11 @@ fn isothrum_machines_notes_read_as_the_launcher_said_them() {
         said(plan.unwrap().remove(0).note.unwrap())
     };
     assert_eq!(vendor(Machine::Utm), "Installing UTM (macOS asks for your password)…");
-    // Docker Desktop's install accepts Docker's licence for the player: its step says so.
+    // Docker Desktop's install accepts nothing for the player: Docker Desktop shows its agreement
+    // at its first start, and they accept it there. Its step says so.
     assert_eq!(
         vendor(Machine::Docker),
-        "Installing Docker Desktop (macOS asks for your password). This accepts the Docker Subscription Service Agreement for you: https://www.docker.com/legal/docker-subscription-service-agreement/"
+        "Installing Docker Desktop (macOS asks for your password). Docker Desktop shows the Docker Subscription Service Agreement when it first starts: accept it there to use it (https://www.docker.com/legal/docker-subscription-service-agreement/)."
     );
     assert_eq!(said(Note::DownloadingVmwareUtility { version: "1.0.24" }), "Downloading HashiCorp's Vagrant VMware Utility 1.0.24…");
     assert_eq!(said(Note::Removing(Machine::Vagrant)), "Removing Vagrant (macOS asks for your password)…");

@@ -6,10 +6,12 @@
 //! argument a cmd.exe-wrapped tool gets passes its guard (`platform/exec/shim.rs`), only
 //! `runtime/lab/` uses Isoloom's spec and generator crates (`runtime/lab.rs`), no code outside an
 //! allow-list that only shrinks starts a tool Isothrum runs (`source_scan/tools.rs`), and none
-//! matches Isothrum's errors outside `runtime/isothrum/errors.rs` (`source_scan/isothrum_errors.rs`).
+//! matches Isothrum's errors outside `runtime/isothrum/errors.rs` (`source_scan/isothrum_errors.rs`),
+//! and nothing accepts a licence, an agreement or terms for the player (`source_scan/consent.rs`).
 
 use std::path::{Path, PathBuf};
 
+mod consent;
 mod isothrum_errors;
 mod tools;
 
