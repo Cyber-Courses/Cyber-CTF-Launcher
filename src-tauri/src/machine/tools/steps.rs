@@ -79,7 +79,10 @@ fn said(note: isothrum_machine::install::Note) -> String {
     use isothrum_machine::install::Dependency as Machine;
     let name = |dep| super::install::name_on(dep, isothrum_machine::HostOs::Macos);
     match note {
-        Note::Downloading(dep) => format!("Downloading {}…", name(dep)),
+        Note::InstallingFromVendor { dependency, accepts: Some(licence) } => {
+            format!("Installing {} (macOS asks for your password). This accepts the {} for you: {}", name(dependency), licence.name, licence.url)
+        }
+        Note::InstallingFromVendor { dependency, accepts: None } => format!("Installing {} (macOS asks for your password)…", name(dependency)),
         Note::QemuUpdatingHomebrewFirst => "Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into(),
         Note::TrustingAzureTap => "Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into(),
         Note::AzureCliCask => "Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into(),

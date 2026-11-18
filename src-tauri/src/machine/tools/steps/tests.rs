@@ -84,8 +84,17 @@ fn a_step_done_although_it_exited_non_zero_reads_as_the_launcher_said_it() {
 #[test]
 fn isothrum_machines_notes_read_as_the_launcher_said_them() {
     use isothrum_machine::install::Dependency as Machine;
-    assert_eq!(said(Note::Downloading(Machine::Docker)), "Downloading Docker Desktop…");
-    assert_eq!(said(Note::Downloading(Machine::Utm)), "Downloading UTM…");
+    let vendor = |dep| {
+        let brew = Some(isothrum_machine::host::Packages::Homebrew("/opt/homebrew/bin/brew"));
+        let plan = isothrum_machine::install::macos::install(dep, brew, isothrum_machine::Arch::Arm64, isothrum_machine::install::Elevation::Prompt);
+        said(plan.unwrap().remove(0).note.unwrap())
+    };
+    assert_eq!(vendor(Machine::Utm), "Installing UTM (macOS asks for your password)…");
+    // Docker Desktop's install accepts Docker's licence for the player: its step says so.
+    assert_eq!(
+        vendor(Machine::Docker),
+        "Installing Docker Desktop (macOS asks for your password). This accepts the Docker Subscription Service Agreement for you: https://www.docker.com/legal/docker-subscription-service-agreement/"
+    );
     assert_eq!(said(Note::DownloadingVmwareUtility { version: "1.0.24" }), "Downloading HashiCorp's Vagrant VMware Utility 1.0.24…");
     assert_eq!(said(Note::Removing(Machine::Vagrant)), "Removing Vagrant (macOS asks for your password)…");
     assert_eq!(said(Note::Removing(Machine::Docker)), "Running Docker Desktop's own uninstaller…");

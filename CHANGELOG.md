@@ -33,6 +33,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
+- **A Mac's apps install with nothing left to drag.** Docker Desktop, Vagrant, VirtualBox and UTM
+  install from their vendor's disk image or package as an administrator (Isothrum's
+  `Note::InstallingFromVendor`); the step says so, and Docker Desktop's says it accepts the Docker
+  Subscription Service Agreement for the player, with its link.
+
 - **The launcher keeps its own state in one place.** The player's settings (the attack box's
   image, auto-start and desktop, the hypervisor, the Docker engine, how labs take ports, a
   dual-form lab's form, the last test results and each lab's last start) moved from the window's

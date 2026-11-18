@@ -50,10 +50,10 @@ pub fn runs_on(dep: Dependency, os: HostOs) -> bool {
     dep.runs_on(os)
 }
 
-/// The install on macOS: isothrum-machine's Homebrew formulae, vendors' installers and
-/// HashiCorp's signed package.
+/// The install on macOS: isothrum-machine's Homebrew formulae, vendors' disk images and packages
+/// (installed as an administrator, [`elevation`]'s way) and HashiCorp's signed package.
 fn macos_plan(dep: Dependency, host: &Host) -> Result<Plan> {
-    isothrum_machine::install::macos::install(dep, host.packages, host.arch).map_err(refusal)
+    isothrum_machine::install::macos::install(dep, host.packages, host.arch, elevation()).map_err(refusal)
 }
 
 /// The install on Windows: isothrum-machine's winget packages and elevated installers.
