@@ -42,15 +42,30 @@ pub(crate) const PLAYER: &str = "player";
 /// the box starts or is set up ([`player_account`]).
 const PLAYER_ACCOUNT: &str = include_str!("../../attack-box/player-account.sh");
 
-/// [`PLAYER_ACCOUNT`] for [`PLAYER`], with the shared folder at its mount point and its password's
-/// hash in the box's root-only file ([`sign_in::HASH_FILE`], which the box's spec places): one
-/// `sh -c` command, the script's comments and blank lines left out. The command names the file,
-/// never the password nor its hash: the script hands the hash to `chpasswd` on its standard input.
-fn player_account() -> String {
+/// The learner's shared folder as the box gets it: the folder of this computer, and whether its
+/// mount writes as the folder's owner whichever account of the box writes
+/// ([`Provider::squashes_folder_writers_on`](crate::runtime::providers::Provider::squashes_folder_writers_on)),
+/// where the folder's group is [`PLAYER`]'s own rather than one it joins ([`PLAYER_ACCOUNT`]'s
+/// `shared_squashed`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Shared {
+    /// The folder of this computer, mounted at [`crate::shared_folder::MOUNT_POINT`].
+    pub(crate) folder: std::path::PathBuf,
+    /// Every account of the box writes there as the folder's owner.
+    pub(crate) squashed: bool,
+}
+
+/// [`PLAYER_ACCOUNT`] for [`PLAYER`], with the shared folder at its mount point (`squashed`:
+/// written as its owner whoever writes, [`Shared::squashed`]) and its password's hash in the
+/// box's root-only file ([`sign_in::HASH_FILE`], which the box's spec places): one `sh -c`
+/// command, the script's comments and blank lines left out. The command names the file, never
+/// the password nor its hash: the script hands the hash to `chpasswd` on its standard input.
+fn player_account(squashed: bool) -> String {
     let script: Vec<&str> = PLAYER_ACCOUNT.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).collect();
     format!(
-        "account={PLAYER} shared={} password_hash={} sh -c {}",
+        "account={PLAYER} shared={}{} password_hash={} sh -c {}",
         crate::shared_folder::MOUNT_POINT,
+        if squashed { " shared_squashed=1" } else { "" },
         sign_in::HASH_FILE,
         shell_words::quote(&script.join("\n"))
     )
@@ -58,9 +73,10 @@ fn player_account() -> String {
 
 /// What a container box runs: [`player_account`] (a box whose image predates the account gets it;
 /// one whose shared folder's owner differs from the image's takes its uid), then idle. A box whose
-/// account can't be made still starts: its shell then says why it can't open.
+/// account can't be made still starts: its shell then says why it can't open. Docker binds the
+/// folder, its ids as they are: never squashed.
 fn container_command() -> String {
-    format!("{} || echo 'the {PLAYER} account could not be made' >&2; exec sleep infinity", player_account())
+    format!("{} || echo 'the {PLAYER} account could not be made' >&2; exec sleep infinity", player_account(false))
 }
 
 /// The default attack image, shared with the frontend's Settings (`src/lib/settings.ts`): the
@@ -107,9 +123,9 @@ const SETUP_FILE: &str = "cyberctf-attackbox.sh";
 /// The set-up script, from the attack box repository's pinned parts (`attack-box/vm/`, its
 /// README says the order): [`KALI`], then Kali's toolset ([`TOOLSET`]) unless a test run switched
 /// it off ([`toolset_wanted`]), then the player's account ([`player_account`]), then the desktop
-/// ([`DESKTOP`]) when it has one.
-fn setup_script(desktop: bool) -> String {
-    setup_script_with(desktop, toolset_wanted())
+/// ([`DESKTOP`]) when it has one. `squashed`: the shared folder's [`Shared::squashed`].
+fn setup_script(desktop: bool, squashed: bool) -> String {
+    setup_script_with(desktop, toolset_wanted(), squashed)
 }
 
 /// The variable a test run (the integration runner's attack-box-vm scenarios) sets to `1` to make
@@ -140,9 +156,9 @@ fn toolset_wanted_given(skip: Option<&str>) -> bool {
 }
 
 /// [`setup_script`] with Kali's toolset installed or not (`toolset`).
-fn setup_script_with(desktop: bool, toolset: bool) -> String {
+fn setup_script_with(desktop: bool, toolset: bool, squashed: bool) -> String {
     let toolset = if toolset { TOOLSET } else { "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n" };
-    [KALI, toolset, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
+    [KALI, toolset, &player_account(squashed), "\n", if desktop { DESKTOP } else { "" }].concat()
 }
 
 /// The set-up on a Debian VM: Kali's archive keyring, checked against Kali's archive keys before
@@ -275,7 +291,7 @@ pub(crate) fn networks(dir: &Path) -> Result<Networks> {
 /// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
 /// pick when the lab declares none), with a new password for its player account ([`mod@sign_in`]):
 /// kept by the launcher, its hash placed in the box for its set-up.
-pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Path>) -> Result<()> {
+pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Shared>) -> Result<()> {
     let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
     let networks = networks.iter().map(|(n, o)| format!("{}: {o}", yaml_string(n))).collect::<Vec<_>>().join(", ");
     let hardware = match cpu {
@@ -284,10 +300,11 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
     };
     // The learner's shared folder, mounted both ways at the same place on every form: read-write
     // said, since Isoloom mounts a host folder read-only unless told.
-    let shared = shared.map_or_else(String::new, |folder| {
+    let squashed = shared.is_some_and(|s| s.squashed);
+    let shared = shared.map_or_else(String::new, |s| {
         format!(
             "host_folders: [{{ from: {}, path: {}, read_only: false }}], ",
-            yaml_string(&folder.display().to_string()),
+            yaml_string(&s.folder.display().to_string()),
             yaml_string(crate::shared_folder::MOUNT_POINT)
         )
     });
@@ -296,7 +313,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
             format!("{{ {hardware}{shared}app: {{ image: {} }}, networks: {{ {networks} }} }}", yaml_string(image))
         }
         (Kind::Vm { desktop }, cpu) => {
-            std::fs::write(dir.join(SETUP_FILE), setup_script(desktop))?;
+            std::fs::write(dir.join(SETUP_FILE), setup_script(desktop, squashed))?;
             let os = if cpu == Cpu::Arm { "debian@12" } else { "kali@rolling" };
             let size = if desktop { format!(", memory_mb: {}, cpus: {}", DESKTOP_SIZE.0, DESKTOP_SIZE.1) } else { String::new() };
             format!(

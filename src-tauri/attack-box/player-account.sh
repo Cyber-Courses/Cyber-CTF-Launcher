@@ -3,6 +3,11 @@
 # login shell and sudo without a password. Where the shared folder ("$shared", mounted from the
 # computer running the lab) belongs to a user the box doesn't have, the account takes that user's
 # uid, and it joins the folder's group: the player writes there as that computer's user does.
+# Where the folder's mount writes as its owner whoever writes ("$shared_squashed" is 1), the folder's
+# group is the account's own (primary) group instead: QEMU's virtiofsd on Linux runs unprivileged,
+# every account of the box squashed to the computer's user, and refuses a write made through a
+# supplementary group (it would have to take that group itself, which only a privileged virtiofsd
+# can), while the box still checks the folder's permissions, so the account needs the group.
 # Where the launcher gave the account a password, "$password_hash" is a root-only file holding its
 # crypt(3) hash: handed to chpasswd on its standard input, so neither the password nor its hash is
 # ever on a command line. The screen locker, a login, su and SSH take that password; sudo asks none.
@@ -11,10 +16,11 @@
 # may predate the account, or the folder's owner may differ from the image's), and once when a VM
 # box is set up. The launcher names the account (`attack_box::PLAYER`) and the folder.
 #
-#   account=<name> [shared=<folder>] [password_hash=<file>] sh player-account.sh
+#   account=<name> [shared=<folder>] [shared_squashed=1] [password_hash=<file>] sh player-account.sh
 set -e
 : "${account:?the account to make}"
 shared=${shared:-}
+shared_squashed=${shared_squashed:-}
 password_hash=${password_hash:-}
 
 owner=0
@@ -43,7 +49,9 @@ fi
 if [ "$group" != 0 ]; then
   getent group "$group" >/dev/null || groupadd --gid "$group" shared || :
   name=$(getent group "$group" | cut -d: -f1)
-  if [ -n "$name" ]; then
+  if [ -n "$name" ] && [ "$shared_squashed" = 1 ]; then
+    usermod -g "$name" "$account" || echo "player-account: $shared's group isn't $account's own" >&2
+  elif [ -n "$name" ]; then
     usermod -a -G "$name" "$account" || echo "player-account: $account isn't in $shared's group" >&2
   fi
 fi

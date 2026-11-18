@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::runtime::lab::Target;
 
 use super::status::{AttackStatus, status_of};
-use super::{Cpu, Kind};
+use super::{Cpu, Kind, Shared};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::host::{self, Failed, Host};
@@ -75,7 +75,7 @@ impl Placed {
     pub(crate) async fn add(&self, dirs: &AppDirs, pick: Pick<'_>, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let kind = if self.vm { Kind::Vm { desktop: pick.desktop } } else { Kind::Container { image: pick.image } };
         let shared = self.shared_folder(dirs, log).await?;
-        let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_deref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
+        let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_ref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
             Ok(()) => match self.host.update(dirs, log).await {
@@ -137,8 +137,9 @@ impl Placed {
     /// when it is on (or when the setting or the folder can't be used). Refused when the
     /// hypervisor lacks what it shares the folder through (libvirt's or QEMU's virtiofsd on Linux,
     /// [`crate::runtime::providers::can_share`]): said before the box is added, not as the
-    /// hypervisor's failure once its VM starts.
-    async fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Option<PathBuf>> {
+    /// hypervisor's failure once its VM starts. Squashed where the hypervisor writes it as its
+    /// owner whoever writes ([`squashed`]).
+    async fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Option<Shared>> {
         let folder = match crate::shared_folder::current(dirs) {
             Ok(Some(folder)) => folder,
             Ok(None) => return Ok(None),
@@ -159,11 +160,12 @@ impl Placed {
         } else {
             None
         };
-        if shares_folders(self.local(), self.target, provider.as_deref(), isothrum_runner::this_host()) {
+        let os = isothrum_runner::this_host();
+        if shares_folders(self.local(), self.target, provider.as_deref(), os) {
             if let Some(p) = provider.as_deref().and_then(Provider::from_id) {
                 crate::runtime::providers::can_share(p)?;
             }
-            return Ok(Some(folder));
+            return Ok(Some(Shared { folder, squashed: squashed(provider.as_deref(), os) }));
         }
         let why = match provider.as_deref() {
             _ if !self.local() => "a lab on a server or in a cloud account can't reach a folder of this computer".to_owned(),
@@ -199,6 +201,14 @@ fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: HostO
         Target::Vagrant => provider.and_then(Provider::from_id).is_some_and(|p| p.shares_folders_on(os)),
         _ => false,
     }
+}
+
+/// Whether the shared folder, mounted in a box on `provider` (its hypervisor; none for a
+/// container) here on `os`, is written as its owner whichever account writes
+/// ([`Provider::squashes_folder_writers_on`]: QEMU on Linux). Docker binds the folder, its ids as
+/// they are; the other hypervisors' folders let an account in through the folder's group.
+fn squashed(provider: Option<&str>, os: HostOs) -> bool {
+    provider.and_then(Provider::from_id).is_some_and(|p| p.squashes_folder_writers_on(os))
 }
 
 /// The box's CPU for a lab of `target`, run on this computer (`local`) or not, `arch` being this
@@ -355,6 +365,21 @@ mod tests {
         let shell = box_shell(&dir, Target::Vagrant, isothrum::Deployment::vm(&home, &dir, "t"), true).await;
         assert_eq!(shell.args[..3], ["ssh", NAME, "-c"], "{:?}", shell.args);
         assert!(shell.args[3].contains(&format!("exec sudo -iu {PLAYER}")), "a VM: a sudo login as the account: {:?}", shell.args);
+    }
+
+    /// Regression: on QEMU under Linux the player (uid 1001) couldn't create a file in the shared
+    /// folder ("Operation not permitted"): it joined the folder's group (1000) and wrote through
+    /// it, which vagrant-qemu's unprivileged virtiofsd refuses. There alone the folder is squashed
+    /// (its group is the player's own); every other form shares it as before.
+    #[test]
+    fn the_player_joins_the_shared_folders_group_except_where_qemus_virtiofsd_squashes_every_writer() {
+        assert!(squashed(Some("qemu"), HostOs::Linux), "QEMU's unprivileged virtiofsd");
+        for p in ["virtualbox", "vmware_desktop", "parallels", "utm", "libvirt"] {
+            for os in isothrum_machine::host::ALL_OSES {
+                assert!(!squashed(Some(p), os), "{p} on {os:?}");
+            }
+        }
+        assert!(!squashed(Some("qemu"), HostOs::Macos) && !squashed(None, HostOs::Linux), "QEMU elsewhere; a container (Docker binds it)");
     }
 
     #[test]

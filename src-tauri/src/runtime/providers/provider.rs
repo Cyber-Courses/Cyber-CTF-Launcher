@@ -196,6 +196,17 @@ impl Provider {
         self.row().is_some_and(|row| row.shares_folders.contains(&os))
     }
 
+    /// Whether the folder it shares (on `os`) is written as this computer's user whichever account
+    /// of the VM writes: QEMU on Linux, whose vagrant-qemu runs virtiofsd unprivileged, with every
+    /// guest id squashed to that user (Isoloom's `IsoloomQemu.virtiofs_squash`). Such a virtiofsd
+    /// refuses a write made through a supplementary group (it would have to take that group, which
+    /// only a privileged one can), so an account there writes through its own (primary) group,
+    /// never a supplementary one. Isothrum says nothing of how a provider's folders write, hence its name here:
+    /// libvirt's virtiofsd runs privileged, and the others' folders aren't virtiofs.
+    pub(crate) fn squashes_folder_writers_on(self, os: HostOs) -> bool {
+        self == Provider::Qemu && os == HostOs::Linux
+    }
+
     /// Whether it is offered on `host` for a lab's VMs (isothrum-machine's
     /// [`offered`](isothrum_machine::providers::offered)): applicable there, and, on a Mac, the
     /// hypervisor made for its CPU. One already `installed` is offered wherever it applies: the
