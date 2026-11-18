@@ -96,6 +96,23 @@ async fn a_second_operation_on_a_busy_run_is_refused_by_the_service_and_read_as_
 }
 
 #[tokio::test]
+async fn an_operation_left_by_a_dead_process_holds_no_run_and_a_live_ones_does() {
+    let f = Fixture::new();
+    let _tools = no_tools();
+    f.up().await;
+    let name = RunName::new("cyberctf-web").unwrap();
+    let store = isothrum_runner::store::Store::open(&f.home.runner()).unwrap();
+    // A start a killed service left: begun, never ended, its process gone.
+    let mut gone = isothrum_runner::store::Owner::this_process();
+    gone.pid = u32::MAX;
+    store.write(|tx| tx.begin_operation(&name, Op::Up, &gone, None)).unwrap();
+    assert!(!remote::run_busy(&f.home.runner(), &name).await, "a dead process's start doesn't hold the lab");
+    let me = isothrum_runner::store::Owner::this_process();
+    store.write(|tx| tx.begin_operation(&name, Op::Up, &me, None)).unwrap();
+    assert!(remote::run_busy(&f.home.runner(), &name).await, "a live process's does");
+}
+
+#[tokio::test]
 async fn a_tools_failure_crosses_as_the_services_report_and_reads_through_the_one_mapper() {
     let f = Fixture::new();
     let _tools = no_tools();
