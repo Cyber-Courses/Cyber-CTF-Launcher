@@ -36,6 +36,8 @@ enum Containers {
     Stopped,
     /// Frozen by `compose pause`: there, and listed without `--all`.
     Paused,
+    /// Running, web's health check failing: a lab not up yet.
+    Unhealthy,
 }
 
 /// An installed lab (`<labs>/web`) with its files generated, a runner home, and the fake engine.
@@ -169,7 +171,7 @@ fn listed_state(containers: Containers, all: bool) -> Option<&'static str> {
     match containers {
         Containers::None => None,
         Containers::Stopped if !all => None,
-        Containers::Up => Some("running"),
+        Containers::Up | Containers::Unhealthy => Some("running"),
         Containers::Stopped => Some("exited"),
         Containers::Paused => Some("paused"),
     }
@@ -179,9 +181,12 @@ fn listed_state(containers: Containers, all: bool) -> Option<&'static str> {
 fn ps(containers: Containers, all: bool, host_port: u16) -> String {
     let Some(state) = listed_state(containers, all) else { return String::new() };
     let publisher = format!(r#"{{"URL":"127.0.0.1","PublishedPort":{host_port},"TargetPort":80,"Protocol":"tcp"}}"#);
-    [("web", publisher.as_str()), ("isoloom-probe", "")]
+    let health = if containers == Containers::Unhealthy { "unhealthy" } else { "" };
+    [("web", health, publisher.as_str()), ("isoloom-probe", "", "")]
         .iter()
-        .map(|(service, publishers)| format!(r#"{{"Service":"{service}","State":"{state}","Health":"","ExitCode":0,"Publishers":[{publishers}]}}"#))
+        .map(|(service, health, publishers)| {
+            format!(r#"{{"Service":"{service}","State":"{state}","Health":"{health}","ExitCode":0,"Publishers":[{publishers}]}}"#)
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -260,6 +265,33 @@ async fn the_lab_page_reads_the_runners_status() {
     assert!(s.machines.iter().find(|m| m.name == "isoloom-probe").is_some_and(|m| m.infra), "Isoloom's probe is plumbing");
     assert!(s.machines.iter().all(|m| m.name != "isoloom-check"), "a check runner that never ran isn't listed");
     assert_eq!(s.networks.iter().map(|n| (n.name.as_str(), n.subnet.as_str(), n.internal)).collect::<Vec<_>>(), [("lab", "10.30.0.0/24", false)]);
+}
+
+/// Regression (desktop `kill-runner-service`, on Linux): a start whose runner service was killed
+/// left the run `creating`, its `docker compose up` running on and bringing machines up. The lab's
+/// first status read took the run's record (still `creating`: not failed) before the status read
+/// that settles it failed, and the page said running, with Pause and Shutdown, on a lab half up.
+#[tokio::test]
+async fn a_start_whose_runner_service_died_reads_as_not_running_from_the_first_look() {
+    let f = Fixture::new();
+    let _tools = no_tools();
+    f.up().await;
+    // What the killed start leaves: the run held `creating` by an `up` of a process gone (here, of
+    // another boot), web up but not healthy yet.
+    let mut gone = isothrum_runner::store::Owner::this_process();
+    gone.boot = "a boot before this one".into();
+    let name = isothrum_runner::RunName::new("cyberctf-web").unwrap();
+    isothrum_runner::store::Store::open(&f.home.runner())
+        .unwrap()
+        .write(|tx| {
+            let op = tx.begin_operation(&name, isothrum_runner::Op::Up, &gone, None)?;
+            tx.apply(&name, isothrum_runner::Transition::begin(isothrum_runner::RunState::Ready, isothrum_runner::Op::Up, op.id)?)
+        })
+        .unwrap();
+    f.set(Containers::Unhealthy);
+    let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
+    let s = crate::runtime::status::status(&dirs, &f.home.dir, "web", Runtime::Docker).await.unwrap();
+    assert!(!s.running, "a killed start reads as not running: {s:?}");
 }
 
 #[tokio::test]

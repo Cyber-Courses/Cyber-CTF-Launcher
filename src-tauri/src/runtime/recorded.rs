@@ -71,6 +71,12 @@ impl Recorded {
         self.0.as_ref().and_then(parked)
     }
 
+    /// Whether the run's last operation left it failed: a launch or resume that failed, or one
+    /// a dead process left moving, which the next status read settles so.
+    pub(crate) fn failed(&self) -> bool {
+        self.0.as_ref().is_some_and(|r| r.state == RunState::Failed)
+    }
+
     /// The record itself.
     #[cfg(test)]
     pub(crate) fn record(&self) -> Option<&RunRecord> {

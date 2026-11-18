@@ -13,7 +13,8 @@ use super::{LabStatus, Login, Place, Runtime, attack_box, isothrum, server};
 use crate::error::Result;
 
 /// The status of lab `id`, installed in `dir` and declared `runtime`, wherever it runs and in the
-/// form it was started in.
+/// form it was started in; not running when its last launch or resume failed, whatever machines
+/// it left up ([`LabStatus::unless_launch_failed`]).
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     // Where it runs, in the form it was started in (a container lab run as one VM per machine
     // reads as a VM lab): the runner's view. A cloud-services lab on no account runs nowhere.
@@ -29,7 +30,10 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let status = attack_box::set_apart(status, dir)?;
     // The sign-in each service ships with, as the lab's spec declares it beside the port.
     let status = with_logins(status, dir);
-    // Here, parked = the run is recorded parked and it is still down.
+    // Here, parked = the run is recorded parked and it is still down. Read after the status: its
+    // read is what settles as failed a run that a dead process's start left moving. Read before
+    // it, the record still said `creating`, and a lab whose runner service was killed mid-start
+    // read as running on the machines that start had brought up.
     let recorded = Recorded::of(dirs, id).await?;
     let status = if here { with_parked(status, recorded.parked()) } else { status };
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
@@ -37,7 +41,7 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let per_machine = runtime == Runtime::Docker && recorded.per_machine();
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
     let reap_error = super::reaper::last_failure(dirs, id);
-    Ok(LabStatus { per_machine, reap_error, controls, ..status })
+    Ok(LabStatus { per_machine, reap_error, controls, ..status }.unless_launch_failed(recorded.failed()))
 }
 
 /// `s` with each port's login, read from the lab's spec in `dir` (`login` on a port): matched by
