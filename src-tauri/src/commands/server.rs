@@ -343,11 +343,10 @@ mod tests {
         use isothrum_runner::fake::{FakeProcesses, Reply};
         let t = crate::testing::test_app::TestApp::new();
         // No Vagrant on this computer: no ESXi plugin either. On Windows the check first reads
-        // back the `PATH` installers wrote to the registry: none here.
+        // back the `PATH` installers wrote to the registry: none here. The test's machine has no
+        // OVF Tool either, whatever the computer running the test has: none is asked its version.
         let unread = Reply::fail(1, "ERROR: The system was unable to find the specified registry key or value.");
-        let _tools = crate::runtime::providers::testing::fake(
-            FakeProcesses::script().allow("reg query", unread).allow("ovftool --version", Reply::ok("")).expect("vagrant", Reply::missing()).build(),
-        );
+        let _tools = crate::runtime::providers::testing::fake(FakeProcesses::script().allow("reg query", unread).expect("vagrant", Reply::missing()).build());
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         t.host("esx", "vmware_esxi", serde_json::json!({ "host": "192.0.2.1", "port": 22, "username": "root" }));
         crate::runtime::server::secrets::set_secret("esx", "pw").unwrap();

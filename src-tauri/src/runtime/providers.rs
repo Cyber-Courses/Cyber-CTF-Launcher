@@ -71,6 +71,21 @@ pub(crate) fn machine_cloud() -> isothrum_machine::Context {
     machine()
 }
 
+/// The `PATH` a tool is looked up on by hand (the OVF Tool, which the machine check finds by its
+/// file: [`crate::machine::tools::ovftool::probe`]): this process's. In a test, as [`machine`]'s
+/// host goes: this process's only in a real-lab scenario with no machine of the test's own, else
+/// none, so a unit test never finds a tool the computer running it has.
+pub(crate) fn search_path() -> Option<std::ffi::OsString> {
+    #[cfg(test)]
+    {
+        testing::search_path()
+    }
+    #[cfg(not(test))]
+    {
+        std::env::var_os("PATH")
+    }
+}
+
 /// This machine: its tools, run by the app's processes ([`crate::platform::processes`]), and its
 /// devices.
 fn this_machine() -> isothrum_machine::Context {
@@ -277,6 +292,17 @@ pub(crate) mod testing {
     /// test host.
     pub(crate) fn host_on(os: isothrum_machine::HostOs, arch: isothrum_machine::Arch, packages: Option<isothrum_machine::Packages>) -> isothrum_machine::Host {
         isothrum_machine::Host { os, arch, packages, devices: isothrum_machine::Devices::under(std::path::Path::new("/nonexistent/cyberctf-test-machine")) }
+    }
+
+    /// [`super::search_path`] in a test: this process's `PATH` in a real-lab scenario where the
+    /// test set no machine ([`read_this_machine`]), as [`context`] reads this machine there; else
+    /// none.
+    pub(super) fn search_path() -> Option<std::ffi::OsString> {
+        let set = MACHINE.with(|m| m.borrow().is_some());
+        if set || !THIS_MACHINE.load(Ordering::Relaxed) {
+            return None;
+        }
+        std::env::var_os("PATH")
     }
 
     /// The test's machine, else this one in a real-lab scenario ([`read_this_machine`]), else one
