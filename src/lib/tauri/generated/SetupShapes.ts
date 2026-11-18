@@ -160,7 +160,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
                   "via": "uac"
                 },
                 {
-                  "kind": "licence",
+                  "kind": "vendorAgreement",
+                  "app": "Docker Desktop",
                   "name": "Docker Subscription Service Agreement",
                   "url": "https://www.docker.com/legal/docker-subscription-service-agreement/"
                 }
@@ -417,7 +418,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
                   "via": "uac"
                 },
                 {
-                  "kind": "licence",
+                  "kind": "vendorAgreement",
+                  "app": "Docker Desktop",
                   "name": "Docker Subscription Service Agreement",
                   "url": "https://www.docker.com/legal/docker-subscription-service-agreement/"
                 }
@@ -924,7 +926,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
                   "via": "uac"
                 },
                 {
-                  "kind": "licence",
+                  "kind": "vendorAgreement",
+                  "app": "Docker Desktop",
                   "name": "Docker Subscription Service Agreement",
                   "url": "https://www.docker.com/legal/docker-subscription-service-agreement/"
                 }

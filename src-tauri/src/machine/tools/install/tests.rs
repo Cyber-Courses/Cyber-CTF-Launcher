@@ -191,7 +191,8 @@ fn windows_installs_through_winget_and_wsl_through_its_installer() {
             _ => {
                 let steps = p.unwrap();
                 assert_eq!(steps[0].program, "winget");
-                assert!(steps[0].args.contains(&"--accept-package-agreements".to_string()));
+                // Nothing accepted for the player: no winget agreement flag.
+                assert!(steps[0].args.iter().all(|a| !a.contains("accept")), "{dep:?}: {:?}", steps[0].args);
                 assert!(steps[0].args.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps[0].args);
             }
         }
