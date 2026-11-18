@@ -125,7 +125,7 @@ export function catalogueRowProps(lab: Lab, c: RowContext): ComponentProps<typeo
   const run = c.runs[lab.id];
   const backend = c.operations.get(lab.id);
   // This window's run names the operation until the backend reports it; after a reload, or for a
-  // worker's park or resume, the backend's alone does, as on the lab page.
+  // runner service's park or resume, the backend's alone does, as on the lab page.
   const operation = (run?.busy ? run.op : undefined) ?? backend?.op;
   return {
     lab,

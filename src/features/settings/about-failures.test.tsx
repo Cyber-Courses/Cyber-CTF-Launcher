@@ -110,7 +110,7 @@ describe("AboutSection failures", () => {
     const downloadAndInstall = vi.fn(() => Promise.reject(new Error("signature mismatch")));
     updater.pending = { version: "1.5.0", downloadAndInstall };
     let deploying: () => unknown = () => {
-      rejectWith("worker list unreadable");
+      rejectWith("operations list unreadable");
     };
     installTauri({ busy_labs: () => deploying(), active_operations: () => [] });
     const user = userEvent.setup();
@@ -139,7 +139,7 @@ describe("UpdateBanner failures", () => {
   it("doesn't install while it can't tell whether a lab deploys, and says so", async () => {
     const downloadAndInstall = vi.fn(() => Promise.resolve());
     updater.pending = { version: "9.9.9", downloadAndInstall };
-    installTauri({ busy_labs: rejects({ code: "other", message: "worker list unreadable" }), active_operations: () => [] });
+    installTauri({ busy_labs: rejects({ code: "other", message: "operations list unreadable" }), active_operations: () => [] });
     const user = userEvent.setup();
     await renderBanner();
     await user.click(screen.getByRole("button", { name: "Update" }));

@@ -17,7 +17,7 @@ const NO_LOG: TimedLog = { lines: [], times: [], marks: [] };
  * that (re)attaches to an operation after a reload or an app relaunch, which its own deploy store
  * has no lines of. A failed one ends on its ✗ line, the error's code beside.
  */
-export function useWorkerLog(labId: string, active: boolean): TimedLog & { failureCode: ErrorCode | null; failureOperation: string | null } {
+export function useOperationLog(labId: string, active: boolean): TimedLog & { failureCode: ErrorCode | null; failureOperation: string | null } {
   useEffect(() => {
     if (active) connectRunEvents().catch(ignore("the log shows once the core answers"));
   }, [active]);

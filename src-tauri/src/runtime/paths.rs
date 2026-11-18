@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 
 /// Whether `id` is a lab id: non-empty, at most 64 characters, and only the characters an id is
 /// built from (ASCII letters and digits, `-`, `_`). The one rule for every lab id the launcher
-/// reads: a path segment under the labs folder, a worker's key, a project or VM name's part. It
+/// reads: a path segment under the labs folder, a project or VM name's part. It
 /// keeps `..`, a separator or a stray token (an attack box's `cyberctf-<id>-attack`) out.
 pub(crate) fn is_lab_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')

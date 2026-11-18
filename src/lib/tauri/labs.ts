@@ -190,8 +190,8 @@ export const labRemove = (id: string) => invoke<LabRemoval>("lab_remove", { id }
  *  app or the runner service: what an update install waits for (Rust's `busy_labs`). */
 export const busyLabs = () => invoke<string[]>("busy_labs");
 
-/** Quit by finishing in the background: hides the windows and exits once the in-app deploys
- *  (the fallback when no worker could be started) are done. */
+/** Quit by finishing in the background: hides the windows and exits once the lab operations
+ *  of this process (a stop, a park, a start) are done. */
 export const lingerQuit = () => invokeUnit("linger_quit");
 
 /** Quit the app even though a deploy is in progress (the user confirmed from the warning). */

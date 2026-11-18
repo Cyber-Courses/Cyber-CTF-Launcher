@@ -306,17 +306,17 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
 }
 
 /// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending what the runner service
-/// still runs on it, if any (`end_workers`, handed in by the app shell), and the website's
+/// still runs on it, if any (`end_operations`, handed in by the app shell), and the website's
 /// co-location check of it.
 pub(crate) async fn stop_lab_retiring_colocation(
     dirs: &AppDirs,
     id: &str,
     runtime: Runtime,
-    end_workers: impl Future<Output = ()>,
+    end_operations: impl Future<Output = ()>,
     log: impl FnMut(String),
 ) -> Result<()> {
     let end_first = async {
-        end_workers.await;
+        end_operations.await;
         crate::account::colocation::retire(id);
     };
     runtime::stop_lab(dirs, id, runtime, end_first, log).await
@@ -508,7 +508,7 @@ pub(crate) fn local_id(src: &Path) -> Result<String> {
 /// parked copy cleared first — so the lifecycle commands then drive it like any installed lab.
 async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(String)) -> Result<PathBuf> {
     runtime::validate_id(lab_id)?;
-    // The folder is read again here: the worker that runs this may start well after the import
+    // The folder is read again here: the operation that runs this may start well after the import
     // was asked for (`local_id`), and the folder may have changed since.
     runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
     let slot = Slot::of(dirs, lab_id).await?;
