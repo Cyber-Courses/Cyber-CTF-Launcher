@@ -136,8 +136,10 @@ the machine report, runs the Docker and VM self-tests and starts and stops an ex
 installs real tools as an administrator, so it is not in `tests/integration/run.sh`: a harness
 runs it on a fresh machine from the built test binary, pass after pass (a pass ends at WSL's
 restart or the docker group's new login), and gives its knobs (`CYBERCTF_TEST_SETUP_PATHS`,
-`_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`, `_CHECK_ONLY`; the test's module documentation says
-each). Without them it returns at once.
+`_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`, `_CHECK_ONLY`, `_RESTART_EXIT`; the test's module
+documentation says each). Without them it returns at once. With `_RESTART_EXIT` (the products'
+workspace gives `75`), a pass that ends for a restart or a new login exits with that code once its
+records are written: the harness's cue to restart the machine and run the next pass.
 
 With `CYBERCTF_TEST_SETUP_CHECK_ONLY=1` it is safe on any machine, a developer's included: it runs
 the machine check and the plan exactly as the app does and writes the same report and records,

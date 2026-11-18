@@ -19,7 +19,10 @@
 //!   (tests/README.md, "Results"; [`support::results`](super::support::results));
 //! - `CYBERCTF_TEST_SETUP_REPORT`: the same items as `@@setup` lines, the report's format before
 //!   the records, while the test rig reads it (remove once it reads the records);
-//! - `CYBERCTF_TEST_SETUP_CHECK_ONLY`: `1` checks only, see below.
+//! - `CYBERCTF_TEST_SETUP_CHECK_ONLY`: `1` checks only, see below;
+//! - `CYBERCTF_TEST_SETUP_RESTART_EXIT`: the exit code a pass that ends for a restart or a new
+//!   login exits with, once its records are written (the products' workspace gives `75`, restarts
+//!   its test VM on it and runs the test again); without it, such a pass passes.
 //!
 //! Check-only (`CYBERCTF_TEST_SETUP_CHECK_ONLY=1`), safe on any machine: the machine check and the
 //! plan run exactly as the app runs them, and the report, the records and the `@@setup` lines are
@@ -79,6 +82,9 @@ struct Knobs {
     lab: Option<PathBuf>,
     /// Detect and plan only (`CYBERCTF_TEST_SETUP_CHECK_ONLY=1`): nothing is run.
     check_only: bool,
+    /// The exit code of a pass that ends for a restart or a new login
+    /// (`CYBERCTF_TEST_SETUP_RESTART_EXIT`), its caller's cue to restart and run it again.
+    restart_exit: Option<i32>,
 }
 
 impl Knobs {
@@ -105,6 +111,8 @@ impl Knobs {
             logs: PathBuf::from(var("CYBERCTF_TEST_SETUP_LOGS")?),
             lab: var("CYBERCTF_TEST_SETUP_LAB").map(PathBuf::from),
             check_only: var("CYBERCTF_TEST_SETUP_CHECK_ONLY").is_some_and(|v| v.trim() == "1"),
+            restart_exit: var("CYBERCTF_TEST_SETUP_RESTART_EXIT")
+                .map(|v| v.trim().parse().unwrap_or_else(|_| panic!("CYBERCTF_TEST_SETUP_RESTART_EXIT: `{v}` is not an exit code"))),
         })
     }
 }
@@ -534,6 +542,20 @@ fn report_hypervisors(out: &mut Out, first: &Plan, wanted: &Wanted) {
     }
 }
 
+/// The pass ends at `end`, a restart or a new login, which the next pass picks up after: said,
+/// with the report as it stands (`after`); a pass that failed fails here, else it exits with the
+/// knobs' restart code when there is one, its caller's cue to restart.
+fn pass_ends(out: &mut Out, knobs: &Knobs, end: &Step, after: &SystemReport) {
+    let relogin = matches!(end.action, Action::Relogin);
+    out.line(&end.item, Status::Again, 0, if relogin { "relogin" } else { "reboot" });
+    out.save_report("report-after", after);
+    assert!(out.failed.is_empty(), "the setup failed:\n{}", out.failed.join("\n"));
+    if let Some(code) = knobs.restart_exit {
+        println!("the pass ends for a {}: exiting {code}", if relogin { "new login" } else { "restart" });
+        std::process::exit(code);
+    }
+}
+
 #[tokio::test]
 #[ignore = "installs real tools on this machine, as an administrator: the test rig's bare guests only, or CYBERCTF_TEST_SETUP_CHECK_ONLY=1 (CYBERCTF_TEST_SETUP_*)"]
 async fn the_guided_setup_readies_this_machine() {
@@ -561,10 +583,7 @@ async fn the_guided_setup_readies_this_machine() {
 
     let (ends, after, acted) = act(&dirs, &mut out, &wanted, before).await;
     if let Some(end) = ends {
-        // A restart or a new login: the next pass picks up there.
-        out.line(&end.item, Status::Again, 0, if matches!(end.action, Action::Relogin) { "relogin" } else { "reboot" });
-        out.save_report("report-after", &after);
-        assert!(out.failed.is_empty(), "the setup failed:\n{}", out.failed.join("\n"));
+        pass_ends(&mut out, &knobs, &end, &after);
         return;
     }
     for item in items.iter().filter(|i| !acted.contains(i)) {
@@ -612,7 +631,15 @@ mod tests {
 
     #[test]
     fn an_items_record_says_its_status_and_the_pass_hypervisor() {
-        let knobs = Knobs { wanted: Wanted::default(), results: None, report: None, logs: PathBuf::from("setup-logs"), lab: None, check_only: false };
+        let knobs = Knobs {
+            wanted: Wanted::default(),
+            results: None,
+            report: None,
+            logs: PathBuf::from("setup-logs"),
+            lab: None,
+            check_only: false,
+            restart_exit: None,
+        };
         let mut out = Out::new(&knobs);
         out.hypervisor = "libvirt".into();
         let r = out.record("docker", Status::Installed, 42, "Docker installed");
@@ -681,6 +708,7 @@ mod tests {
             logs: dir.clone(),
             lab: Some(PathBuf::from("examples").join("hello-stack")),
             check_only: true,
+            restart_exit: None,
         };
         // Every tool, installer and command runner answers from here, and says it was called.
         let tools = crate::runtime::providers::testing::fake(isothrum_runner::fake::FakeProcesses::model(|_| isothrum_runner::fake::Reply::missing()));
