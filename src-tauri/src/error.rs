@@ -107,8 +107,9 @@ pub enum Code {
         host: String,
     },
     /// A container lab's start needs values its launch didn't give: its inputs `names`
-    /// (comma-separated) have no default, and its Compose file reads them as secrets, which
-    /// Docker won't create a container without. Refused before anything starts.
+    /// (comma-separated) have no default, which every lab input should declare, and its Compose
+    /// file reads them as secrets, which Docker won't create a container without. Refused before
+    /// anything starts.
     InputsMissing {
         /// The inputs' names, comma-separated.
         names: String,

@@ -395,7 +395,7 @@ fn an_instance_at_the_maximum_still_generates_and_resolves() {
 }
 
 /// A container start's inputs it can't go without: the declared inputs its Compose file reads as
-/// secrets that the launch didn't give, or gave empty; never a secret of the lab's own
+/// secrets that the launch didn't give (an empty value is given); never a secret of the lab's own
 /// (`ISOLOOM_SECRET_…`, from its stores) nor an input with a default (Isoloom makes it no secret).
 #[test]
 fn a_container_start_needs_the_inputs_its_compose_file_reads_as_secrets() {
@@ -405,9 +405,9 @@ fn a_container_start_needs_the_inputs_its_compose_file_reads_as_secrets() {
     .expect("a spec");
     let compose = "services: {}\nsecrets:\n  input-ctf-flag-main: { environment: CTF_FLAG_MAIN }\n  db-password: { environment: ISOLOOM_SECRET_DB_PASSWORD }\n";
     let given = |pairs: &[(&str, &str)]| pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect::<Vec<_>>();
-    assert_eq!(super::inputs_compose_needs(compose, &spec, &[]), ["CTF_FLAG_MAIN"]);
-    assert_eq!(super::inputs_compose_needs(compose, &spec, &given(&[("CTF_FLAG_MAIN", "")])), ["CTF_FLAG_MAIN"], "an empty value is none");
     let none: [&str; 0] = [];
+    assert_eq!(super::inputs_compose_needs(compose, &spec, &[]), ["CTF_FLAG_MAIN"]);
+    assert_eq!(super::inputs_compose_needs(compose, &spec, &given(&[("CTF_FLAG_MAIN", "")])), none, "an empty value is given");
     assert_eq!(super::inputs_compose_needs(compose, &spec, &given(&[("CTF_FLAG_MAIN", "flag{x}")])), none);
     assert_eq!(super::inputs_compose_needs("services: {}\n", &spec, &[]), none, "no secrets, nothing needed");
 }
