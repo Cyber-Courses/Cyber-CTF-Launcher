@@ -647,12 +647,19 @@ mod tests {
 
     #[tokio::test]
     async fn the_attack_box_sign_in_is_the_kept_password_of_the_box_and_none_without_one() {
-        use crate::runtime::attack_box::{self, Cpu, Kind, PLAYER};
+        use crate::runtime::attack_box::{self, Cpu, Inside, Kind, PLAYER};
         let t = TestApp::new();
         let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
         let sign_in = || attack_box_sign_in(t.handle().clone(), "web".into());
         assert_eq!(sign_in().await.unwrap(), None, "no box");
-        attack_box::add(&dir, &attack_box::test_scripts(), Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
+        attack_box::add(
+            &dir,
+            Kind::Container { image: "kalilinux/kali-rolling" },
+            Cpu::Lab,
+            None,
+            Inside { scripts: &attack_box::test_scripts(), shared: None },
+        )
+        .unwrap();
         let got = sign_in().await.unwrap().expect("the box's sign-in");
         assert_eq!(got.user, PLAYER);
         assert_eq!(got.password.len(), 23);

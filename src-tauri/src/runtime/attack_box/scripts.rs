@@ -4,6 +4,7 @@
 //! in the box), then read from the app's cache. The launcher keeps no copy of them.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
@@ -16,9 +17,11 @@ use crate::platform::AppDirs;
 pub(super) const PIN: &str = include_str!("../../../attack-box.json");
 
 /// Where the scripts are read from: the repository's files at a commit.
+#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 const REPOSITORY: &str = "https://raw.githubusercontent.com/CyberCTF/attack-box";
 
 /// The largest script downloaded.
+#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 const MAX_SCRIPT: u64 = 1024 * 1024;
 
 /// The scripts the box's set-up is made of, as the attack box repository's README orders them.
@@ -40,12 +43,15 @@ struct Pin {
     files: BTreeMap<String, String>,
 }
 
+#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 fn pin() -> Result<Pin> {
     serde_json::from_str(PIN).map_err(|e| Error::Invalid(format!("the attack box's pin (attack-box.json) doesn't read: {e}")))
 }
 
 /// The scripts at the pinned commit: from the cache (`<cache>/attack-box/<sha256>`) when there,
-/// else downloaded, checked and kept there. `log` says when a download starts.
+/// else downloaded, checked and kept there. `log` says when a download starts. The launcher's unit
+/// tests download nothing: they get [`for_tests`].
+#[cfg(not(test))]
 pub(crate) async fn fetch(dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Scripts> {
     let pin = pin()?;
     let cache = dirs.cache()?.join("attack-box");
@@ -70,6 +76,14 @@ pub(crate) async fn fetch(dirs: &AppDirs, log: &mut impl FnMut(String)) -> Resul
     })
 }
 
+/// [`for_tests`], in the launcher's unit tests.
+#[cfg(test)]
+#[allow(clippy::unused_async, reason = "the same call as the app's, which downloads")]
+pub(crate) async fn fetch(_dirs: &AppDirs, _log: &mut impl FnMut(String)) -> Result<Scripts> {
+    Ok(for_tests())
+}
+
+#[cfg_attr(test, allow(dead_code, reason = "the app's download path; its parts are tested below"))]
 fn short(commit: &str) -> &str {
     commit.get(..12).unwrap_or(commit)
 }
@@ -89,6 +103,7 @@ fn keep(cache: &Path, want: &str, bytes: &[u8]) {
     }
 }
 
+#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 async fn download(url: &str) -> Result<Vec<u8>> {
     let res = crate::platform::http::download_client()?.get(url).send().await.map_err(|e| Error::Invalid(e.to_string()))?;
     let res = res.error_for_status().map_err(|e| Error::Invalid(e.to_string()))?;
@@ -107,7 +122,10 @@ fn checked(name: &str, bytes: &[u8], want: &str) -> Result<String> {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
 }
 
 /// Scripts for the launcher's own tests: what each part of the box's set-up is, by its name,

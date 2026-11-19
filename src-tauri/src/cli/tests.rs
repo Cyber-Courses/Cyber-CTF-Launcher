@@ -110,11 +110,12 @@ async fn the_installed_labs_are_listed_with_how_each_runs() {
 
 #[tokio::test]
 async fn a_labs_details_mask_its_passwords_unless_asked() {
-    use crate::runtime::attack_box::{self, Cpu, Kind};
+    use crate::runtime::attack_box::{self, Cpu, Inside, Kind};
     let t = TestApp::new();
     let _tools = no_tools();
     let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
-    attack_box::add(&dir, &attack_box::test_scripts(), Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
+    attack_box::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &attack_box::test_scripts(), shared: None })
+        .unwrap();
     let password = crate::commands::labs::sign_in_in(&t.dirs(), "web").unwrap().unwrap().password;
     let ran = cyberctf(&t, &["labs", "show", "web", "--json"]).await;
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.text);

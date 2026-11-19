@@ -257,6 +257,16 @@ pub(crate) struct Networks {
     pub(crate) default: String,
 }
 
+/// What goes inside the box: its set-up's scripts (the attack box repository's, [`Scripts`]) and
+/// the learner's shared folder, when one is on.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Inside<'a> {
+    /// The set-up's scripts.
+    pub(crate) scripts: &'a Scripts,
+    /// The shared folder, mounted in the box.
+    pub(crate) shared: Option<&'a Shared>,
+}
+
 /// [`Networks`] for the box in the lab in `dir`, as [`add`] places it.
 pub(crate) fn networks(dir: &Path) -> Result<Networks> {
     let spec = lab::load(dir)?;
@@ -270,10 +280,12 @@ pub(crate) fn networks(dir: &Path) -> Result<Networks> {
     Ok(Networks { pickable, default })
 }
 
-/// Adds the box to the lab in `dir` as `kind`, its set-up made of `scripts`, at its seat ([`seat`]; `network` is the player's
+/// Adds the box to the lab in `dir` as `kind`, with what goes inside it (`inside`: its set-up's
+/// scripts and the learner's shared folder), at its seat ([`seat`]; `network` is the player's
 /// pick when the lab declares none), with a new password for its player account ([`mod@sign_in`]):
 /// kept by the launcher, its hash placed in the box for its set-up.
-pub(crate) fn add(dir: &Path, scripts: &Scripts, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Shared>) -> Result<()> {
+pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, inside: Inside<'_>) -> Result<()> {
+    let Inside { scripts, shared } = inside;
     let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
     let networks = networks.iter().map(|(n, o)| format!("{}: {o}", yaml_string(n))).collect::<Vec<_>>().join(", ");
     let hardware = match cpu {

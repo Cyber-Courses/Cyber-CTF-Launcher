@@ -7,7 +7,7 @@ fn shared(folder: &Path) -> Shared {
 
 /// [`add`] with no shared folder.
 fn add_at(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -> Result<()> {
-    add(dir, &test_scripts(), kind, cpu, network, None)
+    add(dir, kind, cpu, network, Inside { scripts: &test_scripts(), shared: None })
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn on_an_arm_computer_the_box_runs_natively_a_debian_vm_made_kali() {
     let attackbox = &spec.machines[NAME];
     assert_eq!(attackbox.os.as_deref(), Some("debian@12"));
     assert_eq!(attackbox.arch, crate::runtime::lab::Arch::Arm64);
-    assert!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap().contains("kali-archive-keyring"));
+    assert!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap().contains(&test_scripts().kali), "made Kali first");
     remove(&dir).unwrap();
 }
 
@@ -257,7 +257,7 @@ fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
     let dir = web_lab();
     let folder = Path::new("/Users/someone/CyberCTF/shared");
     for kind in [Kind::Container { image: "kalilinux/kali-rolling" }, Kind::Vm { desktop: false }] {
-        add(&dir, kind, Cpu::Lab, None, Some(&shared(folder))).unwrap();
+        add(&dir, kind, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(folder)) }).unwrap();
         let spec = lab::load(&dir).unwrap();
         let mounted: Vec<(&str, &str)> = spec.machines[NAME].host_folders.iter().map(|h| (h.from.as_str(), h.path.as_str())).collect();
         assert_eq!(mounted, [("/Users/someone/CyberCTF/shared", crate::shared_folder::MOUNT_POINT)], "{kind:?}");
@@ -273,7 +273,8 @@ fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
 fn the_shared_folder_is_mounted_read_write_both_ways() {
     let dir = web_lab();
     let folder = crate::testing::temp_dir("attack-box-shared");
-    add(&dir, &test_scripts(), Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&shared(&folder))).unwrap();
+    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)) })
+        .unwrap();
     let spec = lab::load(&dir).unwrap();
     assert!(spec.machines[NAME].host_folders.iter().all(|h| !h.read_only), "the spec asks it read-write");
     lab::prepare(&dir, lab::Target::Docker).unwrap();
@@ -305,7 +306,8 @@ fn a_shared_folder_with_a_combining_mark_in_its_name_is_mounted() {
     let dir = web_lab();
     for name in ["Cafe\u{301}", "quote\"and\\backslash", "tab\there"] {
         let folder = Path::new("/Users/someone").join(name);
-        add(&dir, &test_scripts(), Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&shared(&folder))).unwrap();
+        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)) })
+            .unwrap();
         let spec = lab::load(&dir).unwrap();
         assert_eq!(spec.machines[NAME].host_folders[0].from, folder.display().to_string(), "{name:?}");
         remove(&dir).unwrap();
@@ -337,14 +339,14 @@ fn a_vm_box_says_its_shared_folder_is_squashed_where_it_is_and_a_container_never
     let dir = web_lab();
     for squashed in [false, true] {
         let folder = Shared { folder: Path::new("/home/someone/CyberCTF/shared").to_path_buf(), squashed };
-        add(&dir, &test_scripts(), Kind::Vm { desktop: false }, Cpu::Lab, None, Some(&folder)).unwrap();
+        add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder) }).unwrap();
         let script = std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap();
         assert!(script.contains(&account(if squashed { " shared_squashed=1" } else { "" })), "{squashed}: {script}");
         assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
         remove(&dir).unwrap();
     }
     let folder = Shared { folder: Path::new("/home/someone/CyberCTF/shared").to_path_buf(), squashed: false };
-    add(&dir, &test_scripts(), Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&folder)).unwrap();
+    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder) }).unwrap();
     let command = layer_machine(&dir)["command"].as_str().unwrap().to_owned();
     assert!(command.contains(&account("")) && !command.contains(" shared_squashed=1"), "Docker binds it as it is: {command}");
     remove(&dir).unwrap();

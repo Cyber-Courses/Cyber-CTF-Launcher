@@ -139,6 +139,7 @@ const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
     ("app.rs", "serde_json::from_str(json)", "the webview's stored settings"),
     ("platform/policy.rs", "serde_json::from_str::<serde_json::Value>(text)", "the administrator's policy file"),
     ("runtime/attack_box.rs", "serde_json::from_str::<File>(IMAGE_FILE)", "the bundled attack box image file"),
+    ("runtime/attack_box/scripts.rs", "serde_json::from_str(PIN)", "the bundled attack box pin (attack-box.json)"),
     ("runtime/server/secrets.rs", "serde_json::from_str(&raw)", "the app's own secrets file"),
     ("runtime/launch_values.rs", "serde_json::from_str(&raw)", "the values a run was launched with, as the app kept them"),
     ("app/updates.rs", "serde_json::from_str::<serde_json::Value>(receipt)", "the installer's receipt file"),
