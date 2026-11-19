@@ -1624,7 +1624,7 @@ areas:
           unit:
             - src-tauri/src/runtime/attack_box/tests.rs > the_box_is_a_kali_machine_on_the_first_machines_network_at_a_free_address
             - src-tauri/src/runtime/attack_box/tests.rs > a_vm_box_makes_the_player_account_once_its_toolset_is_in
-            - src-tauri/src/runtime/attack_box/tests.rs > kalis_archive_keys_are_checked_before_apt_trusts_them
+            - src-tauri/src/runtime/attack_box/scripts.rs > a_script_is_kept_only_when_its_sha256_is_the_pinned_one
             - src-tauri/src/runtime/attack_box/tests.rs > on_an_arm_computer_the_box_runs_natively_a_debian_vm_made_kali
             - src/features/labs/attack-box.test.tsx > offers to start the attack VM beside a VM lab on any hypervisor, QEMU included
             - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > opens the attack VM
@@ -1763,7 +1763,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/attack_box/tests.rs > a_desktop_box_gets_xfce_and_the_player_signed_in_after_its_account
-            - src-tauri/src/runtime/attack_box/tests.rs > a_desktop_box_never_locks_its_screen
             - src/features/settings/attack-desktop.test.tsx
             - src/features/labs/attack-box.test.tsx > gives a VM box Kali
           desktop:

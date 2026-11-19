@@ -11,12 +11,16 @@
 //! run: [`locate`], [`place::Placed`]; the box as the lab page shows it: [`AttackStatus`].
 
 mod place;
+mod scripts;
 mod sign_in;
 mod status;
 
 #[cfg(test)]
 pub(crate) use place::Placed;
 pub(crate) use place::{Pick, locate, reachable};
+pub(crate) use scripts::Scripts;
+#[cfg(test)]
+pub(crate) use scripts::for_tests as test_scripts;
 pub use sign_in::SignIn;
 pub(crate) use status::AttackStatus;
 
@@ -32,20 +36,16 @@ pub(crate) const NAME: &str = "attackbox";
 
 /// The account the player works as in the box, whatever its form: its shell opens as it, in its
 /// home, with sudo that asks no password, and a password of its box's own ([`mod@sign_in`]) where
-/// something else asks (the screen locker, a login, `su`, SSH). The box makes it
-/// ([`PLAYER_ACCOUNT`]); the attack box image has it already, under this name (the attack box
-/// repository's contract, which its smoke test checks), without a password.
+/// something else asks (the screen locker, a login, `su`, SSH). The box makes it with the attack
+/// box repository's `player-account.sh` ([`Scripts::player_account`]); the attack box image has it
+/// already, under this name (that repository's contract, which its smoke test checks), without a
+/// password.
 pub(crate) const PLAYER: &str = "player";
-
-/// The script that makes [`PLAYER`] in the box, as root, where it is missing, lets it write in
-/// the shared folder and gives it its password: the image's build runs it, and the launcher where
-/// the box starts or is set up ([`player_account`]).
-const PLAYER_ACCOUNT: &str = include_str!("../../attack-box/player-account.sh");
 
 /// The learner's shared folder as the box gets it: the folder of this computer, and whether its
 /// mount writes as the folder's owner whichever account of the box writes
 /// ([`Provider::squashes_folder_writers_on`](crate::runtime::providers::Provider::squashes_folder_writers_on)),
-/// where the folder's group is [`PLAYER`]'s own rather than one it joins ([`PLAYER_ACCOUNT`]'s
+/// where the folder's group is [`PLAYER`]'s own rather than one it joins (`player-account.sh`'s
 /// `shared_squashed`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Shared {
@@ -55,13 +55,13 @@ pub(crate) struct Shared {
     pub(crate) squashed: bool,
 }
 
-/// [`PLAYER_ACCOUNT`] for [`PLAYER`], with the shared folder at its mount point (`squashed`:
+/// `player-account.sh` ([`Scripts::player_account`]) for [`PLAYER`], with the shared folder at its mount point (`squashed`:
 /// written as its owner whoever writes, [`Shared::squashed`]) and its password's hash in the
 /// box's root-only file ([`sign_in::HASH_FILE`], which the box's spec places): one `sh -c`
 /// command, the script's comments and blank lines left out. The command names the file, never
 /// the password nor its hash: the script hands the hash to `chpasswd` on its standard input.
-fn player_account(squashed: bool) -> String {
-    let script: Vec<&str> = PLAYER_ACCOUNT.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).collect();
+fn player_account(scripts: &Scripts, squashed: bool) -> String {
+    let script: Vec<&str> = scripts.player_account.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).collect();
     format!(
         "account={PLAYER} shared={}{} password_hash={} sh -c {}",
         crate::shared_folder::MOUNT_POINT,
@@ -75,14 +75,14 @@ fn player_account(squashed: bool) -> String {
 /// one whose shared folder's owner differs from the image's takes its uid), then idle. A box whose
 /// account can't be made still starts: its shell then says why it can't open. Docker binds the
 /// folder, its ids as they are: never squashed.
-fn container_command() -> String {
-    format!("{} || echo 'the {PLAYER} account could not be made' >&2; exec sleep infinity", player_account(false))
+fn container_command(scripts: &Scripts) -> String {
+    format!("{} || echo 'the {PLAYER} account could not be made' >&2; exec sleep infinity", player_account(scripts, false))
 }
 
 /// The default attack image, shared with the frontend's Settings (`src/lib/settings.ts`): the
-/// Cyber CTF image, pinned by its digest in `attack-box/image.json`, which the attack box
-/// repository's publish updates (a pull request with its files) once the image passed its smoke test.
-const IMAGE_FILE: &str = include_str!("../../attack-box/image.json");
+/// Cyber CTF image, pinned by its digest in `attack-box.json`, which the attack box repository's
+/// publish updates (a pull request) once the image passed its smoke test.
+const IMAGE_FILE: &str = scripts::PIN;
 
 /// The attack image a container box runs when the learner picked none: [`IMAGE_FILE`]'s `image`
 /// (its repository unpinned, should the file not read: a test keeps it readable).
@@ -116,16 +116,17 @@ pub(crate) fn earlier_default_images() -> &'static [String] {
 /// Its set-up, a file of the lab's project (the project is what a machine gets): Kali's headless
 /// toolset, what the launcher's attack box image installs, unattended. A Debian VM (where Kali
 /// has no image for the computer's CPU) is made Kali first: Kali's archive in place of Debian's,
-/// its signing keys checked against Kali's archive keys ([`KALI`]) before apt trusts them, pinned over
+/// its signing keys checked against Kali's archive keys ([`Scripts::kali`]) before apt trusts them, pinned over
 /// what Debian installed, keeping its own kernel (Kali's doesn't fit the image's boot partition).
 const SETUP_FILE: &str = "cyberctf-attackbox.sh";
 
-/// The set-up script, from the attack box repository's pinned parts (`attack-box/vm/`, its
-/// README says the order): [`KALI`], then Kali's toolset ([`TOOLSET`]) unless a test run switched
-/// it off ([`toolset_wanted`]), then the player's account ([`player_account`]), then the desktop
-/// ([`DESKTOP`]) when it has one. `squashed`: the shared folder's [`Shared::squashed`].
-fn setup_script(desktop: bool, squashed: bool) -> String {
-    setup_script_with(desktop, toolset_wanted(), squashed)
+/// The set-up script, from the attack box repository's pinned parts ([`Scripts`], its README says
+/// the order): Kali ([`Scripts::kali`]), then Kali's toolset ([`Scripts::toolset`]) unless a test
+/// run switched it off ([`toolset_wanted`]), then the player's account ([`player_account`]), then
+/// the desktop ([`Scripts::desktop`]) when it has one. `squashed`: the shared folder's
+/// [`Shared::squashed`].
+fn setup_script(scripts: &Scripts, desktop: bool, squashed: bool) -> String {
+    setup_script_with(scripts, desktop, toolset_wanted(), squashed)
 }
 
 /// The variable a test run (the integration runner's attack-box-vm scenarios) sets to `1` to make
@@ -156,33 +157,14 @@ fn toolset_wanted_given(skip: Option<&str>) -> bool {
 }
 
 /// [`setup_script`] with Kali's toolset installed or not (`toolset`).
-fn setup_script_with(desktop: bool, toolset: bool, squashed: bool) -> String {
-    let toolset = if toolset { TOOLSET } else { "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n" };
-    [KALI, toolset, &player_account(squashed), "\n", if desktop { DESKTOP } else { "" }].concat()
+fn setup_script_with(scripts: &Scripts, desktop: bool, toolset: bool, squashed: bool) -> String {
+    let toolset = if toolset { scripts.toolset.as_str() } else { "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n" };
+    [scripts.kali.as_str(), toolset, &player_account(scripts, squashed), "\n", if desktop { scripts.desktop.as_str() } else { "" }].concat()
 }
-
-/// The set-up on a Debian VM: Kali's archive keyring, checked against Kali's archive keys before
-/// apt trusts it, Kali's archive in place of Debian's, the VM's own kernel kept. It defines
-/// `$keep`, which the parts after it use.
-const KALI: &str = include_str!("../../attack-box/vm/kali.sh");
-
-/// Kali's headless toolset, installed only on a box that lacks it: the toolset is the box image's,
-/// installed and upgraded once when the image is built, so a box that has it takes nothing of
-/// Kali's rolling archive when it is created.
-const TOOLSET: &str = include_str!("../../attack-box/vm/toolset.sh");
 
 /// Its disk: room for Kali's headless toolset (about 12 GB) beside the image, and for the desktop
 /// (about 3 GB more) when it has one.
 const DISK_GB: u32 = 40;
-
-/// What a box with a desktop adds to its set-up, once the player's account is in: Kali's XFCE
-/// desktop (about 1 GB to download, 3 GB on its disk) and `LightDM` signing [`PLAYER`] in, so its
-/// screen (the lab page's Screen) shows the player's desktop; and no screen lock: neither of
-/// Kali's lockers starts for the player, and the session never blanks the screen nor locks it
-/// (idle, on suspend, on a switch of user), so the player isn't locked out mid-exercise. The
-/// account, its sudo rules and its password stay as [`PLAYER_ACCOUNT`] makes them: `LightDM`'s login
-/// after a logout takes that password, as would a locker started by hand.
-const DESKTOP: &str = include_str!("../../attack-box/vm/desktop.sh");
 
 /// The memory (MB) and CPUs a box with a desktop gets: XFCE beside Kali's tools wants more than a
 /// VM's default.
@@ -288,10 +270,10 @@ pub(crate) fn networks(dir: &Path) -> Result<Networks> {
     Ok(Networks { pickable, default })
 }
 
-/// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
+/// Adds the box to the lab in `dir` as `kind`, its set-up made of `scripts`, at its seat ([`seat`]; `network` is the player's
 /// pick when the lab declares none), with a new password for its player account ([`mod@sign_in`]):
 /// kept by the launcher, its hash placed in the box for its set-up.
-pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Shared>) -> Result<()> {
+pub(crate) fn add(dir: &Path, scripts: &Scripts, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Shared>) -> Result<()> {
     let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
     let networks = networks.iter().map(|(n, o)| format!("{}: {o}", yaml_string(n))).collect::<Vec<_>>().join(", ");
     let hardware = match cpu {
@@ -313,7 +295,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
             format!("{{ {hardware}{shared}app: {{ image: {} }}, networks: {{ {networks} }} }}", yaml_string(image))
         }
         (Kind::Vm { desktop }, cpu) => {
-            std::fs::write(dir.join(SETUP_FILE), setup_script(desktop, squashed))?;
+            std::fs::write(dir.join(SETUP_FILE), setup_script(scripts, desktop, squashed))?;
             let os = if cpu == Cpu::Arm { "debian@12" } else { "kali@rolling" };
             let size = if desktop { format!(", memory_mb: {}, cpus: {}", DESKTOP_SIZE.0, DESKTOP_SIZE.1) } else { String::new() };
             format!(
@@ -323,7 +305,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
     };
     let mut machine = serde_yaml_ng::from_str::<Value>(&machine).map_err(|e| Error::Invalid(format!("the attack box's spec: {e}")))?;
     if let (Kind::Container { .. }, Value::Mapping(m)) = (kind, &mut machine) {
-        m.insert("command".into(), container_command().into());
+        m.insert("command".into(), container_command(scripts).into());
     }
     if let Value::Mapping(m) = &mut machine {
         m.insert("files".into(), Value::Sequence(vec![sign_in::hash_file(&sign_in::new(dir)?)]));
