@@ -8,8 +8,8 @@ use super::check;
 use crate::platform::AppDirs;
 use crate::runtime::attack_box::{self, Placed};
 
-/// `probe` run in the box, through the console the lab page opens, without a terminal. A console
-/// of a shape this doesn't know is an error.
+/// `probe` run in the box, through the console the lab page opens, without a terminal, its output
+/// [`without_terminal_marks`]. A console of a shape this doesn't know is an error.
 pub(crate) async fn in_box(console: &ShellCommand, probe: &str) -> crate::error::Result<String> {
     let args = probe_args(console, probe).ok_or_else(|| crate::error::Error::Invalid(format!("an unexpected console: {console:?}")))?;
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -18,7 +18,24 @@ pub(crate) async fn in_box(console: &ShellCommand, probe: &str) -> crate::error:
         "ssh" => "ssh",
         _ => "vagrant",
     };
-    crate::platform::exec::run_env_timed(program, &args, Some(console.cwd.as_path()), &console.env, std::time::Duration::from_secs(120)).await
+    let out = crate::platform::exec::run_env_timed(program, &args, Some(console.cwd.as_path()), &console.env, std::time::Duration::from_secs(120)).await?;
+    Ok(without_terminal_marks(&out))
+}
+
+/// `text` without the terminal's operating system commands (`ESC ] … BEL` or `ESC ] … ESC \`),
+/// which a terminal shows nothing of: systemd marks a `sudo` session with them (OSC 3008, its
+/// start and end) on Kali, terminal or not, around the probe's own lines.
+pub(crate) fn without_terminal_marks(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("\u{1b}]") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let end = [after.find('\u{7}').map(|i| i + 1), after.find("\u{1b}\\").map(|i| i + 2)].into_iter().flatten().min();
+        rest = end.map_or("", |end| &after[end..]);
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `console`'s arguments running `probe` without a terminal, as the account the console opens as;
@@ -143,7 +160,7 @@ async fn in_box_with_input(console: &ShellCommand, probe: &str, input: &str) -> 
     let out = tokio::time::timeout(std::time::Duration::from_secs(120), child.wait_with_output())
         .await
         .map_err(|_| crate::error::Error::Invalid("the probe took over 2 minutes".into()))??;
-    Ok(format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+    Ok(without_terminal_marks(&format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))))
 }
 
 /// What checks the password in the box: `su` to the player's account, in a terminal of its own
@@ -215,6 +232,17 @@ mod tests {
 
     /// A probe runs as the account the box's console opens as: the console's own switch to it is
     /// kept (`exec --user`, the `sudo -i` login), only the shell it opens is the probe.
+    /// Regression: on Windows' Hyper-V the attack box reached web:80 and was called attackbox, but
+    /// systemd's marks of the probe's `sudo` session hid the `reach-ok` line from the test.
+    #[test]
+    fn a_probes_output_is_read_without_the_terminals_marks() {
+        let marked = "\u{1b}]3008;start=4ef4;user=vagrant;comm=sudo;type=session\u{1b}\\reach-ok\nattackbox\n\u{1b}]3008;end=4ef4\u{1b}\\";
+        assert_eq!(without_terminal_marks(marked), "reach-ok\nattackbox\n");
+        assert_eq!(without_terminal_marks("\u{1b}]0;title\u{7}player\n"), "player\n", "ended by BEL too");
+        assert_eq!(without_terminal_marks("plain\n"), "plain\n");
+        assert_eq!(without_terminal_marks("cut \u{1b}]3008;start"), "cut ", "an unended mark is dropped");
+    }
+
     #[test]
     fn a_probe_runs_as_the_account_the_console_opens_as() {
         let login = "if [ $(id -un) = player ]; then if command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi; else exec sudo -iu player; fi";
