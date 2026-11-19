@@ -250,7 +250,6 @@ fn invoice_portal(env: &'static [(&'static str, &'static str)]) -> Expect {
 #[tokio::test]
 #[ignore = "needs Docker, the invoice-portal-api lab (in Isoloom's current syntax) and the attack-box image"]
 async fn supplier_portal_runs_end_to_end() {
-    // Launched as the platform launches it: a launch token (no default: Compose reads it as a
-    // secret, which the start can't go without) and the API's address.
-    real_lab("invoice", invoice_portal(&[("CTF_LAUNCH_TOKEN", "test-ctf-launch-token"), ("CTF_API_URL", "http://localhost:3206")])).await;
+    // Launched without its inputs: none is given, and the lab falls back to its spec's defaults.
+    real_lab("invoice", invoice_portal(&[])).await;
 }

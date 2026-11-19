@@ -41,14 +41,6 @@ impl Run {
     }
 
     /// Starts the lab with the launch's values `env`.
-    /// Values for the lab's declared inputs with no default, as a launch gives them (a flag, a
-    /// launch token): a placeholder each (`test-<name>`), so a catalogue lab starts as it does
-    /// from the platform. An input with a default is left to it.
-    pub(crate) fn placeholder_inputs(&self) -> Vec<(String, String)> {
-        let spec = crate::runtime::lab::load(&self.dir).expect("the lab's spec");
-        spec.inputs.iter().filter(|i| i.default.is_none()).map(|i| (i.name.clone(), format!("test-{}", i.name.to_lowercase()))).collect()
-    }
-
     pub(crate) async fn start(&self, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         launch::start_docker_run(&self.home, &self.dir, &self.id, launch::Inputs::values(env), log).await
     }
