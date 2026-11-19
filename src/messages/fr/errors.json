@@ -50,7 +50,7 @@
     },
     "labRunningHere": "Ce lab tourne encore sur cette machine (ou ses machines sont encore là). Arrêtez-le, puis réessayez.",
     "labRunningOn": "Ce lab tourne encore sur {host}. Arrêtez-le là-bas, puis réessayez.",
-    "inputsMissing": "Ce lab ne peut pas démarrer sans une valeur pour {names}, que son lancement n'a pas fournie. Relancez-le depuis sa page en étant connecté.",
+    "inputsMissing": "Ce lab ne peut pas démarrer sans une valeur pour {names} : le lab ne fournit pas de valeur par défaut et son lancement n'en a pas donné. Relancez-le depuis sa page en étant connecté, ou demandez à l'auteur du lab d'ajouter une valeur par défaut.",
     "reapNoHost": "Aucun compte n'est enregistré pour lui, le launcher ne peut donc pas le détruire. Supprimez ses ressources dans la console de votre cloud.",
     "pickCloudAccount": "Ce lab tourne dans votre compte cloud : choisissez l’un de vos comptes cloud pour le démarrer.",
     "noHypervisor": "Aucun hyperviseur prêt sur cette machine ne fait tourner ce lab. Installez-en un depuis la page Machine, ou exécutez le lab sur un serveur ou dans votre compte cloud.",

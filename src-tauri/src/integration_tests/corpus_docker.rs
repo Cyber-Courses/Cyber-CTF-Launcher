@@ -66,15 +66,14 @@ async fn park_and_resume(r: &Run, f: &mut Vec<String>) {
 }
 
 /// One lab through the runner, start to teardown; every failure is collected so the lab is always
-/// stopped after. Launched as the platform launches it: a placeholder for each input with no
-/// default (a flag, a launch token), the others left to their defaults.
+/// stopped after. Launched with no inputs: each slot takes its manifest default.
 async fn run_corpus_lab(dir: &Path, f: &mut Vec<String>) {
     let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("lab");
     let r = Run::install(dir, format!("ci-corpus-{}", rand::random::<u32>()));
     let started = std::time::Instant::now();
     scenario(
         f,
-        async |f: &mut Vec<String>| match r.start(&r.placeholder_inputs(), &mut log(&r.id)).await {
+        async |f: &mut Vec<String>| match r.start(&[], &mut log(&r.id)).await {
             Ok(()) => {
                 ready(&r, f).await;
                 checks_pass(&r, f).await;

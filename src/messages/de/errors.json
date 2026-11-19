@@ -50,7 +50,7 @@
     },
     "labRunningHere": "Dieses Lab läuft noch auf diesem Rechner (oder seine Maschinen sind noch da). Stoppe es und versuche es dann erneut.",
     "labRunningOn": "Dieses Lab läuft noch auf {host}. Stoppe es dort und versuche es dann erneut.",
-    "inputsMissing": "Dieses Lab kann ohne einen Wert für {names} nicht starten, und der Start hat keinen mitgegeben. Starte es erneut von seiner Seite, während du angemeldet bist.",
+    "inputsMissing": "Dieses Lab kann ohne einen Wert für {names} nicht starten: Das Lab gibt keinen Standardwert vor, und der Start hat keinen mitgegeben. Starte es erneut von seiner Seite, während du angemeldet bist, oder bitte den Autor des Labs, einen Standardwert zu ergänzen.",
     "reapNoHost": "Für es ist kein Konto hinterlegt, daher kann der Launcher es nicht zerstören. Entferne seine Ressourcen in der Konsole deiner Cloud.",
     "pickCloudAccount": "Dieses Lab läuft in deinem Cloud-Konto: Wähle eines deiner Cloud-Konten, um es zu starten.",
     "noHypervisor": "Kein auf diesem Rechner bereiter Hypervisor führt dieses Lab aus. Installiere einen über die Seite Rechner oder führe das Lab auf einem Server oder in deinem Cloud-Konto aus.",

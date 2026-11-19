@@ -50,7 +50,7 @@
     },
     "labRunningHere": "Este lab sigue ejecutándose en esta máquina (o sus máquinas siguen ahí). Detenlo y vuelve a intentarlo.",
     "labRunningOn": "Este lab sigue ejecutándose en {host}. Detenlo allí y vuelve a intentarlo.",
-    "inputsMissing": "Este lab no puede iniciarse sin un valor para {names}, que su lanzamiento no proporcionó. Vuelve a iniciarlo desde su página con la sesión iniciada.",
+    "inputsMissing": "Este lab no puede iniciarse sin un valor para {names}: el lab no da un valor predeterminado y su lanzamiento no dio ninguno. Vuelve a iniciarlo desde su página con la sesión iniciada, o pide al autor del lab que añada un valor predeterminado.",
     "reapNoHost": "No hay ninguna cuenta registrada para él, así que el launcher no puede destruirlo. Elimina sus recursos en la consola de tu nube.",
     "pickCloudAccount": "Este lab se ejecuta en tu cuenta en la nube: elige una de tus cuentas en la nube para iniciarlo.",
     "noHypervisor": "Ningún hipervisor listo en esta máquina ejecuta este lab. Instala uno desde la página Máquina, o ejecuta el lab en un servidor o en tu cuenta en la nube.",

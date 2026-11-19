@@ -109,8 +109,9 @@ pub fn plain_inputs(spec: &Spec) -> Vec<String> {
 /// The lab's declared inputs its container start can't go without, `values` given: those the
 /// Compose file `compose` reads as secrets (`secrets: <name>: environment: <INPUT>`, which Docker
 /// won't create a container without: an input with no default, which Isoloom makes a secret)
-/// that the launch didn't give, or gave empty (a flag or a token can't be empty). Read from the
-/// file Isoloom generated, so the rule is Compose's own, whichever inputs Isoloom makes secrets.
+/// that the launch didn't give. An empty value is given: a lab reads it as an offline start.
+/// Every lab input declares a default, so this names a lab that doesn't. Read from the file
+/// Isoloom generated, so the rule is Compose's own, whichever inputs Isoloom makes secrets.
 pub fn inputs_compose_needs(compose: &str, spec: &Spec, values: &[(String, String)]) -> Vec<String> {
     let file: serde_yaml_ng::Value = serde_yaml_ng::from_str(compose).unwrap_or_default();
     let demanded: Vec<&str> = file
@@ -123,7 +124,7 @@ pub fn inputs_compose_needs(compose: &str, spec: &Spec, values: &[(String, Strin
     spec.inputs
         .iter()
         .filter(|i| demanded.contains(&i.name.as_str()))
-        .filter(|i| !values.iter().any(|(name, value)| *name == i.name && !value.is_empty()))
+        .filter(|i| !values.iter().any(|(name, _)| *name == i.name))
         .map(|i| i.name.clone())
         .collect()
 }
