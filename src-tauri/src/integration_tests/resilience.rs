@@ -318,13 +318,16 @@ fn descended_from(root: u32, procs: &[(Proc, Option<u32>)]) -> Vec<Proc> {
     procs.iter().filter(|(p, _)| p.pid != root && found.contains(&p.pid)).map(|(p, _)| p.clone()).collect()
 }
 
-/// Every process now, with its parent.
+/// Every process now, with its parent. Threads aren't processes: on Linux sysinfo lists each
+/// thread too, its parent the process it runs in and its command line that process's, so this
+/// test's own threads (tokio's workers) read as tools it started and left running.
 fn processes() -> Vec<(Proc, Option<u32>)> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     let mut sys = System::new();
     sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always));
     sys.processes()
         .values()
+        .filter(|p| p.thread_kind().is_none())
         .map(|p| {
             let line = p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" ");
             (Proc { pid: p.pid().as_u32(), started: p.start_time(), line }, p.parent().map(sysinfo::Pid::as_u32))
@@ -503,6 +506,19 @@ mod tests {
         sleep.kill().expect("sleep is killed");
         sleep.wait().expect("sleep is reaped");
         assert_eq!(still_running(&it), []);
+    }
+
+    /// This process's own threads (tokio's workers, a thread it spawned) are none of what it
+    /// started: on Linux sysinfo lists each one, under this process, with its command line.
+    #[test]
+    fn this_process_threads_are_not_what_it_started() {
+        let (stop, stopped) = std::sync::mpsc::channel::<()>();
+        let thread = std::thread::spawn(move || stopped.recv());
+        let own = std::env::args().collect::<Vec<_>>().join(" ");
+        let mine = super::started_by(std::process::id());
+        stop.send(()).expect("the thread waits");
+        thread.join().expect("the thread ends").expect("it was told");
+        assert!(!mine.iter().any(|p| p.line == own), "a thread of its own read as started by it: {mine:?}");
     }
 
     #[test]
