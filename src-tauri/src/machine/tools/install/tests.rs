@@ -300,7 +300,11 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     };
     install_dependency(t.dirs(), Dependency::Terraform, as_lines(log.on_line())).await.unwrap();
     let lines = log.lines();
-    assert_eq!(lines.first(), Some(&crate::platform::redact::redact(&isothrum_machine::install::command_line(&steps[0])).into_owned()), "{lines:?}");
+    // What the step asks of the player first (Linux's pkexec: the system's password window),
+    // then its command.
+    let mut first: Vec<String> = steps[0].interactions.iter().map(crate::machine::tools::steps::asks_said).collect();
+    first.push(crate::platform::redact::redact(&isothrum_machine::install::command_line(&steps[0])).into_owned());
+    assert!(lines.starts_with(&first), "{first:?} first: {lines:?}");
     assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
     assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
     // The step ran as planned, its program and arguments compared as they are: a call's line
