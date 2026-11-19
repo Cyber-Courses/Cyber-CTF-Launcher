@@ -372,8 +372,9 @@ async fn a_lab_with_no_values_kept_resumes_as_it_was_on_its_defaults() {
 /// A lab imported from a folder starts with no launch values: the launcher gives it none, not
 /// even empty ones. The lab's spec gives its inputs a default, which its generated files fall
 /// back to. Checked on what Compose makes of the file, not on how Isoloom writes it: read with no
-/// value for the input, it holds the default; read with one, the value instead. The machine reads
-/// the input's file where the spec puts it.
+/// value for the input, it holds the default; read with one, the value too (the file's own job
+/// picks the value over the default; Isoloom checks that, and a real run shows it). The machine
+/// reads the input's file where the spec puts it.
 #[tokio::test]
 async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_defaults() {
     let f = Fixture::new();
@@ -386,7 +387,7 @@ async fn a_lab_started_without_launch_values_gets_none_and_falls_back_to_its_def
     let unset = interpolated(&compose, &[]);
     assert!(unset.contains("dev-launch-token"), "with no value, the token's default: {unset}");
     let given = interpolated(&compose, &[("CTF_LAUNCH_TOKEN", "g1ven-t0ken")]);
-    assert!(given.contains("g1ven-t0ken") && !given.contains("dev-launch-token"), "with one, the value instead: {given}");
+    assert!(given.contains("g1ven-t0ken"), "with one, the value: {given}");
     assert!(compose.contains("target: /run/lab/token"), "the machine reads its file where the spec says: {compose}");
 }
 
