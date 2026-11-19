@@ -210,7 +210,8 @@ async fn start_here(
 /// Takes no app handle, so the integration tests run exactly this.
 pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, inputs: Inputs<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(home, dir, id, log).await?;
-    lab::prepare(dir, lab::Target::Docker)?;
+    let prepared = lab::prepare(dir, lab::Target::Docker)?;
+    lab::refuse_missing_inputs(dir, &prepared.spec, inputs.values)?;
     isothrum::Deployment::docker(home, dir, id)?.up(inputs, None, log).await
 }
 

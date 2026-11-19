@@ -106,6 +106,45 @@ pub fn plain_inputs(spec: &Spec) -> Vec<String> {
     spec.inputs.iter().filter(|i| !i.sensitive).map(|i| i.name.clone()).collect()
 }
 
+/// The lab's declared inputs its container start can't go without, `values` given: those the
+/// Compose file `compose` reads as secrets (`secrets: <name>: environment: <INPUT>`, which Docker
+/// won't create a container without: an input with no default, which Isoloom makes a secret)
+/// that the launch didn't give, or gave empty (a flag or a token can't be empty). Read from the
+/// file Isoloom generated, so the rule is Compose's own, whichever inputs Isoloom makes secrets.
+pub fn inputs_compose_needs(compose: &str, spec: &Spec, values: &[(String, String)]) -> Vec<String> {
+    let file: serde_yaml_ng::Value = serde_yaml_ng::from_str(compose).unwrap_or_default();
+    let demanded: Vec<&str> = file
+        .get("secrets")
+        .and_then(serde_yaml_ng::Value::as_mapping)
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, secret)| secret.get("environment").and_then(serde_yaml_ng::Value::as_str))
+        .collect();
+    spec.inputs
+        .iter()
+        .filter(|i| demanded.contains(&i.name.as_str()))
+        .filter(|i| !values.iter().any(|(name, value)| *name == i.name && !value.is_empty()))
+        .map(|i| i.name.clone())
+        .collect()
+}
+
+/// Refuses a container start of the lab in `dir` (its files generated, `spec` the spec it runs)
+/// whose launch didn't give an input it can't go without ([`inputs_compose_needs`]), naming
+/// them, before anything starts: Docker would otherwise fail midway, in its own words.
+///
+/// # Errors
+///
+/// [`Code::InputsMissing`](crate::error::Code::InputsMissing) naming them; the Compose file's
+/// read failure.
+pub fn refuse_missing_inputs(dir: &Path, spec: &Spec, values: &[(String, String)]) -> Result<()> {
+    let compose = std::fs::read_to_string(names::out(dir).join("docker/compose.yml"))?;
+    let missing = inputs_compose_needs(&compose, spec, values);
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(Error::coded(crate::error::Code::InputsMissing { names: missing.join(", ") }))
+}
+
 /// A spec from its text, unchecked.
 #[cfg(test)]
 pub fn parse(text: &str) -> Result<Spec> {

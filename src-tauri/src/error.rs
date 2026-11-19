@@ -106,6 +106,13 @@ pub enum Code {
         /// The saved host's name.
         host: String,
     },
+    /// A container lab's start needs values its launch didn't give: its inputs `names`
+    /// (comma-separated) have no default, and its Compose file reads them as secrets, which
+    /// Docker won't create a container without. Refused before anything starts.
+    InputsMissing {
+        /// The inputs' names, comma-separated.
+        names: String,
+    },
     /// A host can't be removed while labs run on it.
     HostHasLabs {
         /// How many labs run on the host.
@@ -369,7 +376,12 @@ impl Error {
             self,
             Error::Refused(_)
                 | Error::Coded {
-                    code: Code::LabRunningHere | Code::LabRunningOn { .. } | Code::TurnedOffByPolicy { .. } | Code::PickCloudAccount | Code::NoHypervisor,
+                    code: Code::LabRunningHere
+                        | Code::LabRunningOn { .. }
+                        | Code::InputsMissing { .. }
+                        | Code::TurnedOffByPolicy { .. }
+                        | Code::PickCloudAccount
+                        | Code::NoHypervisor,
                     ..
                 }
         )
