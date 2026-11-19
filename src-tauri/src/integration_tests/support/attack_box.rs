@@ -65,6 +65,11 @@ fn probe_args(console: &ShellCommand, probe: &str) -> Option<Vec<String>> {
         }
         _ => return None,
     }
+    // `vagrant ssh -c` opens a TTY unless told not to: there, `sudo` marks its session with a
+    // terminal sequence (systemd's OSC 3008) on the probe's first line.
+    if console.program == "vagrant" && args.first().is_some_and(|a| a == "ssh") && !args.iter().any(|a| a == "--no-tty") {
+        args.insert(1, "--no-tty".into());
+    }
     Some(args)
 }
 
@@ -216,7 +221,7 @@ mod tests {
         let vagrant = ShellCommand::new("vagrant", ["ssh", "attackbox", "-c", login], "/run");
         assert_eq!(
             probe_args(&vagrant, "whoami").unwrap(),
-            ["ssh", "attackbox", "-c", "if [ $(id -un) = player ]; then sh -c 'whoami'; else exec sudo -iu player sh -c 'whoami'; fi"]
+            ["ssh", "--no-tty", "attackbox", "-c", "if [ $(id -un) = player ]; then sh -c 'whoami'; else exec sudo -iu player sh -c 'whoami'; fi"]
         );
         let ssh = ShellCommand::new("ssh", ["-t", "-F", "ssh_config", "admin@198.51.100.10", login], "/run");
         assert_eq!(
