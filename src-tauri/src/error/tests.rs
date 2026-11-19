@@ -138,11 +138,12 @@ fn form(code: &Code) -> usize {
         Code::HypervisorNotPermitted { .. } => 49,
         Code::HypervisorNotApproved { .. } => 52,
         Code::DockerDesktopAgreement => 53,
+        Code::InputsMissing { .. } => 54,
     }
 }
 
 /// How many forms [`form`] tells apart.
-const FORMS: usize = 54;
+const FORMS: usize = 55;
 
 #[test]
 fn every_form_has_a_sample() {
@@ -179,6 +180,7 @@ fn sample_codes() -> Vec<Code> {
         Code::HostHasLabs { count: 3 },
         Code::LabRunningHere,
         Code::LabRunningOn { host: "My Proxmox".into() },
+        Code::InputsMissing { names: "CTF_FLAG_MAIN, CTF_LAUNCH_TOKEN".into() },
         Code::ReapNoHost,
         Code::ToolMissing { tool: "terraform".into() },
         Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },

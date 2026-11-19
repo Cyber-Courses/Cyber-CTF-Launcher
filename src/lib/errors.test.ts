@@ -68,6 +68,7 @@ describe("command errors", () => {
         "elevationFailed",
         "hostHasLabs",
         "hypervHomeEdition",
+        "inputsMissing",
         "labNotReady",
         "labRunningHere",
         "labRunningOn",

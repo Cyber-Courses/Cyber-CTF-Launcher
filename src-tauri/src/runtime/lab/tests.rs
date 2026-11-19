@@ -393,3 +393,29 @@ fn an_instance_at_the_maximum_still_generates_and_resolves() {
     assert!(compose_file(&dir).is_file());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A container start's inputs it can't go without: the declared inputs its Compose file reads as
+/// secrets that the launch didn't give, or gave empty; never a secret of the lab's own
+/// (`ISOLOOM_SECRET_…`, from its stores) nor an input with a default (Isoloom makes it no secret).
+#[test]
+fn a_container_start_needs_the_inputs_its_compose_file_reads_as_secrets() {
+    let spec = super::parse(
+        "version: 1\nname: flags\nnetworks: { lab: { cidr: 10.9.0.0/24 } }\ninputs:\n  CTF_FLAG_MAIN: { description: the flag }\n  CTF_API_URL: { sensitive: false, default: http://localhost }\nmachines:\n  web: { networks: { lab: 10 }, app: { image: nginx } }\n",
+    )
+    .expect("a spec");
+    let compose = "services: {}\nsecrets:\n  input-ctf-flag-main: { environment: CTF_FLAG_MAIN }\n  db-password: { environment: ISOLOOM_SECRET_DB_PASSWORD }\n";
+    let given = |pairs: &[(&str, &str)]| pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect::<Vec<_>>();
+    assert_eq!(super::inputs_compose_needs(compose, &spec, &[]), ["CTF_FLAG_MAIN"]);
+    assert_eq!(super::inputs_compose_needs(compose, &spec, &given(&[("CTF_FLAG_MAIN", "")])), ["CTF_FLAG_MAIN"], "an empty value is none");
+    let none: [&str; 0] = [];
+    assert_eq!(super::inputs_compose_needs(compose, &spec, &given(&[("CTF_FLAG_MAIN", "flag{x}")])), none);
+    assert_eq!(super::inputs_compose_needs("services: {}\n", &spec, &[]), none, "no secrets, nothing needed");
+}
+
+/// The refusal names them, as the player reads it, and is a refusal before anything changed.
+#[test]
+fn a_start_missing_an_input_is_refused_naming_it() {
+    let err = crate::error::Error::coded(crate::error::Code::InputsMissing { names: "CTF_FLAG_MAIN, CTF_LAUNCH_TOKEN".into() });
+    assert!(err.to_string().contains("CTF_FLAG_MAIN, CTF_LAUNCH_TOKEN"), "{err}");
+    assert!(err.is_refusal(), "nothing was started");
+}

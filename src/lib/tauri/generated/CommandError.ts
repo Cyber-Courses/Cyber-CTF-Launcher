@@ -56,7 +56,11 @@ fields: string, } } | { "code": "labRunningHere" } | { "code": "labRunningOn", "
 /**
  * The saved host's name.
  */
-host: string, } } | { "code": "hostHasLabs", "args": { 
+host: string, } } | { "code": "inputsMissing", "args": { 
+/**
+ * The inputs' names, comma-separated.
+ */
+names: string, } } | { "code": "hostHasLabs", "args": { 
 /**
  * How many labs run on the host.
  */
