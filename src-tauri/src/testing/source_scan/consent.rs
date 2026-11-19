@@ -1,10 +1,8 @@
 //! Nothing accepts a licence, an agreement or terms on the player's behalf: no shipped code of the
-//! crate (comments aside) and no script it runs (the attack box's provisioning) holds a switch that
-//! accepts one for them. Where a vendor asks for it, its own window shows it and the player
+//! crate (comments aside) holds a switch that accepts one for them. The attack box's scripts, which
+//! the launcher downloads from their own repository, are held to it there (its tests/scripts.sh). Where a vendor asks for it, its own window shows it and the player
 //! accepts it there (Docker Desktop's Subscription Service Agreement, at its first start).
 //! Isothrum holds its own installs to the same rule (its `consent` guardrail).
-
-use std::path::Path;
 
 use super::crate_sources;
 
@@ -50,21 +48,17 @@ fn a_switch_that_accepts_for_the_player_is_named_with_its_line() {
     assert_eq!(accepting("a.sh", text), ["a.sh:1: install --accept-license --user=x", "a.sh:4: winget install --Accept-Source-Agreements"]);
 }
 
-/// The shipped code and the attack box's scripts accept nothing for the player.
+/// The shipped code accepts nothing for the player.
 #[test]
 fn nothing_is_accepted_on_the_players_behalf() {
-    let mut found: Vec<String> = crate_sources().iter().flat_map(|s| accepting(&s.path.display().to_string(), &s.code)).collect();
-    let scripts = Path::new(env!("CARGO_MANIFEST_DIR")).join("attack-box");
-    let mut stack = vec![scripts];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if let Ok(text) = std::fs::read_to_string(&path) {
-                found.extend(accepting(&path.display().to_string(), &text));
-            }
-        }
-    }
-    assert!(found.is_empty(), "accepts for the player:\n{}", found.join("\n"));
+    let found: Vec<String> = crate_sources().iter().flat_map(|s| accepting(&s.path.display().to_string(), &s.code)).collect();
+    assert!(
+        found.is_empty(),
+        "accepts for the player:
+{}",
+        found.join(
+            "
+"
+        )
+    );
 }

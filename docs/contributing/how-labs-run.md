@@ -95,10 +95,13 @@ the attack box: the launcher composes their general features (`.cyberctf-overlay
 retire, the console).
 
 What the box is made of comes from the [attack box repository](https://github.com/CyberCTF/attack-box),
-pinned in `src-tauri/attack-box/`: the image's digest (`image.json`), the script that makes the
-player's account (`player-account.sh`), and the VM set-up's parts (`vm/`), which
-`attack_box::setup_script` puts together with the player's account between the toolset and the
-desktop. The account takes the shared folder's owner's uid where the box doesn't have that user (a
+pinned in `src-tauri/attack-box.json`: the image's digest (`image`), the repository's commit
+(`commit`) and the SHA-256 of each script the launcher uses there (`files`): the script that
+makes the player's account (`player-account.sh`) and the VM set-up's parts (`vm/`). The launcher
+keeps no copy of them: the first box downloads them at that commit (`attack_box::scripts`),
+refuses one whose hash differs, and keeps them in the app's cache by hash.
+`attack_box::setup_script` puts them together with the player's account between the toolset and
+the desktop. The account takes the shared folder's owner's uid where the box doesn't have that user (a
 Linux computer's, through Docker or virtiofs), and joins the folder's group (a VM's shared folder
 mounted for `vagrant`). Root stays the image's own user.
 

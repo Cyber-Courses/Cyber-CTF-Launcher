@@ -27,7 +27,7 @@ case "${1:-}" in
     # exceptions are marked in the scripts with a reason. The attack box's VM parts are pinned
     # copies of fragments of one script, checked in their own repository.
     scripts=()
-    while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' '.githooks/*' ':(exclude)*/testdata/*' ':(exclude)src-tauri/attack-box/vm/*')
+    while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' '.githooks/*' ':(exclude)*/testdata/*')
     shellcheck --severity=warning --external-sources "${scripts[@]}"
     ;;
   -h | --help)

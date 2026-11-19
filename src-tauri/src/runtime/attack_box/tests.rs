@@ -7,7 +7,7 @@ fn shared(folder: &Path) -> Shared {
 
 /// [`add`] with no shared folder.
 fn add_at(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -> Result<()> {
-    add(dir, kind, cpu, network, None)
+    add(dir, kind, cpu, network, Inside { scripts: &test_scripts(), shared: None })
 }
 
 #[test]
@@ -86,20 +86,6 @@ fn another_machine_of_the_layer_is_never_taken_for_the_box() {
 }
 
 #[test]
-fn kalis_archive_keys_are_checked_before_apt_trusts_them() {
-    // Regression: the keyring was downloaded straight into apt's keyrings, trusted on TLS
-    // alone, with no fingerprint holding it.
-    let script = setup_script(false, false);
-    let download = script.find("archive.kali.org/archive-keyring.gpg").unwrap();
-    let checked = script.find(r#"[ "$k" = "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 827C8569F2518CC677FECA1AED65462EC8D5E4C5" ]"#).unwrap();
-    let trusted = script.find("/usr/share/keyrings/kali-archive-keyring.gpg").unwrap();
-    let used = script.find("signed-by=").unwrap();
-    assert!(download < checked && checked < trusted && trusted < used, "{script}");
-    assert!(script.contains(r#"-o "$d/key""#) && !script.contains("-o /usr/share/keyrings"), "downloaded into the private folder: {script}");
-    assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
-}
-
-#[test]
 fn on_an_arm_computer_the_box_runs_natively_a_debian_vm_made_kali() {
     let dir = web_lab();
     add_at(&dir, Kind::Vm { desktop: false }, Cpu::Arm, None).unwrap();
@@ -107,7 +93,7 @@ fn on_an_arm_computer_the_box_runs_natively_a_debian_vm_made_kali() {
     let attackbox = &spec.machines[NAME];
     assert_eq!(attackbox.os.as_deref(), Some("debian@12"));
     assert_eq!(attackbox.arch, crate::runtime::lab::Arch::Arm64);
-    assert!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap().contains("kali-archive-keyring"));
+    assert!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap().contains(&test_scripts().kali), "made Kali first");
     remove(&dir).unwrap();
 }
 
@@ -151,45 +137,14 @@ fn layer_machine(dir: &Path) -> Value {
     layer["machines"][NAME].clone()
 }
 
-/// The toolset's part of the set-up run on stand-ins for `dpkg-query` and `apt-get` (the box has
-/// the toolset when `installed`): the `apt-get` calls it made.
-#[cfg(unix)]
-fn toolset_calls(installed: bool) -> Vec<String> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let dir = crate::testing::temp_dir("attack-box-toolset");
-    let calls = dir.join("apt-calls");
-    let status = if installed { "install ok installed" } else { "" };
-    let stubs = [("dpkg-query", format!("#!/bin/sh\nprintf '%s' '{status}'\n")), ("apt-get", format!("#!/bin/sh\necho \"$*\" >> '{}'\n", calls.display()))];
-    for (name, body) in stubs {
-        std::fs::write(dir.join(name), body).unwrap();
-        std::fs::set_permissions(dir.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let script = format!("keep=''\n{}", super::TOOLSET);
-    let path = format!("{}:/usr/bin:/bin", dir.display());
-    #[allow(clippy::disallowed_methods, reason = "the test runs the script's own shell on stand-ins")]
-    let ran = std::process::Command::new("sh").args(["-c", &script]).env("PATH", path).status().unwrap();
-    assert!(ran.success());
-    std::fs::read_to_string(&calls).map(|t| t.lines().map(str::to_owned).collect()).unwrap_or_default()
-}
-
-/// Regression (#303): every new box upgraded Kali's toolset from the rolling archive. A box whose
-/// image has it takes nothing from the archive; one that lacks it is given it.
-#[cfg(unix)]
-#[test]
-fn a_box_whose_image_has_the_toolset_installs_nothing_and_one_without_is_given_it() {
-    assert_eq!(toolset_calls(true), [] as [String; 0], "the image's toolset is never upgraded at a box's creation");
-    assert_eq!(toolset_calls(false), ["update", "install -y kali-linux-headless"]);
-}
-
 #[test]
 fn a_vm_box_makes_the_player_account_once_its_toolset_is_in() {
     // Regression: the box's shell opened as the VM's login (`vagrant` on Windows' Hyper-V),
     // the box had no account of the player's.
-    let script = setup_script(false, false);
+    let script = setup_script(&test_scripts(), false, false);
     let toolset = script.find("install -y $keep kali-linux-headless").unwrap();
     let account = script.find(&format!("account={PLAYER} shared={} password_hash=", crate::shared_folder::MOUNT_POINT)).unwrap();
     assert!(toolset < account, "sudo is in before the account is given it: {script}");
-    assert!(script.contains("NOPASSWD: ALL") && script.contains("--create-home"), "{script}");
     assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
     let dir = web_lab();
     add_at(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None).unwrap();
@@ -200,14 +155,12 @@ fn a_vm_box_makes_the_player_account_once_its_toolset_is_in() {
 
 #[test]
 fn a_desktop_box_gets_xfce_and_the_player_signed_in_after_its_account() {
-    let headless = setup_script(false, false);
+    let headless = setup_script(&test_scripts(), false, false);
     assert!(!headless.contains("kali-desktop-xfce") && !headless.contains("lightdm"), "headless by default");
-    let script = setup_script(true, false);
+    let script = setup_script(&test_scripts(), true, false);
     let account = script.find(&format!("account={PLAYER} ")).unwrap();
     let desktop = script.find("install -y $keep kali-desktop-xfce lightdm").unwrap();
     assert!(account < desktop, "the account the display manager signs in exists first");
-    assert!(script.contains("autologin-user=player\\n") && script.contains("systemctl set-default graphical.target"), "{script}");
-    assert!(DESKTOP.contains(&format!("autologin-user={PLAYER}")), "the launcher's player account");
     assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
     let dir = web_lab();
     add_at(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None).unwrap();
@@ -226,23 +179,10 @@ fn a_container_box_makes_the_player_account_where_it_starts_then_idles() {
     );
     add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None).unwrap();
     let command = layer_machine(&dir)["command"].as_str().unwrap().to_owned();
-    assert!(command.starts_with(&player_account(false)), "the account first: {command}");
+    assert!(command.starts_with(&player_account(&test_scripts(), false)), "the account first: {command}");
     assert!(command.ends_with("; exec sleep infinity"), "then idle, whether the account was made or not: {command}");
     assert!(crate::platform::sh_parses(&command), "not valid sh: {command}");
     remove(&dir).unwrap();
-}
-
-/// The pinned VM set-up checks Kali's archive keyring against Kali's two archive keys before
-/// apt trusts it, and stops with nothing installed when it doesn't match.
-#[test]
-fn the_vm_set_up_checks_kalis_archive_keys_before_trusting_them() {
-    for key in ["827C8569F2518CC677FECA1AED65462EC8D5E4C5", "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6"] {
-        assert!(KALI.contains(key), "{key}: {KALI}");
-    }
-    let (check, trust) =
-        (KALI.find("Nothing was installed").unwrap(), KALI.find("install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg").unwrap());
-    assert!(check < trust, "checked before it is installed: {KALI}");
-    assert!(crate::platform::sh_parses(&setup_script_with(true, true, false)), "the parts make one script");
 }
 
 /// Every file under `dir`, read as text (one that isn't text read as empty).
@@ -265,9 +205,11 @@ fn every_file(dir: &Path) -> String {
 fn each_box_gets_its_own_password_its_hash_in_a_root_only_file_never_on_a_command_line() {
     // The set-up reads the hash from the file into chpasswd's standard input: the command
     // that runs it names the file only, so neither the password nor its hash shows in `ps`.
-    let script = PLAYER_ACCOUNT;
-    assert!(script.contains(r#"{ printf '%s:' "$account"; cat "$password_hash"; } | chpasswd -e"#), "{script}");
-    assert!(player_account(false).contains(&format!(" password_hash={} sh -c ", sign_in::HASH_FILE)), "{}", player_account(false));
+    assert!(
+        player_account(&test_scripts(), false).contains(&format!(" password_hash={} sh -c ", sign_in::HASH_FILE)),
+        "{}",
+        player_account(&test_scripts(), false)
+    );
     let mut seen = Vec::new();
     // Generated for every target the box goes to: the file is placed on each.
     let containers = [lab::Target::Docker, lab::Target::CloudDocker];
@@ -286,7 +228,7 @@ fn each_box_gets_its_own_password_its_hash_in_a_root_only_file_never_on_a_comman
             Kind::Container { .. } => layer_machine(&dir)["command"].as_str().unwrap().to_owned(),
             Kind::Vm { .. } => std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap(),
         };
-        assert!(setup.contains(&player_account(false)), "{kind:?}: the set-up gives the account its password");
+        assert!(setup.contains(&player_account(&test_scripts(), false)), "{kind:?}: the set-up gives the account its password");
         assert!(!setup.contains(&password) && !setup.contains(&hash), "{kind:?}: neither on its command line");
         for target in targets {
             lab::prepare(&dir, *target).unwrap_or_else(|e| panic!("{kind:?} on {target:?}: {e}"));
@@ -311,31 +253,11 @@ fn a_screen_window_gets_the_sign_in_of_the_box_alone() {
 }
 
 #[test]
-fn a_desktop_box_never_locks_its_screen() {
-    let script = setup_script(true, false);
-    for off in [
-        "xserver-command=X -s 0 -dpms",
-        "for locker in light-locker xfce4-screensaver",
-        "Hidden=true",
-        "xset s off -dpms",
-        "off xfce4-screensaver /lock/enabled",
-        "off xfce4-power-manager /xfce4-power-manager/lock-screen-suspend-hibernate",
-        "off xfce4-session /shutdown/LockScreen",
-        "/etc/xdg/autostart/cyberctf-no-screen-lock.desktop",
-    ] {
-        assert!(script.contains(off), "{off}: {script}");
-    }
-    assert!(DESKTOP.contains(&format!("/home/{PLAYER}/.config/autostart")), "the launcher's player account");
-    assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
-    assert!(!setup_script(false, false).contains("no-screen-lock"), "a headless box has no screen to lock");
-}
-
-#[test]
 fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
     let dir = web_lab();
     let folder = Path::new("/Users/someone/CyberCTF/shared");
     for kind in [Kind::Container { image: "kalilinux/kali-rolling" }, Kind::Vm { desktop: false }] {
-        add(&dir, kind, Cpu::Lab, None, Some(&shared(folder))).unwrap();
+        add(&dir, kind, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(folder)) }).unwrap();
         let spec = lab::load(&dir).unwrap();
         let mounted: Vec<(&str, &str)> = spec.machines[NAME].host_folders.iter().map(|h| (h.from.as_str(), h.path.as_str())).collect();
         assert_eq!(mounted, [("/Users/someone/CyberCTF/shared", crate::shared_folder::MOUNT_POINT)], "{kind:?}");
@@ -351,7 +273,8 @@ fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
 fn the_shared_folder_is_mounted_read_write_both_ways() {
     let dir = web_lab();
     let folder = crate::testing::temp_dir("attack-box-shared");
-    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&shared(&folder))).unwrap();
+    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)) })
+        .unwrap();
     let spec = lab::load(&dir).unwrap();
     assert!(spec.machines[NAME].host_folders.iter().all(|h| !h.read_only), "the spec asks it read-write");
     lab::prepare(&dir, lab::Target::Docker).unwrap();
@@ -383,7 +306,8 @@ fn a_shared_folder_with_a_combining_mark_in_its_name_is_mounted() {
     let dir = web_lab();
     for name in ["Cafe\u{301}", "quote\"and\\backslash", "tab\there"] {
         let folder = Path::new("/Users/someone").join(name);
-        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&shared(&folder))).unwrap();
+        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)) })
+            .unwrap();
         let spec = lab::load(&dir).unwrap();
         assert_eq!(spec.machines[NAME].host_folders[0].from, folder.display().to_string(), "{name:?}");
         remove(&dir).unwrap();
@@ -395,11 +319,12 @@ fn a_test_runs_bare_box_skips_kalis_toolset_and_nothing_else() {
     // The integration runner's attack-box-vm scenarios: the box without the toolset install that
     // took them past their caps; its account, desktop and Kali archive set up as ever.
     for desktop in [false, true] {
-        let (full, bare) = (setup_script_with(desktop, true, false), setup_script_with(desktop, false, false));
-        assert!(full.contains(TOOLSET) && !bare.contains("kali-linux-headless"), "the toolset's install alone goes");
+        let (full, bare) = (setup_script_with(&test_scripts(), desktop, true, false), setup_script_with(&test_scripts(), desktop, false, false));
+        let scripts = test_scripts();
+        assert!(full.contains(&scripts.toolset) && !bare.contains("kali-linux-headless"), "the toolset's install alone goes");
         let marker = "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n";
-        assert_eq!(bare, full.replace(TOOLSET, marker), "everything else as it was");
-        assert!(bare.contains(&player_account(false)) && bare.contains(KALI));
+        assert_eq!(bare, full.replace(&scripts.toolset, marker), "everything else as it was");
+        assert!(bare.contains(&player_account(&scripts, false)) && bare.contains(&scripts.kali));
     }
     // Only `1` turns it off, and only in a test build (`toolset_wanted` is `true` in the app's).
     assert!(!toolset_wanted_given(Some("1")));
@@ -408,72 +333,20 @@ fn a_test_runs_bare_box_skips_kalis_toolset_and_nothing_else() {
     }
 }
 
-/// [`PLAYER_ACCOUNT`] run for a box whose shared folder (owned by uid and gid 1000, the VM's
-/// `vagrant`) is squashed or not, on stand-ins for the account tools (`id` finds no account yet):
-/// the calls the script made to `useradd`, `usermod` and `groupadd`.
-#[cfg(unix)]
-fn account_calls(squashed: bool) -> Vec<String> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let dir = crate::testing::temp_dir("attack-box-account");
-    let (calls, shared, sudoers) = (dir.join("calls"), dir.join("shared"), dir.join("sudoers.d"));
-    std::fs::create_dir_all(&shared).unwrap();
-    let record = format!("#!/bin/sh\necho \"$(basename \"$0\") $*\" >> '{}'\n", calls.display());
-    let getent = "#!/bin/sh\ncase \"$1 $2\" in\n  'passwd 1000') echo 'vagrant:x:1000:1000::/home/vagrant:/bin/sh' ;;\n  'group 1000') echo 'vagrant:x:1000:' ;;\n  *) exit 2 ;;\nesac\n";
-    let stubs = [
-        ("stat", "#!/bin/sh\necho 1000\n".to_owned()),
-        ("getent", getent.to_owned()),
-        ("id", "#!/bin/sh\nexit 1\n".to_owned()),
-        ("useradd", record.clone()),
-        ("usermod", record.clone()),
-        ("groupadd", record),
-    ];
-    for (name, body) in stubs {
-        std::fs::write(dir.join(name), body).unwrap();
-        std::fs::set_permissions(dir.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    // The sudo rule goes to a folder of the test's own, not the computer's.
-    let script = PLAYER_ACCOUNT.replace("/etc/sudoers.d", &sudoers.display().to_string());
-    let path = format!("{}:/usr/bin:/bin", dir.display());
-    #[allow(clippy::disallowed_methods, reason = "the test runs the script's own shell on stand-ins")]
-    let ran = std::process::Command::new("sh")
-        .args(["-c", &script])
-        .env("PATH", path)
-        .env("account", PLAYER)
-        .env("shared", &shared)
-        .env("shared_squashed", if squashed { "1" } else { "" })
-        .status()
-        .unwrap();
-    assert!(ran.success());
-    assert!(sudoers.join(PLAYER).is_file(), "its sudo rule");
-    std::fs::read_to_string(&calls).map(|t| t.lines().map(str::to_owned).collect()).unwrap_or_default()
-}
-
-/// Regression: on QEMU under Linux the player couldn't create a file in the shared folder: it
-/// wrote through the folder's group, which vagrant-qemu's unprivileged virtiofsd refuses. Where
-/// the folder is squashed its group is the account's own (the box still checks the folder's
-/// permissions, and a primary group is no supplementary one); everywhere else it joins as before.
-#[cfg(unix)]
-#[test]
-fn the_shared_folders_group_is_the_players_own_where_the_folder_is_squashed() {
-    let made = format!("useradd --create-home --shell {} {PLAYER}", if Path::new("/bin/bash").exists() { "/bin/bash" } else { "/bin/sh" });
-    assert_eq!(account_calls(false), [made.clone(), format!("usermod -a -G vagrant {PLAYER}")], "the folder's group, to write through it");
-    assert_eq!(account_calls(true), [made, format!("usermod -g vagrant {PLAYER}")], "its own group: no supplementary one to write through");
-}
-
 #[test]
 fn a_vm_box_says_its_shared_folder_is_squashed_where_it_is_and_a_container_never() {
     let account = |squashed| format!("account={PLAYER} shared={}{} password_hash=", crate::shared_folder::MOUNT_POINT, squashed);
     let dir = web_lab();
     for squashed in [false, true] {
         let folder = Shared { folder: Path::new("/home/someone/CyberCTF/shared").to_path_buf(), squashed };
-        add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Some(&folder)).unwrap();
+        add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder) }).unwrap();
         let script = std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap();
         assert!(script.contains(&account(if squashed { " shared_squashed=1" } else { "" })), "{squashed}: {script}");
         assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
         remove(&dir).unwrap();
     }
     let folder = Shared { folder: Path::new("/home/someone/CyberCTF/shared").to_path_buf(), squashed: false };
-    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&folder)).unwrap();
+    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder) }).unwrap();
     let command = layer_machine(&dir)["command"].as_str().unwrap().to_owned();
     assert!(command.contains(&account("")) && !command.contains(" shared_squashed=1"), "Docker binds it as it is: {command}");
     remove(&dir).unwrap();

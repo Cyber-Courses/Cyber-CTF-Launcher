@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::runtime::lab::Target;
 
 use super::status::{AttackStatus, status_of};
-use super::{Cpu, Kind, Shared};
+use super::{Cpu, Inside, Kind, Shared};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::host::{self, Failed, Host};
@@ -75,7 +75,9 @@ impl Placed {
     pub(crate) async fn add(&self, dirs: &AppDirs, pick: Pick<'_>, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let kind = if self.vm { Kind::Vm { desktop: pick.desktop } } else { Kind::Container { image: pick.image } };
         let shared = self.shared_folder(dirs, log).await?;
-        let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_ref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
+        let scripts = super::scripts::fetch(dirs, log).await?;
+        let written = super::add(&self.dir, kind, self.cpu(), network, Inside { scripts: &scripts, shared: shared.as_ref() })
+            .and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
             Ok(()) => match self.host.update(dirs, log).await {
@@ -350,7 +352,14 @@ mod tests {
             ))
         };
         let dir = lab("app: { image: nginx }");
-        super::super::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
+        super::super::add(
+            &dir,
+            Kind::Container { image: "kalilinux/kali-rolling" },
+            Cpu::Lab,
+            None,
+            Inside { scripts: &super::super::test_scripts(), shared: None },
+        )
+        .unwrap();
         let home = dir.join("home");
         let shell = box_shell(&dir, Target::Docker, isothrum::Deployment::docker(&home, &dir, "t"), false).await;
         let line = shell.args.join(" ");
@@ -360,7 +369,7 @@ mod tests {
         assert!(compose.contains(&format!("account={PLAYER} shared=/shared password_hash=")), "the box makes its account where it starts: {compose}");
 
         let dir = lab("os: debian@12");
-        super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, None).unwrap();
+        super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &super::super::test_scripts(), shared: None }).unwrap();
         let home = dir.join("home");
         let shell = box_shell(&dir, Target::Vagrant, isothrum::Deployment::vm(&home, &dir, "t"), true).await;
         assert_eq!(shell.args[..3], ["ssh", NAME, "-c"], "{:?}", shell.args);

@@ -1,0 +1,13 @@
+{
+  "image": "cyberctf/attack-box@sha256:828435d69fdea36fee304e419a1e46ff0e4c658fb5da4fb41988bdb10d3ae1b5",
+  "previous": [
+    "cyberctf/attack-box@sha256:5e083303cfbab36e3c1d2ad40c97057eaee5c98cb8bfd8aa73bfa45b1f899ec6"
+  ],
+  "commit": "4ad865bc485d7971c410e09f3e921e2e4832160f",
+  "files": {
+    "player-account.sh": "dfd656900c43fd305ceff6d2f8cc8dab90d3ca7658d6724cae4b066baaab2fca",
+    "vm/kali.sh": "6e92d3e2ce07f9176db07aa2eabb9136bd07c54f945ba4dd58576044cf10cbb9",
+    "vm/toolset.sh": "407129279470fb7f538749af900ed02966c5c67007c54bcf5d99c0da7dd11815",
+    "vm/desktop.sh": "b434b133466072ba805f1d2d64c064ce0086875f5ff2dd35bb6160f6b7a6b694"
+  }
+}
