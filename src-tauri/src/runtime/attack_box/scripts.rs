@@ -17,11 +17,9 @@ use crate::platform::AppDirs;
 pub(super) const PIN: &str = include_str!("../../../attack-box.json");
 
 /// Where the scripts are read from: the repository's files at a commit.
-#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 const REPOSITORY: &str = "https://raw.githubusercontent.com/CyberCTF/attack-box";
 
 /// The largest script downloaded.
-#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 const MAX_SCRIPT: u64 = 1024 * 1024;
 
 /// The scripts the box's set-up is made of, as the attack box repository's README orders them.
@@ -43,21 +41,36 @@ struct Pin {
     files: BTreeMap<String, String>,
 }
 
-#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 fn pin() -> Result<Pin> {
     serde_json::from_str(PIN).map_err(|e| Error::Invalid(format!("the attack box's pin (attack-box.json) doesn't read: {e}")))
 }
 
+/// Whether the launcher's tests set up an attack box with the real scripts: the real-lab scenarios
+/// do ([`use_the_real_scripts`]), so their box is the player's; unit tests get [`for_tests`] and
+/// download nothing. For the whole test process: the scenarios run in a process of their own.
+#[cfg(test)]
+static REAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Has the attack box set up with the pinned scripts from here on, in this test process.
+#[cfg(test)]
+pub(crate) fn use_the_real_scripts() {
+    REAL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The scripts at the pinned commit: from the cache (`<cache>/attack-box/<sha256>`) when there,
-/// else downloaded, checked and kept there. `log` says when a download starts. The launcher's unit
-/// tests download nothing: they get [`for_tests`].
-#[cfg(not(test))]
+/// else downloaded, checked and kept there (only checked, when the app's cache folder is unknown).
+/// `log` says when a download starts. In the launcher's tests, [`for_tests`] unless the real ones
+/// are asked for ([`use_the_real_scripts`]).
 pub(crate) async fn fetch(dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Scripts> {
+    #[cfg(test)]
+    if !REAL.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(for_tests());
+    }
     let pin = pin()?;
-    let cache = dirs.cache()?.join("attack-box");
+    let cache = dirs.cache().ok().map(|c| c.join("attack-box"));
     let mut read = async |name: &str| -> Result<String> {
         let want = pin.files.get(name).ok_or_else(|| Error::Invalid(format!("the attack box's pin names no {name}")))?;
-        if let Some(text) = cached(&cache, want) {
+        if let Some(text) = cache.as_deref().and_then(|c| cached(c, want)) {
             return Ok(text);
         }
         log(format!("Downloading the attack box's {name} (CyberCTF/attack-box at {})", short(&pin.commit)));
@@ -65,7 +78,9 @@ pub(crate) async fn fetch(dirs: &AppDirs, log: &mut impl FnMut(String)) -> Resul
             Error::Invalid(format!("The attack box's set-up couldn't be downloaded from GitHub ({e}). Check this computer's connection, then try again."))
         })?;
         let text = checked(name, &bytes, want)?;
-        keep(&cache, want, &bytes);
+        if let Some(cache) = &cache {
+            keep(cache, want, &bytes);
+        }
         Ok(text)
     };
     Ok(Scripts {
@@ -76,14 +91,6 @@ pub(crate) async fn fetch(dirs: &AppDirs, log: &mut impl FnMut(String)) -> Resul
     })
 }
 
-/// [`for_tests`], in the launcher's unit tests.
-#[cfg(test)]
-#[allow(clippy::unused_async, reason = "the same call as the app's, which downloads")]
-pub(crate) async fn fetch(_dirs: &AppDirs, _log: &mut impl FnMut(String)) -> Result<Scripts> {
-    Ok(for_tests())
-}
-
-#[cfg_attr(test, allow(dead_code, reason = "the app's download path; its parts are tested below"))]
 fn short(commit: &str) -> &str {
     commit.get(..12).unwrap_or(commit)
 }
@@ -103,7 +110,6 @@ fn keep(cache: &Path, want: &str, bytes: &[u8]) {
     }
 }
 
-#[cfg_attr(test, allow(dead_code, reason = "the app's download path"))]
 async fn download(url: &str) -> Result<Vec<u8>> {
     let res = crate::platform::http::download_client()?.get(url).send().await.map_err(|e| Error::Invalid(e.to_string()))?;
     let res = res.error_for_status().map_err(|e| Error::Invalid(e.to_string()))?;
