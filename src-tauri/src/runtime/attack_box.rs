@@ -21,6 +21,8 @@ pub(crate) use place::{Pick, locate, reachable};
 pub(crate) use scripts::Scripts;
 #[cfg(test)]
 pub(crate) use scripts::for_tests as test_scripts;
+#[cfg(test)]
+pub(crate) use scripts::use_the_real_scripts;
 pub use sign_in::SignIn;
 pub(crate) use status::AttackStatus;
 

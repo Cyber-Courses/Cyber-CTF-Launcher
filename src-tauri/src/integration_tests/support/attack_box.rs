@@ -91,8 +91,10 @@ fn probe_args(console: &ShellCommand, probe: &str) -> Option<Vec<String>> {
 }
 
 /// Adds the attack box to the running lab `placed`, from `image` beside containers, as the lab
-/// page's Start attack box does.
+/// page's Start attack box does: set up by the pinned scripts, downloaded as the app does.
 pub(crate) async fn add_box(placed: &Placed, dirs: &AppDirs, image: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
+    // The player's box: with the stand-in scripts the unit tests use, it has no player account.
+    crate::runtime::attack_box::use_the_real_scripts();
     let added = placed.add(dirs, crate::runtime::attack_box::Pick { image, desktop: false }, None, l).await;
     check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
 }
