@@ -382,6 +382,17 @@ impl Deployment {
         self.change(remote::Act::Retire(machine), log).await
     }
 
+    /// Saves `machine` of the running lab as a box file at `output` (Vagrant's `package`): the
+    /// machine is stopped first, and the lab reads failed after, until it is brought down.
+    pub(crate) async fn package(&self, machine: &str, output: &Path, log: &mut impl FnMut(String)) -> Result<()> {
+        self.change(remote::Act::Package(machine, output), log).await
+    }
+
+    /// The hypervisor the run's record says it runs on; none before it ever ran. No tool runs.
+    pub(crate) async fn provider(&self) -> Result<Option<isothrum_runner::Provider>> {
+        Ok(self.recorded().await?.and_then(|r| r.provider))
+    }
+
     /// Runs the lab's set-up again on its running machines (`machine`, or all): its provisioners,
     /// and its controller's play, with the values the run was launched with, here
     /// ([`Deployment::launched_with`]).

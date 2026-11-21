@@ -7,7 +7,7 @@ fn shared(folder: &Path) -> Shared {
 
 /// [`add`] with no shared folder.
 fn add_at(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -> Result<()> {
-    add(dir, kind, cpu, network, Inside { scripts: &test_scripts(), shared: None })
+    add(dir, kind, cpu, network, Inside { scripts: &test_scripts(), shared: None, local_box: None })
 }
 
 #[test]
@@ -32,6 +32,26 @@ fn the_box_is_a_kali_machine_on_the_first_machines_network_at_a_free_address() {
     remove(&dir).unwrap();
     assert!(!added(&dir).unwrap() && !dir.join(SETUP_FILE).exists());
     assert!(!lab::load(&dir).unwrap().machines.contains_key(NAME));
+}
+
+/// The box built here ([`local_box`]) has Kali and its toolset: a box booted from it only makes
+/// the player's account, and the lab's Vagrantfile boots it on every hypervisor; taken out, both go.
+#[test]
+fn a_box_booted_from_the_box_built_here_only_makes_the_players_account() {
+    let dir = crate::runtime::test_support::write_lab(
+        "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 249 } }\n",
+    );
+    let scripts = test_scripts();
+    let built = "cyberctf/attackbox-lab-0123456789ab";
+    add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &scripts, shared: None, local_box: Some(built) }).unwrap();
+    let setup = std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap();
+    assert_eq!(setup, booted_setup(&scripts, false, false));
+    assert!(!setup.contains(&scripts.kali) && !setup.contains(&scripts.toolset), "{setup}");
+    lab::prepare(&dir, lab::Target::Vagrant).unwrap();
+    let vagrantfile = std::fs::read_to_string(lab::vagrant_dir(&dir).join("Vagrantfile")).unwrap();
+    assert!(vagrantfile.contains(built), "the lab boots the built box:\n{vagrantfile}");
+    remove(&dir).unwrap();
+    assert!(!dir.join(lab::overlay::FILE).exists(), "the box's override went with it");
 }
 
 #[test]
@@ -257,7 +277,7 @@ fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
     let dir = web_lab();
     let folder = Path::new("/Users/someone/CyberCTF/shared");
     for kind in [Kind::Container { image: "kalilinux/kali-rolling" }, Kind::Vm { desktop: false }] {
-        add(&dir, kind, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(folder)) }).unwrap();
+        add(&dir, kind, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(folder)), local_box: None }).unwrap();
         let spec = lab::load(&dir).unwrap();
         let mounted: Vec<(&str, &str)> = spec.machines[NAME].host_folders.iter().map(|h| (h.from.as_str(), h.path.as_str())).collect();
         assert_eq!(mounted, [("/Users/someone/CyberCTF/shared", crate::shared_folder::MOUNT_POINT)], "{kind:?}");
@@ -273,8 +293,14 @@ fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
 fn the_shared_folder_is_mounted_read_write_both_ways() {
     let dir = web_lab();
     let folder = crate::testing::temp_dir("attack-box-shared");
-    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)) })
-        .unwrap();
+    add(
+        &dir,
+        Kind::Container { image: "kalilinux/kali-rolling" },
+        Cpu::Lab,
+        None,
+        Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)), local_box: None },
+    )
+    .unwrap();
     let spec = lab::load(&dir).unwrap();
     assert!(spec.machines[NAME].host_folders.iter().all(|h| !h.read_only), "the spec asks it read-write");
     lab::prepare(&dir, lab::Target::Docker).unwrap();
@@ -306,8 +332,14 @@ fn a_shared_folder_with_a_combining_mark_in_its_name_is_mounted() {
     let dir = web_lab();
     for name in ["Cafe\u{301}", "quote\"and\\backslash", "tab\there"] {
         let folder = Path::new("/Users/someone").join(name);
-        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)) })
-            .unwrap();
+        add(
+            &dir,
+            Kind::Container { image: "kalilinux/kali-rolling" },
+            Cpu::Lab,
+            None,
+            Inside { scripts: &test_scripts(), shared: Some(&shared(&folder)), local_box: None },
+        )
+        .unwrap();
         let spec = lab::load(&dir).unwrap();
         assert_eq!(spec.machines[NAME].host_folders[0].from, folder.display().to_string(), "{name:?}");
         remove(&dir).unwrap();
@@ -339,14 +371,15 @@ fn a_vm_box_says_its_shared_folder_is_squashed_where_it_is_and_a_container_never
     let dir = web_lab();
     for squashed in [false, true] {
         let folder = Shared { folder: Path::new("/home/someone/CyberCTF/shared").to_path_buf(), squashed };
-        add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder) }).unwrap();
+        add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder), local_box: None }).unwrap();
         let script = std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap();
         assert!(script.contains(&account(if squashed { " shared_squashed=1" } else { "" })), "{squashed}: {script}");
         assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
         remove(&dir).unwrap();
     }
     let folder = Shared { folder: Path::new("/home/someone/CyberCTF/shared").to_path_buf(), squashed: false };
-    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder) }).unwrap();
+    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Inside { scripts: &test_scripts(), shared: Some(&folder), local_box: None })
+        .unwrap();
     let command = layer_machine(&dir)["command"].as_str().unwrap().to_owned();
     assert!(command.contains(&account("")) && !command.contains(" shared_squashed=1"), "Docker binds it as it is: {command}");
     remove(&dir).unwrap();
