@@ -85,7 +85,9 @@ pub(crate) async fn ready(dirs: &AppDirs, provider: isothrum_runner::Provider, c
     }
     log("Building the attack box on this computer, once: about 10 minutes. Later starts boot it in about a minute.".into());
     let home = crate::runtime::paths::runner_home(dirs)?;
-    let dir = dirs.cache()?.join("attack-box").join(name.replace('/', "-"));
+    // Beside the runner's runs, which every app has (its cache folder an app may not), and removed
+    // once built.
+    let dir = home.join("attack-box-build").join(name.replace('/', "-"));
     let wanted = Wanted { provider, cpu, script, name: &name };
     let built = build(&home, &dir, &wanted, log).await;
     // The build's environment, whatever became of it: the box is what is kept.
