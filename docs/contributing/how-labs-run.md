@@ -105,16 +105,6 @@ the desktop. The account takes the shared folder's owner's uid where the box doe
 Linux computer's, through Docker or virtiofs), and joins the folder's group (a VM's shared folder
 mounted for `vagrant`). Root stays the image's own user.
 
-On this computer's hypervisors, a VM box doesn't install Kali's toolset in each lab
-(`attack_box::local_box`). The first time one is added, the launcher builds a Vagrant box of its
-own: a one-machine Isoloom environment (Kali, or Debian made Kali on Arm) runs `vm/kali.sh` and
-`vm/toolset.sh`, the runner saves that machine (`package`), and the launcher adds the file as
-`cyberctf/attackbox-<cpu>-<12 hex of the build script's SHA-256>`. That takes about ten minutes,
-once. It is recorded with the runner's downloads, so Settings ▸ Storage lists and removes it. A
-lab's box then boots it (Isoloom's `overrides.vagrant.machines.<box>.box` in the overlay), and
-its own set-up is the player's account and the desktop. A changed script makes a new box. A
-server's or a cloud's box keeps the full set-up.
-
 ### Its password
 
 The launcher makes a new password each time it adds a box (`attack_box/sign_in.rs`): 20 random

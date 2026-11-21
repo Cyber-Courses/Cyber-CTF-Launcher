@@ -158,8 +158,7 @@ mod tests {
         let t = TestApp::new();
         let spec = "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n";
         let dir = t.lab("signin", &[("isoloom.yml", spec)]);
-        attack_box::add(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None, Inside { scripts: &attack_box::test_scripts(), shared: None, local_box: None })
-            .unwrap();
+        attack_box::add(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None, Inside { scripts: &attack_box::test_scripts(), shared: None }).unwrap();
         let app = t.handle();
         let sign_in = |machine: &str| {
             let label = format!("screen-signin:{machine}");

@@ -76,9 +76,8 @@ impl Placed {
         let kind = if self.vm { Kind::Vm { desktop: pick.desktop } } else { Kind::Container { image: pick.image } };
         let shared = self.shared_folder(dirs, log).await?;
         let scripts = super::scripts::fetch(dirs, log).await?;
-        let local_box = self.local_box(dirs, kind, &scripts, log).await?;
-        let inside = Inside { scripts: &scripts, shared: shared.as_ref(), local_box: local_box.as_deref() };
-        let written = super::add(&self.dir, kind, self.cpu(), network, inside).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
+        let written = super::add(&self.dir, kind, self.cpu(), network, Inside { scripts: &scripts, shared: shared.as_ref() })
+            .and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
             Ok(()) => match self.host.update(dirs, log).await {
@@ -187,18 +186,6 @@ impl Placed {
     /// Whether the box runs here, on this machine.
     fn local(&self) -> bool {
         self.host.is_here()
-    }
-
-    /// The box a VM box boots here, built once ([`super::local_box`]): a VM lab on this computer's
-    /// hypervisor only (a server's or a cloud's sets the box up in full), on the hypervisor its
-    /// run records.
-    async fn local_box(&self, dirs: &AppDirs, kind: Kind<'_>, scripts: &super::Scripts, log: &mut impl FnMut(String)) -> Result<Option<String>> {
-        if !matches!(kind, Kind::Vm { .. }) || !self.local() || self.host.on_esxi() {
-            return Ok(None);
-        }
-        let Some(provider) = self.host.run.provider().await? else { return Ok(None) };
-        let script = super::local_box_script(scripts);
-        super::local_box::ready(dirs, provider, self.cpu(), &script, log).await.map(Some)
     }
 }
 
@@ -370,7 +357,7 @@ mod tests {
             Kind::Container { image: "kalilinux/kali-rolling" },
             Cpu::Lab,
             None,
-            Inside { scripts: &super::super::test_scripts(), shared: None, local_box: None },
+            Inside { scripts: &super::super::test_scripts(), shared: None },
         )
         .unwrap();
         let home = dir.join("home");
@@ -382,8 +369,7 @@ mod tests {
         assert!(compose.contains(&format!("account={PLAYER} shared=/shared password_hash=")), "the box makes its account where it starts: {compose}");
 
         let dir = lab("os: debian@12");
-        super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &super::super::test_scripts(), shared: None, local_box: None })
-            .unwrap();
+        super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &super::super::test_scripts(), shared: None }).unwrap();
         let home = dir.join("home");
         let shell = box_shell(&dir, Target::Vagrant, isothrum::Deployment::vm(&home, &dir, "t"), true).await;
         assert_eq!(shell.args[..3], ["ssh", NAME, "-c"], "{:?}", shell.args);
