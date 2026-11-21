@@ -10,7 +10,6 @@
 //! screen, `su`, SSH): [`mod@sign_in`]. Where the lab runs, and how the box goes in and out of its
 //! run: [`locate`], [`place::Placed`]; the box as the lab page shows it: [`AttackStatus`].
 
-mod local_box;
 mod place;
 mod scripts;
 mod sign_in;
@@ -165,18 +164,6 @@ fn setup_script_with(scripts: &Scripts, desktop: bool, toolset: bool, squashed: 
     [scripts.kali.as_str(), toolset, &player_account(scripts, squashed), "\n", if desktop { scripts.desktop.as_str() } else { "" }].concat()
 }
 
-/// The set-up of a box booted from the box built here ([`local_box`]), which has Kali and its
-/// toolset: the player's account ([`player_account`]), then the desktop when it has one.
-fn booted_setup(scripts: &Scripts, desktop: bool, squashed: bool) -> String {
-    format!("{}\n{}", player_account(scripts, squashed), if desktop { scripts.desktop.as_str() } else { "" })
-}
-
-/// What the box built here runs ([`local_box::build_script`]): Kali, then its toolset unless a
-/// test run switched it off ([`toolset_wanted`]).
-pub(crate) fn local_box_script(scripts: &Scripts) -> String {
-    local_box::build_script(scripts, toolset_wanted())
-}
-
 /// Its disk: room for Kali's headless toolset (about 12 GB) beside the image, and for the desktop
 /// (about 3 GB more) when it has one.
 const DISK_GB: u32 = 40;
@@ -280,10 +267,6 @@ pub(crate) struct Inside<'a> {
     pub(crate) scripts: &'a Scripts,
     /// The shared folder, mounted in the box.
     pub(crate) shared: Option<&'a Shared>,
-    /// The Vagrant box a VM box boots, built once here with Kali and its toolset
-    /// ([`local_box`]): its set-up is then the player's account (and the desktop) alone. None:
-    /// its OS's box, set up in full (a server's, a cloud's, a container box).
-    pub(crate) local_box: Option<&'a str>,
 }
 
 /// [`Networks`] for the box in the lab in `dir`, as [`add`] places it.
@@ -304,7 +287,7 @@ pub(crate) fn networks(dir: &Path) -> Result<Networks> {
 /// pick when the lab declares none), with a new password for its player account ([`mod@sign_in`]):
 /// kept by the launcher, its hash placed in the box for its set-up.
 pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, inside: Inside<'_>) -> Result<()> {
-    let Inside { scripts, shared, local_box } = inside;
+    let Inside { scripts, shared } = inside;
     let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
     let networks = networks.iter().map(|(n, o)| format!("{}: {o}", yaml_string(n))).collect::<Vec<_>>().join(", ");
     let hardware = match cpu {
@@ -326,11 +309,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, i
             format!("{{ {hardware}{shared}app: {{ image: {} }}, networks: {{ {networks} }} }}", yaml_string(image))
         }
         (Kind::Vm { desktop }, cpu) => {
-            let setup = match local_box {
-                Some(_) => booted_setup(scripts, desktop, squashed),
-                None => setup_script(scripts, desktop, squashed),
-            };
-            std::fs::write(dir.join(SETUP_FILE), setup)?;
+            std::fs::write(dir.join(SETUP_FILE), setup_script(scripts, desktop, squashed))?;
             let os = if cpu == Cpu::Arm { "debian@12" } else { "kali@rolling" };
             let size = if desktop { format!(", memory_mb: {}, cpus: {}", DESKTOP_SIZE.0, DESKTOP_SIZE.1) } else { String::new() };
             format!(
@@ -345,8 +324,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, i
     if let Value::Mapping(m) = &mut machine {
         m.insert("files".into(), Value::Sequence(vec![sign_in::hash_file(&sign_in::new(dir)?)]));
     }
-    let added = overlay::add_machine(dir, &name, machine, overlay::Adding { replaces, attack_box: true })
-        .and_then(|()| local_box.map_or(Ok(()), |b| overlay::set_box(dir, &name, b)));
+    let added = overlay::add_machine(dir, &name, machine, overlay::Adding { replaces, attack_box: true });
     if added.is_err() {
         sign_in::forget(dir);
     }

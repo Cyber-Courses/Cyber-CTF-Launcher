@@ -131,8 +131,6 @@ pub(super) enum Act<'a> {
     Provision(Option<&'a str>, Option<&'a str>),
     /// Run a command in a machine (none: its own command, a one-off of a Compose service).
     Exec(&'a str, &'a [String]),
-    /// Save a machine as a box file (Vagrant's `package`), which a later run boots.
-    Package(&'a str, &'a Path),
 }
 
 /// Why an operation failed: the service's report (its code and words), or the launcher's own
@@ -196,7 +194,6 @@ fn command(act: Act<'_>, target: Target, opts: &RunOptions) -> Command {
         Act::Attach(machine) => Command::Attach { target, options, machine: machine.to_owned() },
         Act::Provision(machine, with) => Command::Provision { target, options, machine: machine.map(str::to_owned), with: with.map(str::to_owned) },
         Act::Exec(machine, argv) => Command::Exec { target, options, machine: machine.to_owned(), argv: argv.to_vec() },
-        Act::Package(machine, output) => Command::Package { target, options, machine: machine.to_owned(), output: output.to_path_buf() },
     }
 }
 
