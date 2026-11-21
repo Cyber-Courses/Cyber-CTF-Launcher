@@ -657,7 +657,7 @@ mod tests {
             Kind::Container { image: "kalilinux/kali-rolling" },
             Cpu::Lab,
             None,
-            Inside { scripts: &attack_box::test_scripts(), shared: None },
+            Inside { scripts: &attack_box::test_scripts(), shared: None, local_box: None },
         )
         .unwrap();
         let got = sign_in().await.unwrap().expect("the box's sign-in");

@@ -80,6 +80,42 @@ pub(crate) fn add_machine(dir: &Path, name: &str, machine: Value, adding: Adding
     write(dir, &layer)
 }
 
+/// Has machine `name` of the layer boot Vagrant box `vagrant_box` on every local hypervisor
+/// (Isoloom's `overrides.vagrant.machines.<name>`: its `box`, and its `boxes` for the hypervisors
+/// that take their own), in place of its OS's box.
+pub(crate) fn set_box(dir: &Path, name: &str, vagrant_box: &str) -> Result<()> {
+    let mut layer = read(dir)?.unwrap_or_else(|| Value::Mapping(Mapping::new()));
+    let mut at = &mut layer;
+    for key in ["overrides", "vagrant", "machines"] {
+        let map = at.as_mapping_mut().ok_or_else(|| Error::Invalid(format!("{FILE}: `{key}`'s parent isn't a mapping")))?;
+        at = map.entry(Value::from(key)).or_insert_with(|| Value::Mapping(Mapping::new()));
+    }
+    let machines = at.as_mapping_mut().ok_or_else(|| Error::Invalid(format!("{FILE}: `overrides.vagrant.machines` isn't a mapping")))?;
+    let boxes: Mapping = ["qemu", "hyperv", "utm"].into_iter().map(|p| (Value::from(p), Value::from(vagrant_box))).collect();
+    let entry: Mapping = [(Value::from("box"), Value::from(vagrant_box)), (Value::from("boxes"), Value::Mapping(boxes))].into_iter().collect();
+    machines.insert(Value::from(name), Value::Mapping(entry));
+    write(dir, &layer)
+}
+
+/// The layer without machine `name`'s box ([`set_box`]); an emptied `overrides` goes with it.
+fn drop_box(layer: &mut Value, name: &str) {
+    let Some(overrides) = layer.get_mut("overrides") else { return };
+    if let Some(vagrant) = overrides.get_mut("vagrant") {
+        if let Some(machines) = vagrant.get_mut("machines").and_then(Value::as_mapping_mut) {
+            machines.remove(name);
+            if machines.is_empty() {
+                vagrant.as_mapping_mut().map(|m| m.remove("machines"));
+            }
+        }
+        if vagrant.as_mapping().is_some_and(Mapping::is_empty) {
+            overrides.as_mapping_mut().map(|m| m.remove("vagrant"));
+        }
+    }
+    if overrides.as_mapping().is_some_and(Mapping::is_empty) {
+        layer.as_mapping_mut().map(|m| m.remove("overrides"));
+    }
+}
+
 /// The layer's machine that is the attack box, when it has one.
 pub(crate) fn attack_box(dir: &Path) -> Result<Option<String>> {
     Ok(read(dir)?.and_then(|l| l.get(ATTACK_BOX).and_then(Value::as_str).map(str::to_owned)))
@@ -98,6 +134,7 @@ pub(crate) fn remove_machine(dir: &Path, name: &str) -> Result<()> {
     if layer.get(ATTACK_BOX).and_then(Value::as_str) == Some(name) {
         layer.as_mapping_mut().map(|m| m.remove(ATTACK_BOX));
     }
+    drop_box(&mut layer, name);
     if let Some(list) = layer.get_mut(REPLACE).and_then(Value::as_sequence_mut) {
         list.retain(|n| n.as_str() != Some(name));
         if list.is_empty() {
