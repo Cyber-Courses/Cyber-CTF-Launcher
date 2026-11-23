@@ -1,0 +1,56 @@
+{
+  "screen": {
+    "title": "Nube",
+    "lead": "Instancias desechables en tu propia cuenta, facturadas a ti y detenidas automáticamente.",
+    "setUp": "Configurar proveedor de nube",
+    "overOne": "{name} ha superado su presupuesto mensual. Los nuevos labs ahí quedan bloqueados hasta que subas el presupuesto o empiece el próximo mes.",
+    "overMany": "{count} cuentas han superado su presupuesto mensual. Los nuevos labs ahí quedan bloqueados hasta que subas el presupuesto o empiece el próximo mes.",
+    "runningNow": "En ejecución",
+    "billingWhileRunning": "se facturan mientras se ejecutan",
+    "catalogueUnread": "No se pudo cargar el catálogo de labs ({why}), así que puede faltar en En ejecución un lab que se ejecuta en una de tus cuentas.",
+    "autoStops": "se detiene {time}",
+    "stop": "Detener",
+    "loading": "Cargando…",
+    "accounts": "Cuentas",
+    "billedOnly": "se factura solo mientras un lab se ejecuta",
+    "budgetGuard": "Control de presupuesto · {name}",
+    "ofLimit": "de {limit}",
+    "overBudget": "Presupuesto superado",
+    "autoStopAfter": "parada automática tras {hours} h",
+    "noAutoStop": "sin parada automática"
+  },
+  "empty": {
+    "title": "Ninguna cuenta en la nube conectada",
+    "description": "Conecta tu propia cuenta en la nube para ejecutar cada lab en una instancia desechable, destruida al detenerlo."
+  },
+  "account": {
+    "apiToken": "Token de API",
+    "apiKey": "Clave de API",
+    "cliSignIn": "Inicio de sesión CLI",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "Credenciales CLI",
+    "accessKeys": "claves de acceso",
+    "autoStop": "parada auto. {hours}h",
+    "noAutoStop": "sin parada automática",
+    "budget": "presupuesto {amount}/mes",
+    "spentThisMonth": "{amount} este mes",
+    "status": {
+      "testing": "Probando…",
+      "notTested": "Sin probar",
+      "connected": "Conectada",
+      "needsAttention": "Requiere atención",
+      "failed": "Error",
+      "overBudget": "Presupuesto superado"
+    },
+    "remove": "Eliminar",
+    "test": "Probar",
+    "edit": "Editar",
+    "removeTitle": "¿Eliminar {name}?",
+    "removeBody": "Cyber CTF olvida esta cuenta y borra las claves que guardó para ella. No cambia nada en la propia cuenta de nube, y puedes volver a conectarla más tarde.",
+    "removeAccount": "Eliminar cuenta"
+  },
+  "connect": {
+    "title": "Conectar un proveedor de nube",
+    "provider": "Conectar {provider}"
+  }
+}

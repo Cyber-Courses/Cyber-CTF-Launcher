@@ -1,0 +1,182 @@
+//! The registry: reading values, and the current user's own values.
+
+use std::ffi::OsStr;
+
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
+use windows_sys::Win32::System::Registry::{
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_DWORD, REG_SZ, RRF_RT_REG_DWORD, RegCloseKey, RegDeleteKeyValueW, RegEnumValueW, RegGetValueW,
+    RegOpenKeyExW, RegSetKeyValueW,
+};
+
+use super::wide;
+use crate::platform::sys::RegistryValue;
+
+/// A registry hive the launcher reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hive {
+    /// `HKEY_LOCAL_MACHINE`: the machine's settings.
+    LocalMachine,
+    /// `HKEY_CURRENT_USER`: this user's settings, which only a test reads (the app writes them).
+    #[cfg(test)]
+    CurrentUser,
+}
+
+impl Hive {
+    fn key(self) -> HKEY {
+        match self {
+            Hive::LocalMachine => HKEY_LOCAL_MACHINE,
+            #[cfg(test)]
+            Hive::CurrentUser => HKEY_CURRENT_USER,
+        }
+    }
+}
+
+/// The string value `name` under `key`, its %VARIABLES% expanded (`RegGetValueW` expands a
+/// `REG_EXPAND_SZ` when asked for `RRF_RT_REG_SZ`). None if absent or unreadable. A test's read
+/// of what it wrote.
+#[cfg(test)]
+pub fn registry_string(hive: Hive, key: &str, name: &str) -> Option<std::ffi::OsString> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+    use windows_sys::Win32::System::Registry::RRF_RT_REG_SZ;
+    let (key, name) = (wide(OsStr::new(key)), wide(OsStr::new(name)));
+    let mut buf: Vec<u16> = vec![0; 4096];
+    // An expanded value can outgrow the size first reported: grow and retry a few times.
+    for _ in 0..4 {
+        let mut bytes = u32::try_from(buf.len() * 2).ok()?;
+        // SAFETY: valid NUL-terminated key/value names; `buf` holds `bytes` bytes.
+        let status =
+            unsafe { RegGetValueW(hive.key(), key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &raw mut bytes) };
+        let units = usize::try_from(bytes).ok()? / 2;
+        match status {
+            ERROR_SUCCESS => {
+                let units = units.min(buf.len());
+                let len = buf[..units].iter().position(|&c| c == 0).unwrap_or(units);
+                return Some(std::ffi::OsString::from_wide(&buf[..len]));
+            }
+            ERROR_MORE_DATA => buf.resize(units.max(buf.len() * 2) + 1, 0),
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Whether a registry value exists (its data isn't read): a test's check of what it wrote.
+#[cfg(test)]
+pub fn registry_value_exists(hive: Hive, path: &str, name: &str) -> Option<bool> {
+    use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+    use windows_sys::Win32::System::Registry::RRF_RT_ANY;
+    let (path, name) = (wide(OsStr::new(path)), wide(OsStr::new(name)));
+    // SAFETY: NUL-terminated names; no type or data asked for (all three pointers null).
+    let status =
+        unsafe { RegGetValueW(hive.key(), path.as_ptr(), name.as_ptr(), RRF_RT_ANY, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
+    match status {
+        ERROR_SUCCESS | ERROR_MORE_DATA => Some(true),
+        ERROR_FILE_NOT_FOUND => Some(false),
+        _ => None,
+    }
+}
+
+/// Every value under `path` (its name and data), None when the key doesn't exist.
+///
+/// # Errors
+///
+/// When the key is there but can't be opened or listed (access denied).
+pub fn registry_values(hive: Hive, path: &str) -> std::io::Result<Option<Vec<(String, RegistryValue)>>> {
+    let path = wide(OsStr::new(path));
+    let mut key: HKEY = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated key name; `key` receives the handle, closed below.
+    let status = unsafe { RegOpenKeyExW(hive.key(), path.as_ptr(), 0, KEY_READ, &raw mut key) };
+    match status {
+        ERROR_SUCCESS => {}
+        ERROR_FILE_NOT_FOUND => return Ok(None),
+        other => return Err(os_error(other)),
+    }
+    let values = values_of(key);
+    // SAFETY: the handle RegOpenKeyExW just opened.
+    unsafe { RegCloseKey(key) };
+    values.map(Some)
+}
+
+/// The values of the open key `key`: each name and type, then a `REG_DWORD`'s data.
+fn values_of(key: HKEY) -> std::io::Result<Vec<(String, RegistryValue)>> {
+    let mut values = Vec::new();
+    // A value name is at most 16,383 characters.
+    let mut name = vec![0u16; 16_384];
+    for index in 0.. {
+        let mut len = u32::try_from(name.len()).map_err(std::io::Error::other)?;
+        let mut kind = 0u32;
+        // SAFETY: `name` holds `len` characters; the data isn't asked for (null pointers).
+        let status =
+            unsafe { RegEnumValueW(key, index, name.as_mut_ptr(), &raw mut len, std::ptr::null(), &raw mut kind, std::ptr::null_mut(), std::ptr::null_mut()) };
+        match status {
+            ERROR_SUCCESS => {}
+            ERROR_NO_MORE_ITEMS => break,
+            other => return Err(os_error(other)),
+        }
+        let units = usize::try_from(len).map_err(std::io::Error::other)?.min(name.len());
+        let value = if kind == REG_DWORD { dword(key, &name[..units])? } else { RegistryValue::Other(kind) };
+        values.push((String::from_utf16_lossy(&name[..units]), value));
+    }
+    Ok(values)
+}
+
+/// The `REG_DWORD` value named `name` (without its NUL) under the open key `key`.
+fn dword(key: HKEY, name: &[u16]) -> std::io::Result<RegistryValue> {
+    let name: Vec<u16> = name.iter().copied().chain(std::iter::once(0)).collect();
+    let mut data = 0u32;
+    let mut bytes = 4u32;
+    // SAFETY: a NUL-terminated value name; `data` holds the 4 bytes `bytes` says.
+    let status = unsafe { RegGetValueW(key, std::ptr::null(), name.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), (&raw mut data).cast(), &raw mut bytes) };
+    if status == ERROR_SUCCESS { Ok(RegistryValue::Dword(data)) } else { Err(os_error(status)) }
+}
+
+/// A Win32 error code as an I/O error.
+fn os_error(code: u32) -> std::io::Error {
+    std::io::Error::from_raw_os_error(i32::try_from(code).unwrap_or(i32::MAX))
+}
+
+/// Sets the string value `name` under the current user's `key` to `value`; whether it was.
+pub fn set_user_registry_string(key: &str, name: &str, value: &str) -> bool {
+    let (key, name, data) = (wide(OsStr::new(key)), wide(OsStr::new(name)), wide(OsStr::new(value)));
+    let Ok(bytes) = u32::try_from(data.len() * 2) else { return false };
+    // SAFETY: NUL-terminated names; `data` is a NUL-terminated REG_SZ of `bytes` bytes.
+    let status = unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), REG_SZ, data.as_ptr().cast(), bytes) };
+    status == ERROR_SUCCESS
+}
+
+/// Deletes the value `name` under the current user's `key`, if it is there.
+pub fn delete_user_registry_value(key: &str, name: &str) {
+    let (key, name) = (wide(OsStr::new(key)), wide(OsStr::new(name)));
+    // SAFETY: NUL-terminated names.
+    unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) };
+}
+
+#[cfg(test)]
+mod tests {
+    use windows_sys::Win32::System::Registry::RegDeleteTreeW;
+
+    use super::*;
+
+    #[test]
+    fn values_written_under_the_current_user_read_back_as_the_policy_reads_them() {
+        let key = format!(r"Software\CyberCTF-test-{}", rand::random::<u32>());
+        let wkey = wide(OsStr::new(&key));
+        let name = wide(OsStr::new("DisableUpdater"));
+        let one = 1u32;
+        // SAFETY: NUL-terminated names; `one` is the 4 bytes of a REG_DWORD.
+        let status = unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, wkey.as_ptr(), name.as_ptr(), REG_DWORD, (&raw const one).cast(), 4) };
+        assert_eq!(status, ERROR_SUCCESS);
+        assert!(set_user_registry_string(&key, "Note", "%USERPROFILE%"));
+        assert_eq!(registry_value_exists(Hive::CurrentUser, &key, "Note"), Some(true));
+        let values = registry_values(Hive::CurrentUser, &key).unwrap().unwrap();
+        assert!(values.contains(&("DisableUpdater".to_string(), RegistryValue::Dword(1))), "{values:?}");
+        assert!(values.contains(&("Note".to_string(), RegistryValue::Other(REG_SZ))), "{values:?}");
+        assert_eq!(registry_string(Hive::CurrentUser, &key, "Note"), Some(std::ffi::OsString::from("%USERPROFILE%")), "a REG_SZ is read as written");
+        delete_user_registry_value(&key, "Note");
+        assert_eq!(registry_value_exists(Hive::CurrentUser, &key, "Note"), Some(false));
+        // SAFETY: a NUL-terminated key name under the current user, made by this test.
+        unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, wkey.as_ptr()) };
+        assert_eq!(registry_values(Hive::CurrentUser, &key).unwrap(), None, "no key: no policy");
+    }
+}

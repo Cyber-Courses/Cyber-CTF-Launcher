@@ -1,0 +1,12 @@
+vSwitch0
+   Name: vSwitch0
+   Class: cswitch
+   Num Ports: 2560
+   Uplinks: vmnic0
+   Portgroups: VM Network, Management Network
+
+iso1-lab
+   Name: iso1-lab
+   Class: cswitch
+   Uplinks: 
+   Portgroups: iso1-lab

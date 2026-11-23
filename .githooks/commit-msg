@@ -1,0 +1,14 @@
+#!/bin/sh
+# commit-msg: the message carries no attribution line (lib.sh's ATTRIBUTION): the trailers an
+# assistant adds (Co-Authored-By, Claude-Session), "Generated with", the robot. git gives the
+# message's file as the argument.
+# shellcheck source-path=SCRIPTDIR
+set -u
+HOOK=commit-msg
+# shellcheck source=lib.sh
+. "$(dirname "$0")/lib.sh"
+
+if found=$(attribution_lines <"$1"); then
+  refuse "the message carries an attribution line; take it out (git commit --amend edits the message):" "$found"
+fi
+exit 0

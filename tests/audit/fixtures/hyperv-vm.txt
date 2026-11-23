@@ -1,0 +1,1 @@
+{"Id":"6b1a9a4c-1111-4222-8333-944455556666","Name":"hello-stack-web","State":"Running","CreationTime":"2026-11-11T12:00:05.0000000Z","Path":"C:\\Users\\vagrant\\AppData\\Roaming\\org.cyberctf.desktop\\runs\\cyberctf-hello\\vagrant\\machines\\web\\hyperv"}

@@ -1,0 +1,214 @@
+{
+  "appearance": {
+    "title": "外観",
+    "description": "ランチャーの見た目と表示言語です。このコンピューターに保存されます。",
+    "theme": "テーマ",
+    "themes": {
+      "dark": "ダーク",
+      "black": "ブラック",
+      "light": "ライト"
+    },
+    "themeDescriptions": {
+      "dark": "ダークは落ち着いたニュートラルグレーで、目に優しい配色です。",
+      "black": "ブラックは完全な黒を使用し、OLED 画面に適しています。",
+      "light": "ライトは温かみのある紙のような色合いで、明るい部屋に適しています。"
+    },
+    "language": "言語",
+    "languageDescription": "ランチャーの表示言語です。「システム」を選ぶとコンピューターの設定に従います。",
+    "languageSystem": "システム"
+  },
+  "tabs": {
+    "label": "設定のセクション",
+    "account": "アカウント",
+    "appearance": "外観",
+    "labs": "ラボ",
+    "maintenance": "メンテナンス",
+    "about": "このアプリについて"
+  },
+  "saved": "保存しました",
+  "account": {
+    "title": "アカウント",
+    "description": "サインインするとこのマシンが登録され、Web サイトから起動したラボがここで実行されます。",
+    "checking": "確認中…",
+    "signedIn": "サインイン済み",
+    "signOut": "サインアウト",
+    "thisMachine": "このマシン",
+    "online": "オンライン",
+    "offline": "オフライン",
+    "runs": "実行可能：{list}",
+    "registering": "登録中…",
+    "notSignedIn": "未サインイン",
+    "signInHint": "Cyber アカウントでサインインすると、ラボを同期してどのデバイスからでも実行できます。",
+    "signIn": "サインイン",
+    "offByPolicy": "このコンピューターでは、組織によってウェブサイトからのラボの起動が無効にされています。",
+    "agentFailed": "ウェブサイトからこのマシンがどう見えるかを読み取れませんでした: {error}"
+  },
+  "labs": {
+    "title": "ラボ",
+    "description": "このマシンでラボを起動する方法です。このコンピューターにのみ保存されます。"
+  },
+  "labPorts": {
+    "title": "ラボのポート",
+    "default": "各サービスを固有のポートで公開します（例：CTFd は 8000）。別のラボやアプリがすでにポートを使用している場合、起動は停止します。",
+    "random": "各サービスを空いているランダムなポートで公開します。別のラボやアプリと競合しません。",
+    "ask": "このマシンでコンテナラボを起動するたびに、ランダムな空きポートとラボ固有のポートのどちらを使うか確認します。",
+    "options": {
+      "ask": "確認する",
+      "random": "ランダム",
+      "default": "デフォルト"
+    }
+  },
+  "attackBox": {
+    "title": "アタックボックスのイメージ",
+    "description": "各ラボのネットワーク上で、あなたのツールボックスとして動作します。イメージは初回起動時にダウンロードされるため、時間がかかる場合があります。",
+    "default": "デフォルト",
+    "largeDownload": "大容量のダウンロード",
+    "pinned": "固定版",
+    "presets": {
+      "cyberctf": "標準ツール一式入りの Kali、すぐに使えます",
+      "kali": "公式 Kali ベース、必要に応じてツールを追加",
+      "parrot": "Parrot Security のツール一式",
+      "exegolFree": "Exegol Community：フルツールキット、Full より後に更新。学習・個人利用向け",
+      "exegolFull": "最新の Exegol ツールキット。Exegol Pro、Team、Enterprise プランが必要です"
+    },
+    "terms": {
+      "nonCommercial": "非商用利用",
+      "paidPlan": "有料プラン"
+    },
+    "customImage": "カスタムイメージ",
+    "customImageNote": "任意の Docker イメージまたはレジストリタグ。",
+    "save": "保存",
+    "autoStart": "ラボと一緒にアタックボックスを起動",
+    "autoStartDescription": "このマシンでラボが起動したらすぐに起動します。コンテナラボではコンテナ、VM ラボでは隣に置かれた VM です。ラボの画面から起動・停止することもできます。",
+    "invalidImage": "registry/name:tag のような単純なイメージ名を使ってください。英字、数字、. _ - / : @ のみで、先頭にハイフンは使えません。",
+    "desktop": {
+      "title": "攻撃用 VM のデスクトップ",
+      "description": "VM の攻撃用マシンは、ヘッドレスか、Kali の XFCE デスクトップ付きで動きます。デスクトップは画面に表示され、プレイヤーとしてサインインした状態になります。コンテナのマシンは常にヘッドレスです。",
+      "headless": "ヘッドレス",
+      "headlessNote": "ツールとシェルのみ。最小のセットアップです。",
+      "desktop": "デスクトップ",
+      "desktopNote": "Kali の XFCE デスクトップ。ダウンロードが約 1 GB、ディスクが約 3 GB 増え、VM にはメモリ 4 GB と CPU 2 個が必要です。"
+    }
+  },
+  "hypervisor": {
+    "title": "VM ラボ用のハイパーバイザー",
+    "checking": "ハイパーバイザーを確認中…",
+    "setupLink": "「マシン」ページでセットアップ",
+    "noneInstalled": "このマシンにはまだハイパーバイザーがインストールされていません。",
+    "current": "VM ラボと VM テストは {name} で実行されます。",
+    "noneReady": "インストール済みのハイパーバイザーでは、まだ VM ラボを実行できません。下記から Vagrant アドオンをインストールしてください。",
+    "automatic": "自動",
+    "automaticNote": "最初に準備ができたハイパーバイザー {name} を使用します。",
+    "readyPlugin": "準備完了 · Vagrant アドオン {plugin}",
+    "readyBuiltIn": "準備完了 · Vagrant に内蔵",
+    "needsPlugin": "インストール済み · Vagrant アドオン {plugin} が必要",
+    "notReady": "インストール済み · VM ラボの準備ができていません",
+    "installing": "インストール中…",
+    "installAddon": "アドオンをインストール",
+    "logInstalling": "Vagrant アドオン {plugin} をインストール中…",
+    "logInstalled": "✓ インストールしました",
+    "logTitle": "Vagrant アドオン",
+    "allowHyperv": "自分のアカウントを許可",
+    "allowingHyperv": "許可しています…",
+    "logAllowingHyperv": "アカウントを Hyper-V Administrators に追加しています（Windows が許可を求めます）…",
+    "logHypervAllowed": "✓ 完了しました。Windows からサインアウトして再度サインインし、もう一度確認してください。",
+    "checkFailed": "このマシンのハイパーバイザーを確認できませんでした: {error}",
+    "checkAgain": "再確認"
+  },
+  "cleanup": {
+    "title": "クリーンアップ",
+    "description": "このマシンでまだ実行中のもの（残ったラボや停止できなくなったラボ）を破棄し、ダウンロードしたイメージや VM Box のディスク容量を回収し、Cyber CTF がインストールしたツールを削除します。"
+  },
+  "installedTools": {
+    "title": "Cyber CTF がインストールしたツール",
+    "count": {
+      "one": "{count} 件インストール済み",
+      "other": "{count} 件インストール済み"
+    },
+    "intro": "セットアップ中にインストールされたものです。不要になったものは削除してください。以前からあったツールは表示されません。",
+    "installedAgo": "{ago} にインストール",
+    "remove": "削除",
+    "removing": "削除中…",
+    "logRemoving": "{name} を削除中…",
+    "confirmTitle": "{name} を削除しますか？",
+    "confirmBody": "{name} が必要なラボは、再インストールするまで起動できません（セットアップで再インストールできます）。ラボと設定は保持されます。"
+  },
+  "about": {
+    "title": "このアプリについて",
+    "description": "バージョン、アップデート、問題が起きたときに送っていただく情報。",
+    "version": "バージョン",
+    "system": "システム",
+    "installId": "インストール ID",
+    "updates": "アップデート",
+    "updateAvailable": "アップデートがあります",
+    "status": {
+      "checking": "アップデートを確認中…",
+      "latest": "最新バージョンです。",
+      "latestAt": "最新バージョンです（{time} に確認）。",
+      "error": "アップデートサーバーに接続できませんでした。接続を確認して再試行してください。",
+      "available": "バージョン {version} が利用可能です。",
+      "installing": "{version} をダウンロードしてインストール中…",
+      "installed": "バージョン {version} をインストールしました。Cyber CTF を再起動しています…",
+      "idle": "バナーから承認すると、アップデートは自動でインストールされます。"
+    },
+    "installing": "インストール中…",
+    "installUpdate": "アップデートをインストール",
+    "restartNow": "今すぐ再起動",
+    "checking": "確認中…",
+    "checkUpdates": "アップデートを確認",
+    "replayFailed": "セットアップを再実行できませんでした",
+    "diagnostics": "診断情報",
+    "diagnosticsDescription": "バグ報告やサポート依頼のために、バージョン、OS、セットアップの状態をコピーします。",
+    "copied": "コピーしました",
+    "copy": "コピー",
+    "saveDiagnostics": "診断情報を保存",
+    "saveHint": "診断情報を保存すると 1 つのファイルが作られます。バグ報告に添付してください。",
+    "saveFailed": "診断情報を保存できませんでした",
+    "bundleFilter": "診断情報パッケージ",
+    "savedTo": "{path} に保存しました。このファイルをバグ報告に添付してください。",
+    "sendToSupport": "サポートに送信",
+    "sendFailed": "サポートへのメールを準備できませんでした",
+    "mailSubject": "Cyber CTF {version}: バグ報告",
+    "mailBody": "こんにちは。\n\n行ったこと:\n\n期待した結果:\n\n実際に起きたこと:\n\n診断情報パッケージを添付しました（保存場所: {path}）。\n",
+    "logs": "ログファイル",
+    "logsDescription": "Cyber CTF の実行中の記録です。不具合の報告やサポートへの問い合わせに添えて送ってください。",
+    "openLogs": "フォルダを開く",
+    "logsFailed": "ログフォルダを開けませんでした",
+    "firstRun": "初回セットアップ",
+    "firstRunDescription": "オンボーディングをもう一度行います。設定とラボは保持されます。",
+    "replay": "再実行",
+    "channel": {
+      "policy": "このコンピューターのアップデートは組織が管理しています。",
+      "homebrew": "Homebrew でインストールされています。brew upgrade でアップデートしてください。",
+      "linuxPackage": "システムパッケージとしてインストールされています。パッケージマネージャー（apt）がアップデートします。",
+      "microsoftStore": "Microsoft Store からインストールされており、Microsoft Store が最新の状態に保ちます。"
+    },
+    "versionUnknown": "不明"
+  },
+  "sharedFolder": {
+    "title": "共有フォルダー",
+    "description": "攻撃用 Box から {mount} として見える、このコンピューター上のフォルダーです。ツールを入れ、成果を取り出せます。ラボを削除しても残ります。このコンピューターで動くラボが対象です（QEMU は Linux のみ。Hyper-V や、ラボの実行が示さないハイパーバイザーでは使えません）。サーバーやクラウドアカウントでは使えません。",
+    "pick": "アタックボックスと共有するフォルダー",
+    "change": "変更…",
+    "open": "フォルダーを開く"
+  },
+  "launchDefaults": {
+    "title": "記憶された起動の選択",
+    "remembered": "このマシンのコンテナエンジン、VM 形式、またはハイパーバイザーが記憶されています。",
+    "asked": "起動ダイアログが毎回確認します。",
+    "reset": "もう一度確認する"
+  },
+  "managed": {
+    "title": "組織による管理",
+    "description": "このコンピューターでは、IT 担当者が次の機能をオフにしています。必要な場合は問い合わせてください。",
+    "off": "オフ",
+    "keys": {
+      "DisableWebsiteAgent": "Web サイトからのラボの起動",
+      "DisableUpdater": "アプリ内アップデート",
+      "DisableToolInstalls": "ワンクリックでのツールのインストール",
+      "DisableCloudLaunches": "クラウドアカウントでのラボ",
+      "RefusePrivilegedLabs": "特権マシンを含むラボ"
+    },
+    "installsOff": "このコンピューターでは、組織によってツールのワンクリックでのインストールと削除が無効にされています (DisableToolInstalls)。ご自身で行うか、IT チームに依頼してください。"
+  }
+}

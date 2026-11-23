@@ -1,0 +1,2 @@
+{"id":"f3f3c036","name":"bridge","created":"2026-11-11T11:47:27.007627583Z","labels":{},"driver":"bridge"}
+{"id":"ccad4559","name":"cyberctf-hello_lab","created":"2026-11-11T13:05:23.854184554Z","labels":{"com.docker.compose.network":"lab","com.docker.compose.project":"cyberctf-hello","com.docker.compose.version":"5.7.0","isoloom.environment":"hello-stack","isoloom.managed":"true"},"driver":"bridge"}

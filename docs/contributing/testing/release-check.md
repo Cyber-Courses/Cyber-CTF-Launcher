@@ -1,0 +1,104 @@
+# The release check
+
+One command runs every layer of tests the launcher has, including the one CI cannot run, and
+prints one verdict per step:
+
+```sh
+scripts/release/release-check.sh                     # or: pnpm release-check
+SKIP=e2e-native scripts/release/release-check.sh     # what CI runs, without the native layer: pnpm check
+pnpm check:fast                                      # the short list while you work
+```
+
+`pnpm check:fast` runs `prereqs`, `install`, `format`, `clippy`, `unit-rust`, `other-platforms`
+(the Windows and Linux compile checks), `types`, `lint` and `unit-web`: what a change most often
+breaks, in a few minutes.
+
+It keeps going after a failure, so a single run lists everything that is wrong. `ONLY="…"` and
+`SKIP="…"` take step names (the runners it runs as steps, `other-platforms` and `e2e-native`,
+don't see them). A step reads `skip` when its tool isn't installed, and so does a runner step that
+skipped some of its own steps (a missing cross target, Docker not running): its own summary above
+says which. A release is ready when every step is `ok` and the manual checks at
+the end of this page have been done for what the release changes.
+
+## What each step proves
+
+| Step              | Command                                   | What it catches                                                                                                                                                     |
+| ----------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prereqs`         | tool presence                             | the machine can run the gate at all (Node 22, the major `.nvmrc` names: another stops it, though `engines` allows 24 and later; pnpm, cargo, cargo-machete, Docker) |
+| `install`         | `pnpm install --frozen-lockfile`          | the lockfile and `package.json` agree                                                                                                                               |
+| `versions`        | `pnpm check:tauri`                        | Tauri JS plugins and Rust crates drifted apart (fails `tauri build` otherwise)                                                                                      |
+| `docs`            | `pnpm check:docs`                         | a relative link or `#anchor` in the Markdown that doesn't resolve                                                                                                   |
+| `features`        | `pnpm check:features`                     | a test the feature registry names that doesn't exist, a command, screen, scenario or desktop case no feature claims, a stale `tests/features/FEATURES.md`           |
+| `format`          | prettier, `cargo fmt --check`             | formatting                                                                                                                                                          |
+| `clippy`          | `cargo clippy -D warnings`                | a lint this machine's code breaks (`other-platforms` checks the other systems')                                                                                     |
+| `types`           | `pnpm typecheck`                          | TypeScript, including the generated command bindings                                                                                                                |
+| `lint`            | `pnpm lint`                               | ESLint                                                                                                                                                              |
+| `build`           | `pnpm build`                              | the static export the app ships doesn't build                                                                                                                       |
+| `quality`         | `pnpm quality`                            | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, commented-out code, unused crates (`cargo machete`)                        |
+| `unit-web`        | `vitest run --coverage`                   | the frontend's unit and component tests, with the coverage floors in `vitest.config.mts`                                                                            |
+| `unit-harness`    | `pnpm test:harness`                       | the test runners' own tests (`run.mjs`, `run.sh`, the audit), each running a runner in child processes: opt-in outside this gate, as they take seconds each         |
+| `unit-rust`       | `cargo nextest run`, `cargo test --doc`   | the Rust tests that need no real tool (external tools are scripted through `platform/exec/fake.rs`), the module conventions among them (`testing/source_scan.rs`)   |
+| `bindings`        | `git status` of `src/lib/tauri/generated` | the TypeScript command types the Rust tests rewrote differ from those committed                                                                                     |
+| `docs-rust`       | `cargo doc --document-private-items`      | an intra-doc link that resolves to nothing, or a stray HTML tag in a doc comment, as `ci.yml` checks on each platform                                               |
+| `other-platforms` | `scripts/check/other-platforms.sh`        | clippy and rustdoc for Linux and Windows, CI's matrix: the code behind another OS's `#[cfg]`; skipped without `rustup`                                              |
+| `coverage-rust`   | `cargo llvm-cov nextest`                  | the Rust line floor (`RUST_LINES_FLOOR` in the check; the opt-in integration tests left out); skipped without `cargo-llvm-cov`                                      |
+| `deny`            | `cargo deny check`                        | a Rust dependency with an advisory, a licence `src-tauri/deny.toml` doesn't allow, or another source; skipped when `cargo-deny` is not installed                    |
+| `audit`           | `pnpm audit --prod`                       | a known vulnerability in a shipped npm dependency                                                                                                                   |
+| `shellcheck`      | `scripts/check/infra.sh shellcheck`       | a warning in the repository's shell scripts; skipped when not installed                                                                                             |
+| `actionlint`      | `actionlint`                              | a mistake in the workflows; skipped when not installed                                                                                                              |
+| `hooks`           | `.githooks/test.sh`                       | the git hooks, in a throwaway repository: an attribution line, a large file or a secret refused; skipped without `gitleaks`                                         |
+| `pins`            | `scripts/check/infra.sh pins`             | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                          |
+| `store-listings`  | `.github/scripts/check-store-listings.py` | a message catalogue or Store listing that doesn't parse, a listing over Partner Center's limits or naming a missing image; skipped without `python3`                |
+| `e2e-mock`        | `pnpm test:web`                           | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n     |
+| `e2e-native`      | `tests/e2e/desktop/runner/run.sh`         | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                              |
+
+`unit-web` and `unit-rust` run their tests with a temp folder of their own (`pnpm check:temp-leaks`):
+a test that leaves a file or folder there fails the step, so none piles up in the developer's temp
+folder. `CYBERCTF_TEST_TEMP_KEEP=1` keeps the folder to look into.
+
+`unit-rust` and `coverage-rust` need an Isoloom checkout: the contract tests run Isoloom's own
+example labs (`runtime/isothrum/tests/contract/spec_run.rs`) from `CYBERCTF_TEST_ISOLOOM_DIR`, else
+`../isoloom` beside this checkout (the workspace's layout). Without one, `prereqs` fails saying so,
+rather than the tests passing on nothing.
+
+Playwright starts the browser preview (`pnpm dev:web`) on port 3210, or reuses one already there;
+the preview builds into its own folder (`.next-web`), so it runs beside `pnpm tauri dev` and the
+native runner's dev server, which never serve the mock.
+
+CI runs this check and nothing else: `ci.yml` the short list on pull requests into `dev`, and
+`gate.yml` every step but the last before `main` and before a release, each job a few steps with
+`ONLY` and `STRICT=1` (a missing tool fails the job). So a green CI run mostly confirms the local
+checkout matches; the last step, which needs a desktop session, Docker and a hypervisor, is the
+reason to run the whole check on a machine that has them.
+
+## The native layer
+
+`tests/e2e/desktop/runner/run.sh` drives the real app binary through its embedded WebDriver server;
+[desktop-e2e.md](desktop-e2e.md) has its scenarios, knobs and why an app from `cargo build` needs the dev server.
+
+## What stays manual
+
+Not in the gate, run when the release touches them:
+
+- `packaging/windows/smoke-test.ps1`: the NSIS installer on Windows (paths with spaces, second
+  instance, corrupt settings, read-only data folder, uninstall keeps data).
+- The integration tests, `tests/integration/run.sh` ([integration.md](integration.md)): real labs on
+  Docker, local VMs, an AWS account and servers you provide (by their settings), with
+  the attack box on each form. Run it when the release touches running labs.
+- The other ignored Rust tests that need real tools: `real_flag_labs_the_flag_contract_holds_on_the_runner` (the flag
+  contract, with the backend), `fake_clis` (cloud reaper and hung CLI, `--test-threads=1`),
+  `finder_path_finds_tools` (the Finder PATH, `--test-threads=1`),
+  `the_real_aws_account_test_confirms_the_launch_permission` (an AWS account signed in with the
+  AWS CLI), `real_docker_clean_up_keeps_the_players_image` (Docker), `prints_this_machines_report` (prints the machine report),
+  `real_download_is_placed_and_runs` (a downloaded OVF Tool), `utm_is_opened_and_answers_before_a_vm_starts`
+  (UTM) and `queries_the_api_anonymously` (the network).
+- `package-smoke.yml` runs in CI, not in the check: the built bundle installed and launched on
+  all three OSes, on pull requests into `main` that touch the app, or by hand. The Docker labs end
+  to end (`docker_lab`, `pnpm test:integration`) run on the maintainers' test machines.
+- The in-app updater against a real release feed, and sign-in against the real backend.
+
+## Adding coverage
+
+A failure found in the field goes to the lowest layer that can reproduce it: a Rust test with
+a scripted tool, a component test, a mock flag plus a Playwright spec (`src/lib/dev-mock/scenario.ts`
+lists the flags), and a native scenario only when the real engine is the point.

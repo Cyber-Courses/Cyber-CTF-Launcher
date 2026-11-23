@@ -1,0 +1,215 @@
+"use client";
+
+import { useState } from "react";
+import { Play, RotateCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PortsStep, RememberToggle } from "@/features/labs/lab-detail/ports-step";
+import { RunOnDialog, RunOnPicker } from "@/features/labs/run-on";
+import type { RunTarget } from "@/features/labs/run-target";
+import type { RunTargetChoice } from "@/features/labs/lab-detail/use-run-target";
+import type { Lab } from "@/features/labs/use-labs";
+import { CloudLaunchNote, useCloudConsent, type CloudPreviewRead } from "@/features/labs/cloud-panel";
+import { cloudNames } from "@/features/labs/lab-runtime";
+import { joinOr } from "@/features/labs/lab-readiness";
+import { serverOpenSetup } from "@/lib/tauri";
+import { tell } from "@/lib/failure";
+import { useT, type T } from "@/lib/i18n";
+
+type StartLabProps = {
+  lab: Lab;
+  run: RunTargetChoice;
+  isDocker: boolean;
+  /** A cloud lab: its cost and inputs as read (`preview` once read, or why it couldn't be). Null
+   *  for the other labs. */
+  cloud?: CloudPreviewRead | null;
+  loggedIn: boolean;
+  busy: boolean;
+  dockerRunning: boolean | null;
+  onStart: (target: RunTarget) => void;
+  /** The last start failed: the same button, as Retry. */
+  retry?: boolean;
+  /** Open "Where should it run?" at once (the player pressed "Sign in to start" and is signed in
+   *  now: the question is the next step of what they asked for, see `useStartAfterSignIn`). */
+  chooseAtOnce?: boolean;
+};
+
+/** Why Start is greyed out (no runtime, signed out), if it is. */
+function startHint(t: T, { runtime, loggedIn }: { runtime: boolean; loggedIn: boolean }): string | undefined {
+  if (!runtime) return t("labs.detail.noRuntime");
+  if (!loggedIn) return t("labs.detail.signInHint");
+  return undefined;
+}
+
+/** Start lab: with somewhere else to run it (servers, a VM here), asks where first in
+ *  "Where should it run?"; otherwise starts here right away. A cloud lab always asks (which
+ *  account, and what it costs), and with no account of its cloud offers to connect one. */
+export function StartLabButton({
+  lab,
+  run,
+  isDocker,
+  cloud = null,
+  loggedIn,
+  busy,
+  dockerRunning,
+  onStart,
+  retry = false,
+  chooseAtOnce = false,
+}: StartLabProps) {
+  const t = useT();
+  const [choosing, setChoosing] = useState(chooseAtOnce);
+  const rt = lab.runtime;
+  if (cloud && !cloud.supported) return <p className="max-w-xs text-[0.8125rem] text-muted-foreground">{t("labs.detail.cloudServicesUnsupported")}</p>;
+  if (cloud && run.cloudAccounts.length === 0) return <ConnectCloudButton providers={rt?.providers ?? []} />;
+  return (
+    <div className="relative">
+      <Button
+        variant="primary"
+        onClick={() => {
+          if (run.hasChoice) setChoosing(true);
+          // Nothing to ask: run here at once, carrying a remembered engine (ports are asked/saved
+          // in the launch path as before).
+          else onStart(run.engines.chosen ? { kind: "local", engine: run.engines.chosen } : { kind: "local" });
+        }}
+        disabled={!loggedIn || !rt}
+        title={startHint(t, { runtime: !!rt, loggedIn })}
+        aria-haspopup={run.hasChoice ? "dialog" : undefined}
+      >
+        {retry ? <RotateCw className="size-3.5" /> : <Play className="size-3.5" />} {retry ? t("labs.detail.retry") : t("labs.detail.startLab")}
+      </Button>
+      {choosing && (
+        <StartDialog
+          lab={lab}
+          run={run}
+          isDocker={isDocker}
+          cloud={cloud}
+          busy={busy}
+          dockerRunning={dockerRunning}
+          onClose={() => {
+            setChoosing(false);
+            run.steps.resetSteps();
+          }}
+          onStart={(target) => {
+            setChoosing(false);
+            run.steps.resetSteps();
+            onStart(target);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** "Where should it run?", with the host ports for a container lab here and a cloud lab's cost;
+ *  Start goes with the target picked. */
+function StartDialog({
+  lab,
+  run,
+  isDocker,
+  cloud,
+  busy,
+  dockerRunning,
+  onClose,
+  onStart,
+}: Pick<StartLabProps, "lab" | "run" | "isDocker" | "busy" | "dockerRunning" | "onStart"> & { cloud: StartLabProps["cloud"]; onClose: () => void }) {
+  const t = useT();
+  const { agreed, consent } = useCloudConsent(cloud ? run.pickedAccount : undefined);
+  const footer = <StartFooter run={run} cloudGated={!!cloud} agreed={agreed} onClose={onClose} onStart={onStart} />;
+  return (
+    <RunOnDialog onClose={onClose} footer={footer}>
+      {run.steps.step === "ports" ? (
+        <PortsStep title={lab.title} run={run} />
+      ) : (
+        <RunOnPicker
+          title={lab.title}
+          step={run.steps.step}
+          value={run.runOn}
+          disabled={busy}
+          hosts={run.hosts}
+          hostOk={run.hostOk}
+          runOptions={run.runOptions}
+          offerLocal={!cloud}
+          offerContainers={isDocker}
+          localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
+          dockerRunning={isDocker ? dockerRunning : null}
+          engine={run.engines.current}
+          vmForms={run.vmForms}
+          formTargets={run.formTargets}
+          formAccount={run.formAccount}
+          onPickPlatform={run.steps.pickPlatform}
+          onPickForm={run.steps.pickForm}
+          hypervisors={run.steps.hypervisors}
+          defaultHypervisor={run.defaultHypervisor}
+          onPickHypervisor={run.steps.pickHypervisor}
+          engines={run.engines.all}
+          defaultEngine={run.engines.preselected}
+          onPickEngine={run.steps.pickEngine}
+        />
+      )}
+      {/* "Don't ask again" sits on the last step of a this-machine path (not a cloud lab, and not a
+          cloud account's form step, whose choice isn't remembered). */}
+      {run.steps.isLastStep && !cloud && run.runOn.kind !== "host" && <RememberToggle run={run} />}
+      {cloud && (
+        <div className="mt-4">
+          <CloudLaunchNote read={cloud} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
+          {consent}
+        </div>
+      )}
+    </RunOnDialog>
+  );
+}
+
+/** The dialog's actions: Back (off the places step), Cancel, and Start. Start waits for a cloud
+ *  account to be picked and the player's consent to its credentials' use (`cloudGated`, `agreed`). */
+function StartFooter({
+  run,
+  cloudGated,
+  agreed,
+  onClose,
+  onStart,
+}: {
+  run: RunTargetChoice;
+  cloudGated: boolean;
+  agreed: boolean;
+  onClose: () => void;
+  onStart: (t: RunTarget) => void;
+}) {
+  const t = useT();
+  return (
+    <>
+      {run.steps.step !== "platform" && (
+        <Button variant="ghost" size="sm" onClick={run.steps.back}>
+          {t("labs.runOn.back")}
+        </Button>
+      )}
+      <Button variant="ghost" size="sm" onClick={onClose}>
+        {t("labs.detail.cancel")}
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={cloudGated && (!run.pickedAccount || !agreed)}
+        onClick={() => {
+          run.dontAskAgain.commit();
+          onStart(run.chosen());
+        }}
+      >
+        <Play className="size-3.5" /> {t("labs.detail.start")}
+      </Button>
+    </>
+  );
+}
+
+/** A cloud lab with no account of its cloud: connecting one is the next step. */
+function ConnectCloudButton({ providers }: { providers: readonly string[] }) {
+  const t = useT();
+  return (
+    <Button
+      variant="primary"
+      onClick={() => {
+        serverOpenSetup(null, "cloud").catch(tell(t("labs.row.connectFailed")));
+      }}
+    >
+      <Play className="size-3.5" /> {t("labs.detail.connectAccountOn", { clouds: joinOr(cloudNames(providers)) })}
+    </Button>
+  );
+}

@@ -1,0 +1,56 @@
+name: Rust toolchain
+description: >-
+  Install the Rust toolchain rust-toolchain.toml pins, restore the shared cargo cache and (by default) write
+  a placeholder frontend the crate can embed at compile time. Shared by the Rust jobs
+  (ci, gate, package-smoke, release, msix). The pinned action SHAs live here.
+inputs:
+  targets:
+    description: Comma-separated rustup targets to add (empty = none).
+    required: false
+    default: ""
+  components:
+    description: Comma-separated rustup components to add (e.g. "rustfmt, clippy").
+    required: false
+    default: ""
+  cache-workspaces:
+    description: swatinem/rust-cache `workspaces` value.
+    required: false
+    default: "src-tauri -> target"
+  cache-key:
+    description: An extra swatinem/rust-cache `key` (empty = none).
+    required: false
+    default: ""
+  cache-shared-key:
+    description: An extra swatinem/rust-cache `shared-key` (empty = none).
+    required: false
+    default: ""
+  placeholder-frontend:
+    description: >-
+      Create out/index.html so the crate can embed ../out when the tests don't need the real
+      frontend. Set to "false" for jobs that build the real bundle (release, msix, package-smoke).
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    # rustup is on every runner image: it installs the toolchain rust-toolchain.toml pins (with its
+    # components and targets), then this job's extra ones to that same toolchain.
+    - shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+        COMPONENTS: ${{ inputs.components }}
+      run: |
+        set -euo pipefail
+        rustup toolchain install
+        if [ -n "$COMPONENTS" ]; then rustup component add ${COMPONENTS//,/ }; fi
+        if [ -n "$TARGETS" ]; then rustup target add ${TARGETS//,/ }; fi
+        rustc -V
+    - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        workspaces: ${{ inputs.cache-workspaces }}
+        key: ${{ inputs.cache-key }}
+        shared-key: ${{ inputs.cache-shared-key }}
+    # Tests don't need the real frontend, but the app embeds ../out at compile time.
+    - if: inputs.placeholder-frontend == 'true'
+      shell: bash
+      run: mkdir -p out && echo '<!doctype html>' > out/index.html

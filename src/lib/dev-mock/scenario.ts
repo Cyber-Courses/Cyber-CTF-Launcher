@@ -1,0 +1,232 @@
+// The browser preview's scenarios: the switches next to `?mock` in the URL, and the machine the
+// system check reports for them.
+import type { CommandError } from "@/lib/errors";
+import type { Arch, DockerEngine, Os, ProviderStatus, SystemReport, VagrantProvider } from "@/lib/tauri";
+import { type Holdable, isHoldable } from "@/lib/dev-mock/holds";
+import { report } from "@/lib/dev-mock/sample";
+
+/**
+ * Switches for the browser preview, read from the URL next to `?mock` (the end-to-end tests use
+ * them; `answer` (sample.ts) stays the plain sample data the component tests build on):
+ *  - `os=macos|windows|linux`, `arch=aarch64|x86_64`: the machine the system check reports.
+ *  - `machine=fresh`: nothing installed yet (no package manager, engine, Vagrant or hypervisor).
+ *    `machine=many`: several of each: a second engine running and a third stopped, and on an
+ *    Apple Silicon Mac Parallels ready beside UTM and VMware Fusion short of its plugin, so the
+ *    Machine page has a row in each state (and "Use by default" on the ready ones).
+ *  - `docker=stopped|denied`: the container engine is installed but stopped, or running yet
+ *    refusing this account (the report carries the hint, with its code, as the core sends it).
+ *  - `catalogue=arm64vm`: the catalogue also has a VM lab built for arm64 (Edge router), so an
+ *    Apple Silicon Mac can run one on UTM.
+ *  - `onboarding`: the first-run onboarding shows (on every load with the switch).
+ *  - `auth=out`: signed out until "Sign in" is used, in any of the preview's tabs (a sign-in or
+ *    sign-out is kept in the browser's storage, as the saved servers are; see session.ts).
+ *    `auth=expired`: the same, signed out because the session expired under the app.
+ *  - `launch=fail`: the first lab start of each page load fails, after a few lines of output.
+ *  - `hold=<step>[,<step>…]`: each step waits, once reached, until the test lets it go on
+ *    (`window.__CYBERCTF_MOCK_RELEASE__(step)`): a lab start (`launch`), a re-run of provisioning
+ *    (`provision`), the machine coming back after failed
+ *    system checks (`check`), the package manager showing up (`pm`), a sign-in finishing in
+ *    the browser or by the code (`login`). See holds.ts.
+ *  - `install=fail`: the first one-click install of each page load fails. Otherwise installs
+ *    stream an installer's output and succeed: the next system check reports the tool installed.
+ *  - `deploying=none`: no lab is deploying at load (GOAD Light otherwise is).
+ *  - `cloud=none`: no cloud account saved (until one is saved in the setup).
+ *  - `servers=none`: no Proxmox or ESXi server saved (until one is saved in the setup).
+ *  - `managed`: this computer's administrator turned every policy switch on (no website agent,
+ *    in-app updates, tool installs, cloud labs or privileged labs).
+ *  - `link=<url>`: the app was opened with this link (`cyberctf://labs/<slug>`).
+ *  - `imported`: a lab imported from a folder is installed (Supplier portal, stopped).
+ *  - `remove=partial`: removing a lab leaves one of its files behind, as one held open would.
+ * Labs started or stopped here stay so until a reload: Docker labs stream a Compose log, VM labs
+ * a Vagrant log (on this machine's hypervisor or a saved server; pause, shut down, resume and
+ * re-run provisioning work), and cloud labs a Terraform log (outputs and an auto-stop). The
+ * attack box shell is a stand-in that answers
+ * `id`, `whoami`, `hostname`, `ip -br a`, and ends on `exit`. Events emitted in one tab (Settings asking
+ * the main window to show the onboarding again, a server saved in the setup) reach the others.
+ */
+export type Scenario = {
+  os: Os;
+  arch: Arch;
+  fresh: boolean;
+  /** Several engines and hypervisors installed (`machine=many`). */
+  many: boolean;
+  /** The container engine: running, installed but stopped, or refusing this account. */
+  docker: "running" | "stopped" | "denied";
+  /** With `arm64vm`, the catalogue also lists the VM lab built for arm64 (labs.ts `extraLabs`). */
+  catalogue: "default" | "arm64vm";
+  onboarding: boolean;
+  signedOut: boolean;
+  /** Signed out because the session expired (cyber-auth refused its refresh token). */
+  sessionExpired: boolean;
+  launchFails: boolean;
+  /** The steps a test holds (`hold=`), in the order given. */
+  held: Holdable[];
+  installFails: boolean;
+  noDeploying: boolean;
+  noCloud: boolean;
+  noServers: boolean;
+  /** An administrator's policy turns every switch off (`managed`): Settings says so. */
+  managed: boolean;
+  link: string | null;
+  /** A lab imported from a folder is installed (`imported`). */
+  imported: boolean;
+  /** Removing a lab leaves a file behind (`remove=partial`). */
+  removeLeaves: boolean;
+};
+
+export function scenarioFrom(search: string): Scenario {
+  const q = new URLSearchParams(search);
+  const os = q.get("os");
+  const docker = q.get("docker");
+  return {
+    os: os === "windows" || os === "linux" ? os : "macos",
+    arch: q.get("arch") === "x86_64" ? "x86_64" : "aarch64",
+    fresh: q.get("machine") === "fresh",
+    many: q.get("machine") === "many",
+    docker: docker === "stopped" || docker === "denied" ? docker : "running",
+    catalogue: q.get("catalogue") === "arm64vm" ? "arm64vm" : "default",
+    onboarding: q.has("onboarding"),
+    signedOut: q.get("auth") === "out" || q.get("auth") === "expired",
+    sessionExpired: q.get("auth") === "expired",
+    launchFails: q.get("launch") === "fail",
+    held: (q.get("hold") ?? "").split(",").filter(isHoldable),
+    installFails: q.get("install") === "fail",
+    noDeploying: q.get("deploying") === "none",
+    noCloud: q.get("cloud") === "none",
+    noServers: q.get("servers") === "none",
+    managed: q.has("managed"),
+    link: q.get("link"),
+    imported: q.has("imported"),
+    removeLeaves: q.get("remove") === "partial",
+  };
+}
+
+const notInstalled = { installed: false, version: null };
+
+/** The local hypervisors each OS reports (the remote ones are the same everywhere): none
+ *  installed on a fresh machine. */
+function localProviders({ os, fresh }: Pick<Scenario, "os" | "fresh">) {
+  const p = (provider: VagrantProvider, plugin: string | null = null): ProviderStatus => ({
+    provider,
+    remote: false,
+    available: !fresh && provider === "virtualbox",
+    hypervisor: fresh ? false : provider === "virtualbox",
+    plugin,
+    pluginInstalled: !plugin,
+    utility: provider === "vmware_desktop" ? "missing" : null,
+    needs: [
+      ...(fresh ? (["vagrant"] as const) : []),
+      ...(plugin ? (["plugin"] as const) : []),
+      ...(provider === "vmware_desktop" ? (["vmwareUtility"] as const) : []),
+    ],
+    reason: !fresh && provider === "virtualbox" ? null : { code: "notInstalled", args: { program: null } },
+  });
+  if (os === "windows") return [p("virtualbox"), p("vmware_desktop", "vagrant-vmware-desktop"), { ...p("hyperv"), hypervisor: null }];
+  if (os === "linux") return [p("virtualbox"), p("libvirt", "vagrant-libvirt"), p("qemu", "vagrant-qemu")];
+  return [p("virtualbox"), p("vmware_desktop", "vagrant-vmware-desktop"), p("utm", "vagrant_utm"), p("parallels", "vagrant-parallels")];
+}
+
+const PKG_MANAGER: Record<Scenario["os"], string> = { windows: "winget", linux: "apt", macos: "brew" };
+
+/** On an Apple Silicon Mac VirtualBox can't run, so a ready machine there has UTM instead. */
+function onAppleSilicon(p: ProviderStatus): ProviderStatus {
+  if (p.provider === "virtualbox") return { ...p, available: false, hypervisor: false, reason: { code: "notInstalled", args: { program: "VBoxManage" } } };
+  if (p.provider === "utm") return { ...p, available: true, hypervisor: true, pluginInstalled: true, needs: [], reason: null };
+  return p;
+}
+
+/** `ready` with nothing installed yet: no package manager, engine, Vagrant, Terraform, cloud CLI
+ *  or remote provider plugin. */
+function fresh(ready: SystemReport): SystemReport {
+  return {
+    ...ready,
+    pkgManager: { ...ready.pkgManager, installed: false, version: null },
+    docker: notInstalled,
+    dockerRunning: false,
+    dockerEngine: null,
+    dockerEnginesRunning: [],
+    dockerEngines: [],
+    dockerCompose: notInstalled,
+    vagrant: notInstalled,
+    terraform: notInstalled,
+    cloudClis: { aws: notInstalled, azure: notInstalled, gcloud: notInstalled },
+    vmProviders: ready.vmProviders.map((p) =>
+      p.remote ? { ...p, available: false, pluginInstalled: false } : { ...p, needs: ["vagrant", ...p.needs.filter((n) => n !== "vagrant")] },
+    ),
+  };
+}
+
+/** `ready` with its container engine installed but not answering: stopped, or (`denied`) running
+ *  yet refusing this account, with the hint the core sends (a coded error: the group to join on
+ *  Linux and macOS, the Windows one on Windows). */
+function engineDown(ready: SystemReport, docker: Exclude<Scenario["docker"], "running">): SystemReport {
+  const denied = docker === "denied";
+  const hint: CommandError =
+    ready.os === "windows"
+      ? { code: "dockerDeniedWindows", args: { user: "ada" }, message: "docker: permission denied (add ada to the docker-users group)" }
+      : { code: "dockerDenied", args: { user: "ada" }, message: "docker: permission denied (add ada to the docker group)" };
+  return {
+    ...ready,
+    dockerRunning: false,
+    dockerEngine: null,
+    dockerEnginesRunning: [],
+    dockerEngines: ready.dockerEngines.map((e) => ({ ...e, running: false })),
+    dockerDenied: denied,
+    dockerDeniedHint: denied ? hint : null,
+  };
+}
+
+/** `ready` with more installed (`machine=many`): two more engines, one running and one stopped,
+ *  and on an Apple Silicon Mac Parallels ready and VMware Fusion installed, short of its plugin. */
+function many(ready: SystemReport): SystemReport {
+  const [extraRunning, extraStopped]: DockerEngine[] = ready.os === "linux" ? ["podman", "colima"] : ["orbstack", "colima"];
+  const vmProviders = ready.vmProviders.map((p): ProviderStatus => {
+    if (p.provider === "parallels") return { ...p, available: true, hypervisor: true, pluginInstalled: true, needs: [], reason: null };
+    if (p.provider === "vmware_desktop") return { ...p, hypervisor: true, reason: null };
+    return p;
+  });
+  return {
+    ...ready,
+    dockerEnginesRunning: [...ready.dockerEnginesRunning, extraRunning],
+    dockerEngines: [
+      ...ready.dockerEngines,
+      { engine: extraRunning, context: extraRunning, running: true, current: false },
+      { engine: extraStopped, context: extraStopped, running: false, current: false },
+    ],
+    vmProviders,
+  };
+}
+
+/** Whether the core offers hypervisor `p` on this Mac (providers.rs `offered_on`): the one made for
+ *  its CPU, UTM on Apple Silicon and VirtualBox on an Intel Mac, unless the other is installed. */
+function offeredOnMac(p: ProviderStatus, appleSilicon: boolean): boolean {
+  const installed = p.reason?.code !== "notInstalled";
+  const notForThisMac = p.provider === "virtualbox" ? appleSilicon : p.provider === "utm" && !appleSilicon;
+  return installed || !notForThisMac;
+}
+
+/** The system check's answer for a scenario. */
+export function scenarioReport(sc: Scenario): SystemReport {
+  const mac = sc.os === "macos";
+  const appleSilicon = mac && sc.arch === "aarch64";
+  const local = localProviders(sc)
+    .map((p) => (appleSilicon && !sc.fresh ? onAppleSilicon(p) : p))
+    .filter((p) => !mac || offeredOnMac(p, appleSilicon));
+  const engine = sc.os === "linux" ? "docker-engine" : "docker-desktop";
+  const ready: SystemReport = {
+    ...report,
+    os: sc.os,
+    arch: sc.arch,
+    pkgManager: { name: PKG_MANAGER[sc.os], installed: true, version: "1.9.0" },
+    dockerRunning: true,
+    dockerDenied: false,
+    dockerDeniedHint: null,
+    dockerEngine: engine,
+    dockerEnginesRunning: [engine],
+    dockerEngines: [{ engine, context: engine === "docker-engine" ? "default" : "desktop-linux", running: true, current: true }],
+    vmProviders: [...local, ...report.vmProviders.filter((p) => p.remote)],
+  };
+  if (sc.fresh) return fresh(ready);
+  const machine = sc.many ? many(ready) : ready;
+  return sc.docker === "running" ? machine : engineDown(machine, sc.docker);
+}

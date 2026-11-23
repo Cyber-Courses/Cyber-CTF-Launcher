@@ -1,0 +1,152 @@
+//! Live machine health, polled by the Machine screen.
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde::Serialize;
+use sysinfo::{Disks, System};
+
+/// CPU usage needs two samples a moment apart.
+const CPU_SAMPLE_GAP: Duration = Duration::from_millis(220);
+
+/// This computer's load and capacity right now, for the Machine page's gauges.
+#[derive(Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MachineMetrics {
+    /// Overall CPU usage, 0-100.
+    pub cpu: f32,
+    /// Memory in use, in bytes.
+    pub mem_used: u64,
+    /// Memory in all, in bytes.
+    pub mem_total: u64,
+    /// The system disk's space in use, in bytes (0 when unreadable).
+    pub disk_used: u64,
+    /// The system disk's size, in bytes (0 when unreadable).
+    pub disk_total: u64,
+    /// Time since the computer started, in seconds.
+    pub uptime_secs: u64,
+    /// The number of logical CPUs.
+    pub cores: usize,
+    /// Running Docker containers right now (0 when the engine is down).
+    pub containers: u32,
+}
+
+/// Samples this computer's CPU (over about 220 ms), memory, system disk, uptime and running
+/// containers.
+pub async fn machine_metrics() -> MachineMetrics {
+    let mut sys = System::new();
+    sys.refresh_cpu_usage();
+    tokio::time::sleep(CPU_SAMPLE_GAP).await;
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+
+    // Listing the disks asks the OS for every volume (slow on Windows with network drives): off
+    // the async threads, which serve every other command meanwhile.
+    let (disk_used, disk_total) = tokio::task::spawn_blocking(system_disk).await.unwrap_or((0, 0));
+    MachineMetrics {
+        cpu: sys.global_cpu_usage(),
+        mem_used: sys.used_memory(),
+        mem_total: sys.total_memory(),
+        disk_used,
+        disk_total,
+        uptime_secs: System::uptime(),
+        cores: sys.cpus().len(),
+        containers: running_containers().await,
+    }
+}
+
+/// (used, total) bytes of the system disk (`/`, or `C:\` on Windows, which has no `/` mount and
+/// whose largest disk is often a second, data one), else of the largest one.
+fn system_disk() -> (u64, u64) {
+    let disks = Disks::new_with_refreshed_list();
+    let mounts: Vec<(&Path, (u64, u64))> = disks.iter().map(|d| (d.mount_point(), (d.total_space(), d.available_space()))).collect();
+    let (total, available) = disk_holding(&mounts, &system_root()).or_else(|| mounts.iter().map(|(_, s)| *s).max_by_key(|(total, _)| *total)).unwrap_or((0, 0));
+    (total.saturating_sub(available), total)
+}
+
+fn system_root() -> PathBuf {
+    if cfg!(windows) {
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_owned());
+        PathBuf::from(format!("{drive}\\"))
+    } else {
+        PathBuf::from("/")
+    }
+}
+
+/// The (total, available) of the mount holding `path`: the longest mount point it starts with.
+/// Drive letters compare regardless of case (`c:\` and `C:\`).
+fn disk_holding(mounts: &[(&Path, (u64, u64))], path: &Path) -> Option<(u64, u64)> {
+    // Component-wise (`/mnt/data2` is not under `/mnt/data`).
+    let key = |p: &Path| if cfg!(windows) { PathBuf::from(p.to_string_lossy().to_lowercase()) } else { p.to_path_buf() };
+    let path = key(path);
+    mounts.iter().filter(|(m, _)| path.starts_with(key(m))).max_by_key(|(m, _)| m.as_os_str().len()).map(|(_, s)| *s)
+}
+
+/// The containers the current Docker engine runs, as it counts them (isothrum-machine's `docker
+/// info`); 0 when no engine answers.
+async fn running_containers() -> u32 {
+    let cx = crate::runtime::providers::machine_check();
+    isothrum_machine::docker::daemon_info(&cx, "{{.ContainersRunning}}", None).await.ok().map_or(0, |n| count(&n))
+}
+
+/// The engine's count, 0 when it isn't one.
+fn count(answer: &str) -> u32 {
+    answer.trim().parse().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_metrics_describe_this_machine_and_its_running_containers() {
+        use crate::runtime::providers::testing::fake;
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        let tools = fake(FakeProcesses::script().expect("docker info", Reply::ok("2\n")).build());
+        let m = machine_metrics().await;
+        assert!(m.cores > 0 && m.mem_total > 0 && m.mem_used <= m.mem_total, "{} {} {}", m.cores, m.mem_used, m.mem_total);
+        assert!(m.disk_used <= m.disk_total);
+        assert!((0.0..=100.0).contains(&m.cpu), "{}", m.cpu);
+        assert_eq!(m.containers, 2);
+        drop(tools);
+        // The engine down: none.
+        let _tools = fake(FakeProcesses::script().expect("docker info", Reply::fail(1, DOCKER_DOWN)).build());
+        assert_eq!(machine_metrics().await.containers, 0);
+    }
+
+    const DOCKER_DOWN: &str = "Cannot connect to the Docker daemon";
+
+    #[test]
+    fn the_engines_count_is_read_and_anything_else_is_none() {
+        assert_eq!(count(" 3\n"), 3);
+        assert_eq!((count(""), count("<no value>")), (0, 0));
+    }
+
+    #[test]
+    fn the_disk_is_the_longest_mount_holding_the_path() {
+        let (root, data) = ((100, 40), (900, 800));
+        if cfg!(windows) {
+            // The second disk is bigger: it must not win over the system drive.
+            let mounts = [(Path::new(r"D:\"), data), (Path::new(r"C:\"), root)];
+            assert_eq!(disk_holding(&mounts, Path::new(r"c:\")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new(r"D:\CyberCTF\labs")), Some(data));
+            assert_eq!(disk_holding(&mounts, Path::new(r"E:\")), None);
+        } else {
+            let mounts = [(Path::new("/"), root), (Path::new("/mnt/data"), data)];
+            assert_eq!(disk_holding(&mounts, Path::new("/")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new("/mnt/data/labs")), Some(data));
+            assert_eq!(disk_holding(&mounts, Path::new("/home/p")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new("/mnt/data2")), Some(root));
+        }
+    }
+
+    #[test]
+    fn the_system_disk_is_used_out_of_total() {
+        let (used, total) = system_disk();
+        assert!(used <= total);
+        let m = MachineMetrics { cpu: 1.5, mem_used: 1, mem_total: 2, disk_used: used, disk_total: total, uptime_secs: 3, cores: 4, containers: 0 };
+        let v = serde_json::to_value(&m).unwrap();
+        assert_eq!(v["memTotal"], 2);
+        assert_eq!(v["uptimeSecs"], 3);
+    }
+}

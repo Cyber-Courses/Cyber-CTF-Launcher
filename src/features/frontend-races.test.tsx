@@ -1,0 +1,267 @@
+// @vitest-environment jsdom
+import { act, render, renderHook, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ANSWER_MARGIN_MS, LaunchConfirm } from "@/features/app/launch-confirm";
+import { LabDetail } from "@/features/labs/lab-detail";
+import { useLabCheck } from "@/features/labs/lab-health";
+import { useAttackBox } from "@/features/labs/use-attack-box";
+import { useLabActions } from "@/features/labs/use-lab-actions";
+import { useLabs, type Lab } from "@/features/labs/use-labs";
+import { beginDeploy, appendDeployLog, endDeploy, getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
+import { translate } from "@/lib/i18n";
+import type { LabCheck, LabStatus } from "@/lib/tauri";
+import { commands, installTauri, rejects, rejectWith } from "@/test/tauri";
+import { button, flush, settle } from "@/test/ui";
+import { deferred } from "@/test/deferred";
+
+// Regression tests for polling and state races on the frontend: each failed before its fix.
+
+const lab = (id: string, runtime: "DOCKER" | "VM" = "DOCKER"): Lab => ({
+  id,
+  slug: id,
+  title: `Lab ${id}`,
+  description: null,
+  question: null,
+  difficulty: 1,
+  category: "Web",
+  runtime: { runtime, architectures: ["x86_64"], providers: ["virtualbox"] },
+  skills: [],
+});
+
+const status = (p: Partial<LabStatus> = {}): LabStatus => ({
+  running: true,
+  parked: null,
+  machines: [],
+  networks: [],
+  url: null,
+  host: null,
+  hostId: null,
+  expiresAt: null,
+  place: "container",
+  provider: "docker",
+  perMachine: false,
+  outputs: [],
+  message: null,
+  reapError: null,
+  controls: [],
+  ...p,
+});
+
+/** Advances fake time and lets the promises it releases settle. */
+const advance = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("lab health check", () => {
+  it("checks again when another container goes down mid-check, instead of spinning", async () => {
+    const replies: ReturnType<typeof deferred<LabCheck>>[] = [];
+    installTauri({
+      lab_check: () => {
+        const d = deferred<LabCheck>();
+        replies.push(d);
+        return d.promise;
+      },
+    });
+    const { result, rerender } = renderHook((p: { downCount: number }) => useLabCheck("lab-c", "DOCKER", { running: true, downCount: p.downCount }), {
+      initialProps: { downCount: 1 },
+    });
+    await flush();
+    expect(result.current[0]).toBe("checking");
+    rerender({ downCount: 2 });
+    await flush();
+    for (const r of replies) r.resolve({ available: true, ok: true, output: "", results: [] });
+    await flush();
+    expect(result.current[0]).toMatchObject({ ok: true });
+  });
+});
+
+describe("lab page actions during a runner service operation", () => {
+  const detail = (id: string) =>
+    render(
+      <LabDetail
+        lab={lab(id)}
+        status={status({ running: true })}
+        loggedIn
+        hostArch="x86_64"
+        dockerRunning
+        onBack={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onPark={vi.fn()}
+        onResume={vi.fn()}
+      />,
+    );
+
+  it("disables Stop & remove while the backend reports an operation in flight (after a reload)", async () => {
+    installTauri({
+      lab_status: () => status(),
+      busy_labs: () => ["lab-w"],
+      // The runner service's operation: it names the runtime.
+      active_operations: () => [{ labId: "lab-w", op: "provision", machine: null, deploying: true, step: null, runtime: "DOCKER" }],
+    });
+    detail("lab-w");
+    await flush(50);
+    expect(button(/Stop & remove/).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("a refused operation keeps the previous run's log and isn't a failed deploy", async () => {
+    installTauri({
+      lab_park: rejects({ code: "alreadyInProgress", message: "Pause of this lab is already in progress; wait for it to finish." }),
+      lab_status: () => status(),
+    });
+    beginDeploy("lab-r", "launch");
+    appendDeployLog("lab-r", "✓ Lab is running");
+    endDeploy("lab-r");
+    const { result } = renderHook(() => useLabActions(() => {}));
+    await act(async () => {
+      await result.current.park(lab("lab-r"), "pause");
+    });
+    expect(getDeploySnapshot().runs["lab-r"]?.logs).toEqual(["✓ Lab is running"]);
+    expect(getDeploySnapshot().runs["lab-r"]?.busy).toBe(false);
+  });
+});
+
+describe("reset", () => {
+  it("doesn't start the lab again when the stop failed", async () => {
+    installTauri({ lab_status: () => status() });
+    const user = userEvent.setup();
+    const onStart = vi.fn();
+    const onStop = vi.fn(() => Promise.resolve("vagrant destroy failed"));
+    render(
+      <LabDetail
+        lab={lab("lab-s")}
+        status={status({
+          machines: [
+            { name: "api", state: "running", ip: "10.0.0.2", ports: [], interfaces: [], services: [], infra: false, console: null },
+            { name: "db", state: "exited", ip: "", ports: [], interfaces: [], services: [], infra: false, console: null },
+          ],
+        })}
+        loggedIn
+        hostArch="x86_64"
+        dockerRunning
+        onBack={vi.fn()}
+        onStart={onStart}
+        onStop={onStop}
+      />,
+    );
+    await flush();
+    await user.click(button(/Reset lab/));
+    await flush();
+    expect(onStop).toHaveBeenCalled();
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("stop resolves to its failure", async () => {
+    installTauri({
+      lab_stop: () => {
+        rejectWith("vagrant destroy failed");
+      },
+      lab_status: () => status(),
+    });
+    const { result } = renderHook(() => useLabActions(() => {}));
+    let failure: unknown = null;
+    await act(async () => {
+      failure = await result.current.stop(lab("lab-f"));
+    });
+    expect(failure).toContain("vagrant destroy failed");
+  });
+});
+
+describe("website launch confirmation", () => {
+  it("expires by the backend's deadline instead of letting a late Approve do nothing", async () => {
+    // The deadline comes with the request, so a prompt shown late (here, a minute before the
+    // agent stops waiting) expires with it, not a fixed time after it shows.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const calls = installTauri();
+    render(<LaunchConfirm />);
+    await act(async () => {
+      await emit("launch-confirm", {
+        sessionId: "s-1",
+        labName: "Web",
+        repository: "org/lab",
+        commit: "abcdef1234567890",
+        place: "cloud",
+        target: "aws",
+        privileged: false,
+        expiresAtMs: Date.now() + 60_000,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    await advance(60_000 - ANSWER_MARGIN_MS - 1_000);
+    expect(screen.queryByText(translate("app.launchConfirm.expired"))).toBeNull();
+    await advance(1_000);
+    expect(screen.queryByText(translate("app.launchConfirm.approve.cloud"))).toBeNull();
+    expect(screen.getByText(translate("app.launchConfirm.expired"))).toBeTruthy();
+    await settle(() => {
+      button(new RegExp(translate("app.launchConfirm.close"))).click();
+    });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(commands(calls)).not.toContain("confirm_launch");
+  });
+});
+
+describe("attack box poll", () => {
+  it("doesn't stack status reads while one is in flight", async () => {
+    vi.useFakeTimers();
+    const calls = installTauri({ attack_box_status: () => new Promise(() => {}) });
+    renderHook(() => useAttackBox("lab-a", { running: true, runtime: "VM" }));
+    await advance(0);
+    await advance(5000 * 4);
+    expect(commands(calls).filter((c) => c === "attack_box_status")).toHaveLength(1);
+  });
+});
+
+describe("the running scan", () => {
+  it("doesn't show a lab whose launch failed as running though the scan sees its machines up", async () => {
+    // Regression: the scan's word was OR-ed over the lab's status, so a failed launch (the
+    // backend's status: not running) read running every scan and stopped after each fresh read.
+    vi.useFakeTimers();
+    const failed = lab("lab-e");
+    const calls = installTauri({
+      api_query: (a) => (String(a?.operation).includes("completedLabs") ? { myCompletedLabs: [] } : { labs: [failed] }),
+      lab_status: () => status({ running: false, parked: null }),
+      running_labs: () => ["lab-e"],
+    });
+    const { result } = renderHook(() => useLabs("failed-launch"));
+    await advance(0);
+    expect(commands(calls)).toContain("labs_watch");
+    expect([...result.current.scanned]).toEqual(["lab-e"]);
+    // Seen up by the scan, it stays not running: its status alone says.
+    expect(result.current.statuses["lab-e"].running).toBe(false);
+  });
+});
+
+describe("the catalogue across a sign-in change", () => {
+  it("shows no other sign-in state's catalogue, nor its progress, while its own loads", async () => {
+    // Regression: signing in or out kept the previous state's labs and completed ones on screen
+    // until the new catalogue answered.
+    const second = deferred<{ labs: Lab[] }>();
+    let signedIn = false;
+    installTauri({
+      api_query: (a) => {
+        if (String(a?.operation).includes("completedLabs")) return signedIn ? new Promise(() => {}) : { myCompletedLabs: ["lab-a"] };
+        return signedIn ? second.promise : { labs: [lab("lab-a")] };
+      },
+    });
+    const { result, rerender } = renderHook(({ key }) => useLabs(key), { initialProps: { key: false } });
+    await flush();
+    expect(result.current.labs?.map((l) => l.id)).toEqual(["lab-a"]);
+    expect([...result.current.completed]).toEqual(["lab-a"]);
+    signedIn = true;
+    rerender({ key: true });
+    await flush();
+    expect(result.current.labs).toBeNull();
+    expect(result.current.completed.size).toBe(0);
+    second.resolve({ labs: [lab("lab-b")] });
+    await flush();
+    expect(result.current.labs?.map((l) => l.id)).toEqual(["lab-b"]);
+  });
+});

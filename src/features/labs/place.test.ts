@@ -1,0 +1,90 @@
+import { describe, expect, it } from "vitest";
+import { placeName, placeOf, placeText } from "@/features/labs/place";
+import { deployDestination } from "@/features/labs/lab-detail/labels";
+import { isDockerEngine } from "@/features/machine/setup-steps/engines";
+import { labStatus } from "@/features/labs/labs-test-kit";
+import type { MessageKey, T, Vars } from "@/lib/i18n";
+import { DOCKER_ENGINES, type ServerHost } from "@/lib/tauri";
+import { must } from "@/components/test-support";
+
+// Where a lab runs, as the header, Details and the diagram's host card all say it.
+
+// Labels as their keys, with the variables appended, so a test reads what was asked for.
+const t = ((key: MessageKey, vars?: Vars) => (vars ? `${key}:${JSON.stringify(vars)}` : key)) as unknown as T;
+const host = (p: Partial<ServerHost>): ServerHost =>
+  ({ id: "h", name: "homelab-pve", provider: "proxmox", host: "10.0.0.5", port: 8006, username: "root@pam", ...p }) as ServerHost;
+const hosts = [host({}), host({ id: "aws1", name: "My AWS", provider: "aws", host: "eu-west-3", username: "AKIA…" })];
+
+describe("where a lab runs", () => {
+  it("a container lab here runs on the engine recorded at launch, else the machine's current one", () => {
+    const pinned = placeOf(labStatus({ running: true, place: "container", provider: "orbstack" }), true, "docker-desktop", hosts);
+    expect(pinned).toEqual({ kind: "engine", engine: "orbstack" });
+    expect(placeText(t, must(pinned))).toBe('labs.detail.thisMachineWith:{"engine":"OrbStack"}');
+    // "docker": the CLI's current engine, as the machine report names it.
+    const current = placeOf(labStatus({ running: true, place: "container", provider: "docker" }), true, "docker-desktop", hosts);
+    expect(current).toEqual({ kind: "engine", engine: "docker-desktop" });
+    expect(placeName(must(current))).toBe("Docker Desktop");
+    // The report not in yet: this machine, unnamed.
+    const unknown = placeOf(labStatus({ running: true, place: "container", provider: "docker" }), true, null, hosts);
+    expect(placeText(t, must(unknown))).toBe("labs.detail.thisMachine");
+    expect(placeOf(undefined, true, "docker-desktop", hosts)).toBeNull();
+  });
+
+  it("a VM lab here runs on its hypervisor, and so does a container lab whose VMs run here", () => {
+    const vm = placeOf(labStatus({ running: true, place: "local_vm", provider: "qemu" }), false, "docker-desktop", hosts);
+    expect(vm).toEqual({ kind: "hypervisor", provider: "qemu" });
+    expect(placeText(t, must(vm))).toBe('labs.detail.thisMachineWith:{"engine":"QEMU"}');
+    // A container lab run as one VM per machine: its VMs are its machines, as a VM lab's are.
+    const perMachine = placeOf(labStatus({ running: true, place: "local_vm", provider: "virtualbox", perMachine: true }), true, "docker-desktop", hosts);
+    expect(perMachine).toEqual({ kind: "hypervisor", provider: "virtualbox" });
+    expect(placeText(t, must(perMachine))).toBe('labs.detail.thisMachineWith:{"engine":"VirtualBox"}');
+    // An unnamed hypervisor: the place words alone.
+    expect(placeText(t, { kind: "hypervisor", provider: "" })).toBe("labs.detail.thisMachine");
+  });
+
+  it("a lab on a server names the saved host and its kind; one whose host isn't saved any more, the name alone", () => {
+    const server = placeOf(labStatus({ running: true, place: "server", host: "homelab-pve", hostId: "h", provider: "proxmox" }), false, null, hosts);
+    expect(server).toEqual({ kind: "server", name: "homelab-pve", provider: "proxmox", address: "10.0.0.5" });
+    expect(placeText(t, must(server))).toBe('labs.detail.serverWith:{"name":"homelab-pve","kind":"Proxmox"}');
+    const gone = placeOf(labStatus({ running: true, place: "server", host: "old-esxi", hostId: "gone" }), false, null, hosts);
+    expect(gone).toEqual({ kind: "server", name: "old-esxi", provider: null, address: null });
+    expect(placeText(t, must(gone))).toBe("old-esxi");
+  });
+
+  it("a lab in a cloud account names the cloud and its region", () => {
+    const cloud = placeOf(labStatus({ running: true, place: "cloud", host: "My AWS", hostId: "aws1", provider: "aws" }), false, null, hosts);
+    expect(cloud).toEqual({ kind: "cloud", name: "My AWS", provider: "aws", region: "eu-west-3" });
+    expect(placeName(must(cloud))).toBe("AWS");
+    expect(placeText(t, must(cloud))).toBe('labs.detail.cloudWith:{"cloud":"AWS","region":"eu-west-3"}');
+  });
+});
+
+describe("where a deploy is headed (the Deployment panel)", () => {
+  it("says the place as the header and Details do", () => {
+    // Regression: a Proxmox lab read "homelab-pve · Proxmox" in Details but "homelab-pve" here.
+    const pve = placeOf(labStatus({ running: true, host: "homelab-pve", hostId: "h", place: "server" }), false, null, hosts);
+    expect(deployDestination(t, pve, { kind: "local" }, hosts)).toBe(placeText(t, must(pve)));
+    expect(deployDestination(t, pve, { kind: "local" }, hosts)).toBe('labs.detail.serverWith:{"name":"homelab-pve","kind":"Proxmox"}');
+    const engine = placeOf(labStatus({ running: true, place: "container", provider: "orbstack" }), true, null, hosts);
+    expect(deployDestination(t, engine, { kind: "local" }, hosts)).toBe('labs.detail.thisMachineWith:{"engine":"OrbStack"}');
+    const inVm = placeOf(labStatus({ running: true, place: "local_vm", provider: "utm" }), true, null, hosts);
+    expect(deployDestination(t, inVm, { kind: "local" }, hosts)).toBe('labs.detail.thisMachineWith:{"engine":"UTM"}');
+  });
+
+  it("goes by the picker where the lab hasn't run yet", () => {
+    expect(deployDestination(t, null, { kind: "host", id: "aws1" }, hosts)).toBe("My AWS");
+    expect(deployDestination(t, null, { kind: "host", id: "gone" }, hosts)).toBe("labs.detail.yourServer");
+    expect(deployDestination(t, null, { kind: "local-vms", provider: "qemu" }, hosts)).toBe("labs.detail.thisMachine");
+    expect(deployDestination(t, null, { kind: "local" }, hosts)).toBe("labs.detail.thisMachine");
+  });
+
+  it("tells a Docker engine from a hypervisor by one rule", () => {
+    // Every engine the backend names, Rancher Desktop included: a lab run there kept its engine.
+    expect(DOCKER_ENGINES.every(isDockerEngine)).toBe(true);
+    expect(placeOf(labStatus({ place: "container", provider: "rancher-desktop" }), true, "orbstack", [])).toEqual({
+      kind: "engine",
+      engine: "rancher-desktop",
+    });
+    expect(["docker", "virtualbox", "qemu", ""].some(isDockerEngine)).toBe(false);
+  });
+});

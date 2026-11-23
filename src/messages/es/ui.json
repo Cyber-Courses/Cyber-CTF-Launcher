@@ -1,0 +1,30 @@
+{
+  "confirm": {
+    "cancel": "Cancelar",
+    "ok": "Aceptar"
+  },
+  "copy": {
+    "title": "Copiar {text}"
+  },
+  "log": {
+    "output": "Salida",
+    "running": "{title}…",
+    "failed": "{title}: error",
+    "done": "{title} · listo"
+  },
+  "toast": {
+    "dismiss": "Descartar"
+  },
+  "spinner": {
+    "loading": "Cargando"
+  },
+  "choice": {
+    "inUse": "en uso",
+    "running": "en marcha",
+    "installed": "instalado",
+    "recommended": "recomendado"
+  },
+  "avatars": {
+    "more": "{count} más: {names}"
+  }
+}

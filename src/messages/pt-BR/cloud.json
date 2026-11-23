@@ -1,0 +1,56 @@
+{
+  "screen": {
+    "title": "Nuvem",
+    "lead": "Instâncias descartáveis na sua própria conta, cobradas de você, paradas automaticamente.",
+    "setUp": "Configurar provedor de nuvem",
+    "overOne": "{name} passou do orçamento mensal. Novos labs nela ficam bloqueados até você aumentar o orçamento ou até o próximo mês.",
+    "overMany": "{count} contas passaram do orçamento mensal. Novos labs nelas ficam bloqueados até você aumentar o orçamento ou até o próximo mês.",
+    "runningNow": "Rodando agora",
+    "billingWhileRunning": "cobrados enquanto rodam",
+    "catalogueUnread": "Não foi possível carregar o catálogo de labs ({why}), então um lab rodando em uma das suas contas pode não aparecer em Rodando agora.",
+    "autoStops": "para sozinho {time}",
+    "stop": "Parar",
+    "loading": "Carregando…",
+    "accounts": "Contas",
+    "billedOnly": "cobrado só enquanto um lab roda",
+    "budgetGuard": "Limite de orçamento · {name}",
+    "ofLimit": "de {limit}",
+    "overBudget": "Acima do orçamento",
+    "autoStopAfter": "parada automática após {hours} h",
+    "noAutoStop": "sem parada automática"
+  },
+  "empty": {
+    "title": "Nenhuma conta de nuvem conectada",
+    "description": "Conecte sua própria conta de nuvem para rodar cada lab em uma instância descartável, destruída quando você o para."
+  },
+  "account": {
+    "apiToken": "Token de API",
+    "apiKey": "Chave de API",
+    "cliSignIn": "Login pela CLI",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "Credenciais da CLI",
+    "accessKeys": "chaves de acesso",
+    "autoStop": "parada automática {hours}h",
+    "noAutoStop": "sem parada automática",
+    "budget": "orçamento {amount}/mês",
+    "spentThisMonth": "{amount} este mês",
+    "status": {
+      "testing": "Testando…",
+      "notTested": "Não testada",
+      "connected": "Conectada",
+      "needsAttention": "Requer atenção",
+      "failed": "Falhou",
+      "overBudget": "Acima do orçamento"
+    },
+    "remove": "Remover",
+    "test": "Testar",
+    "edit": "Editar",
+    "removeTitle": "Remover {name}?",
+    "removeBody": "O Cyber CTF esquece esta conta e apaga as chaves que salvou para ela. Nada muda na própria conta de nuvem, e você pode conectá-la de novo depois.",
+    "removeAccount": "Remover conta"
+  },
+  "connect": {
+    "title": "Conectar um provedor de nuvem",
+    "provider": "Conectar {provider}"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "operation": {
+    "status": {
+      "launch": "Startet",
+      "resume": "Wird fortgesetzt",
+      "pause": "Wird pausiert",
+      "shutdown": "Fährt herunter",
+      "provision": "Wird provisioniert",
+      "stop": "Wird gestoppt",
+      "attach": "Attack box wird hinzugefügt",
+      "detach": "Attack box wird entfernt"
+    },
+    "label": {
+      "provisionMachine": "{machine} wird provisioniert…"
+    }
+  },
+  "time": {
+    "justNow": "gerade eben",
+    "minutesAgo": "vor {count} Min.",
+    "hoursAgo": "vor {count} Std.",
+    "yesterday": "gestern",
+    "daysAgo": "vor {count} Tagen"
+  },
+  "units": {
+    "seconds": "{n} s",
+    "gigabytes": "{n} GB",
+    "gigabytesOf": "{used}/{total} GB",
+    "megabytes": "{n} MB",
+    "kilobytes": "{n} kB",
+    "uptimeDays": "{days} T {hours} h",
+    "uptimeHours": "{hours} h {minutes} min",
+    "uptimeMinutes": "{minutes} min"
+  },
+  "attackPresets": {
+    "cyberctf": "Kali mit dem Standard-Toolset, sofort einsatzbereit",
+    "kali": "Offizielle Kali-Basis, Tools nach Bedarf ergänzen",
+    "parrot": "Parrot-Security-Toolset",
+    "exegolFree": "Exegol Community: komplettes Toolkit, nach Full aktualisiert; zum Lernen und für den privaten Gebrauch",
+    "exegolFreeTerms": "Nicht kommerzielle Nutzung",
+    "exegolFull": "Das neueste Exegol-Toolkit; erfordert einen Exegol-Plan Pro, Team oder Enterprise",
+    "exegolFullTerms": "Kostenpflichtiger Plan"
+  },
+  "progress": {
+    "uploading": "Hochladen: {percent} %"
+  }
+}

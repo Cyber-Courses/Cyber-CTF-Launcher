@@ -1,0 +1,56 @@
+{
+  "screen": {
+    "title": "Cloud",
+    "lead": "Throwaway instances in your own account, billed to you, stopped automatically.",
+    "setUp": "Set up cloud provider",
+    "overOne": "{name} is over its monthly budget. New labs there are blocked until you raise the budget or next month.",
+    "overMany": "{count} accounts are over their monthly budget. New labs there are blocked until you raise the budget or next month.",
+    "runningNow": "Running now",
+    "billingWhileRunning": "billing while they run",
+    "catalogueUnread": "Couldn't load the lab catalogue ({why}), so a lab running on one of your accounts may be missing from Running now.",
+    "autoStops": "auto-stops {time}",
+    "stop": "Stop",
+    "loading": "Loading…",
+    "accounts": "Accounts",
+    "billedOnly": "billed only while a lab runs",
+    "budgetGuard": "Budget guard · {name}",
+    "ofLimit": "of {limit}",
+    "overBudget": "Over budget",
+    "autoStopAfter": "auto-stop after {hours} h",
+    "noAutoStop": "no auto-stop"
+  },
+  "empty": {
+    "title": "No cloud account connected",
+    "description": "Connect your own cloud account to run each lab as a throwaway instance, destroyed when you stop it."
+  },
+  "account": {
+    "apiToken": "API token",
+    "apiKey": "API key",
+    "cliSignIn": "CLI sign-in",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "CLI credentials",
+    "accessKeys": "access keys",
+    "autoStop": "auto-stop {hours}h",
+    "noAutoStop": "no auto-stop",
+    "budget": "budget {amount}/mo",
+    "spentThisMonth": "{amount} this month",
+    "status": {
+      "testing": "Testing…",
+      "notTested": "Not tested",
+      "connected": "Connected",
+      "needsAttention": "Needs attention",
+      "failed": "Failed",
+      "overBudget": "Over budget"
+    },
+    "remove": "Remove",
+    "test": "Test",
+    "edit": "Edit",
+    "removeTitle": "Remove {name}?",
+    "removeBody": "Cyber CTF forgets this account and deletes any keys it saved for it. Nothing changes in the cloud account itself, and you can connect it again later.",
+    "removeAccount": "Remove account"
+  },
+  "connect": {
+    "title": "Connect a cloud provider",
+    "provider": "Connect {provider}"
+  }
+}

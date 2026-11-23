@@ -1,0 +1,265 @@
+//! A folder on this computer shared with the attack box: tools, wordlists and notes go in, loot
+//! comes out, and it all survives the box being removed with its lab. Chosen in the setup and in
+//! Settings (off until then); mounted at `/shared` in the attack box wherever the lab runs on this
+//! computer and its form can share a folder of it (`attack_box::Placed`): not on a server or
+//! in a cloud account, nor in a VM on QEMU outside Linux, on Hyper-V or on a hypervisor the lab's
+//! run doesn't name.
+//! Kept in the launcher's store (`crate::store::settings`), so the app and the command line see
+//! the same choice.
+
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::{Error, Result};
+use crate::platform::AppDirs;
+
+/// Where it shows up inside the attack box.
+pub const MOUNT_POINT: &str = "/shared";
+
+/// The shared folder's setting, as its file keeps it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedFolder {
+    /// Whether the folder is shared with the attack box.
+    pub enabled: bool,
+    /// The folder on this computer; the default one when unset.
+    pub path: Option<String>,
+}
+
+/// The suggested folder: `CyberCTF/shared` in the home folder (an end-to-end run's, in one).
+pub fn default_path() -> Option<PathBuf> {
+    crate::platform::own_home().map(|h| h.join("CyberCTF").join("shared"))
+}
+
+fn load(dirs: &AppDirs) -> Result<SharedFolder> {
+    load_from(dirs.data()?)
+}
+
+/// The setting kept in data folder `data`; off when there is none (never saved). One that can't
+/// be read or isn't the setting is an error, never taken for "off".
+fn load_from(data: &Path) -> Result<SharedFolder> {
+    let unreadable = |e: &dyn std::fmt::Display| Error::Invalid(format!("the shared folder setting can't be read: {e}"));
+    let store = crate::store::open_in(data).map_err(|e| unreadable(&e))?;
+    let setting = store.read(|conn| crate::store::settings::get(conn, crate::store::settings::SHARED_FOLDER)).map_err(|e| unreadable(&e))?;
+    Ok(setting.unwrap_or_default())
+}
+
+/// The folder to mount, when sharing is on: created if missing. None when off; an error when the
+/// setting can't be read or the folder can't be made.
+pub fn current(dirs: &AppDirs) -> Result<Option<PathBuf>> {
+    folder(load(dirs)?)
+}
+
+/// `current` for a loaded setting.
+fn folder(s: SharedFolder) -> Result<Option<PathBuf>> {
+    if !s.enabled {
+        return Ok(None);
+    }
+    let path = s
+        .path
+        .map(PathBuf::from)
+        .or_else(default_path)
+        .ok_or_else(|| Error::Invalid("no shared folder is chosen, and this account has no home folder".into()))?;
+    std::fs::create_dir_all(&path).map_err(|e| Error::Invalid(format!("couldn't create {}: {e}", path.display())))?;
+    Ok(Some(path))
+}
+
+fn check(path: &Path) -> Result<()> {
+    if !path.is_absolute() {
+        return Err(Error::Invalid("choose a full folder path".into()));
+    }
+    // Mounted as `host:container` for Docker and quoted in a Vagrantfile: keep it to plain paths.
+    // A `:` past a Windows drive letter would split Docker's `-v` spec and fail the attack box.
+    let text = path.to_string_lossy();
+    let after_drive = if cfg!(windows) { text.get(2..).unwrap_or_default() } else { text.as_ref() };
+    if text.chars().any(|c| matches!(c, '"' | '\n' | '\r')) || after_drive.contains(':') {
+        return Err(Error::Invalid("this folder's name has characters that can't be shared; pick another".into()));
+    }
+    Ok(())
+}
+
+/// The shared folder as the Settings page shows it.
+#[derive(Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "SharedFolder")]
+pub struct SharedFolderInfo {
+    /// Whether the folder is shared with the attack box.
+    pub enabled: bool,
+    /// The folder on this computer: the chosen one, else the default (empty when there is none).
+    pub path: String,
+    /// Where it shows up inside the attack box.
+    pub mount_point: &'static str,
+}
+
+/// The shared folder's setting, with the default folder when none is chosen.
+pub fn shared_folder_get(dirs: &AppDirs) -> Result<SharedFolderInfo> {
+    Ok(info(load(dirs)?))
+}
+
+/// What the Settings page shows for a setting: the chosen folder, else the default one.
+fn info(s: SharedFolder) -> SharedFolderInfo {
+    let path = s.path.or_else(|| default_path().map(|p| p.display().to_string())).unwrap_or_default();
+    SharedFolderInfo { enabled: s.enabled, path, mount_point: MOUNT_POINT }
+}
+
+/// Turns sharing on or off and sets the folder (created now, so a wrong path shows at once).
+pub fn shared_folder_set(dirs: &AppDirs, enabled: bool, path: &str) -> Result<SharedFolderInfo> {
+    save_to(dirs.data()?, enabled, path)?;
+    shared_folder_get(dirs)
+}
+
+/// `shared_folder_set` into the store of data folder `data`.
+fn save_to(data: &Path, enabled: bool, path: &str) -> Result<()> {
+    let p = PathBuf::from(path.trim());
+    if enabled {
+        check(&p)?;
+        std::fs::create_dir_all(&p).map_err(|e| Error::Invalid(format!("couldn't create {}: {e}", p.display())))?;
+    }
+    let s = SharedFolder { enabled, path: (!path.trim().is_empty()).then(|| p.display().to_string()) };
+    crate::store::open_in(data)?.write(|tx| crate::store::settings::set(tx, crate::store::settings::SHARED_FOLDER, Some(&s)))
+}
+
+/// Opens the folder with `open` (the system's file manager).
+pub fn shared_folder_open(dirs: &AppDirs, open: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
+    let path = current(dirs)?.ok_or_else(|| Error::Invalid("folder sharing is off".into()))?;
+    open(&path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_plain_absolute_paths_are_shared() {
+        let (root, home) = if cfg!(windows) { (r"C:\", r"C:\Users\alex") } else { ("/", "/Users/alex") };
+        assert!(matches!(check(Path::new("relative/dir")).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(check(&Path::new(root).join("home").join("a\"b")).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(check(&Path::new(home).join("CyberCTF").join("shared")).is_ok());
+        assert!(check(&Path::new(home).join("My Tools")).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folder_names_with_ruby_or_shell_characters_are_accepted_since_the_vagrantfile_escapes_them() {
+        // `#{...}`, `$`, a backslash, a single quote and a space are legal folder names; the
+        // attack VM's Vagrantfile escapes what Ruby would read, and Docker takes the path as one
+        // argument. Only what can't be escaped there (a double quote, a line break) and what
+        // splits Docker's `-v` spec (a colon) is refused.
+        for ok in ["/Users/a/#{x}", "/Users/a/$HOME", "/Users/a/b\\c", "/Users/a/it's", "/Users/a/My Tools", "/"] {
+            assert!(check(Path::new(ok)).is_ok(), "{ok}");
+        }
+        for bad in ["/Users/a/b:c", "/Users/a/b\"c", "/Users/a/b\nc", "/Users/a/b\rc", "", "~/shared"] {
+            assert!(check(Path::new(bad)).is_err(), "{bad:?}");
+        }
+    }
+
+    fn temp(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("cyberctf-shared-{tag}-{}", rand::random::<u32>()))
+    }
+
+    #[test]
+    fn the_setting_is_saved_and_read_back() {
+        let root = temp("set");
+        let file = root.join("data");
+        let folder = root.join("my shared");
+        // No file yet: sharing is off.
+        assert_eq!(load_from(&file).unwrap(), SharedFolder::default());
+
+        save_to(&file, true, &format!("  {}  ", folder.display())).unwrap();
+        assert!(folder.is_dir(), "the folder is created when sharing is turned on");
+        let s = load_from(&file).unwrap();
+        assert_eq!(s, SharedFolder { enabled: true, path: Some(folder.display().to_string()) });
+        assert_eq!(folder_of(&s), Some(folder.clone()));
+        let shown = info(s);
+        assert!(shown.enabled);
+        assert_eq!((shown.path, shown.mount_point), (folder.display().to_string(), MOUNT_POINT));
+
+        // Off, with no folder: nothing to mount, and the default folder is suggested.
+        save_to(&file, false, " ").unwrap();
+        let s = load_from(&file).unwrap();
+        assert_eq!(s, SharedFolder { enabled: false, path: None });
+        assert_eq!(folder_of(&s), None);
+        assert_eq!(info(s).path, default_path().map(|p| p.display().to_string()).unwrap_or_default());
+
+        crate::store::open_in(&file)
+            .unwrap()
+            .write(|tx| {
+                tx.execute("UPDATE settings SET value = 'garbage' WHERE key = ?1", [crate::store::settings::SHARED_FOLDER])?;
+                Ok(())
+            })
+            .unwrap();
+        let err = load_from(&file).unwrap_err().to_string();
+        assert!(err.contains("shared folder setting") && err.contains("can't be read"), "never taken for off: {err}");
+        crate::store::forget(&file);
+        // A folder that can't be made is said, not taken for none.
+        let blocker = root.join("a file");
+        std::fs::write(&blocker, "").unwrap();
+        let unusable = SharedFolder { enabled: true, path: Some(blocker.join("shared").display().to_string()) };
+        assert!(super::folder(unusable).unwrap_err().to_string().starts_with("couldn't create"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn turning_sharing_on_needs_a_usable_path_and_settings() {
+        let root = temp("bad");
+        assert_eq!(save_to(&root, true, "relative/dir").unwrap_err().to_string(), "choose a full folder path");
+        assert!(!root.join(crate::store::FILE).exists(), "nothing saved");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn folder_of(s: &SharedFolder) -> Option<PathBuf> {
+        folder(s.clone()).unwrap()
+    }
+
+    /// The commands, over an app data folder of this test's own.
+    #[test]
+    fn the_commands_save_and_show_the_setting_and_never_open_a_folder_while_off() {
+        let root = temp("cmd");
+        let dirs = AppDirs::new(Some(root.clone()), None);
+        let folder = root.join("loot");
+        let shown = shared_folder_set(&dirs, false, &folder.display().to_string()).unwrap();
+        assert!(!shown.enabled);
+        assert_eq!((shown.path.as_str(), shown.mount_point), (folder.display().to_string().as_str(), MOUNT_POINT));
+        assert_eq!(shared_folder_get(&dirs).unwrap().path, folder.display().to_string());
+        assert!(!folder.exists(), "off: the folder isn't created");
+        assert_eq!(shared_folder_open(&dirs, |_| panic!("nothing to open")).unwrap_err().to_string(), "folder sharing is off");
+        // A path that can't be shared is refused and the setting kept.
+        assert_eq!(shared_folder_set(&dirs, true, "relative/dir").err().unwrap().to_string(), "choose a full folder path");
+        assert_eq!(shared_folder_get(&dirs).unwrap().path, folder.display().to_string());
+        assert!(current(&dirs).unwrap().is_none());
+        // On, it is the folder to mount and to open.
+        shared_folder_set(&dirs, true, &folder.display().to_string()).unwrap();
+        assert_eq!(current(&dirs).unwrap(), Some(folder.clone()));
+        let mut opened = None;
+        shared_folder_open(&dirs, |p| {
+            opened = Some(p.to_path_buf());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(opened, Some(folder));
+        // The store the commands opened is a file in `root`, which Windows won't remove while
+        // it is open.
+        crate::store::forget(&root);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn with_no_data_folder_the_setting_is_neither_read_as_off_nor_saved() {
+        // Regression: before the app had pointed the setting at its file, a read said "off" while
+        // a save failed.
+        let dirs = AppDirs::default();
+        assert!(matches!(current(&dirs).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(shared_folder_get(&dirs).err(), Some(crate::error::Error::Invalid(_))));
+        assert!(matches!(shared_folder_set(&dirs, false, "").err(), Some(crate::error::Error::Invalid(_))));
+    }
+
+    #[test]
+    fn the_default_is_in_the_home_folder() {
+        let p = default_path().unwrap();
+        assert!(p.ends_with("CyberCTF/shared"));
+    }
+}
+
+#[cfg(test)]
+mod proptests;

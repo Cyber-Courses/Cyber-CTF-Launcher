@@ -1,0 +1,41 @@
+import { describe, expect, it } from "vitest";
+import { answer, scenarioFrom, scenarioReport } from "@/lib/dev-mock";
+import { hostsOf } from "@/lib/dev-mock/hosts";
+import type { LabStatus, ServerList, SystemReport } from "@/lib/tauri";
+
+// The preview and the end-to-end tests run on the dev mock's answers: each has every field the
+// core's answer has (the fixtures are typed against the generated types; this checks the values
+// a screen reads are really there, not just declared).
+describe("the dev mock answers like the core", () => {
+  it("reports Docker access on the system check", () => {
+    for (const r of [answer("system_check", undefined) as SystemReport, scenarioReport(scenarioFrom("?os=linux&machine=fresh"))]) {
+      expect(r.dockerDenied).toBe(false);
+      expect(r).toHaveProperty("dockerDeniedHint", null);
+    }
+  });
+
+  it("gives every lab status its outputs and message", () => {
+    for (const id of ["lab-invoice", "lab-goad"]) {
+      const s = answer("lab_status", { id }) as LabStatus;
+      expect(Array.isArray(s.outputs)).toBe(true);
+      expect(s).toHaveProperty("message");
+      expect(s).toHaveProperty("reapError", null);
+    }
+  });
+
+  it("gives every saved host its budget, project and credential fields", () => {
+    for (const h of (answer("server_list", undefined) as ServerList).hosts) {
+      for (const field of ["monthlyLimit", "gcpProject", "useCliCreds", "awsProfile"]) expect(h, `${h.id}.${field}`).toHaveProperty(field);
+    }
+  });
+});
+
+describe("the preview's saved hosts", () => {
+  const providers = (search: string) => hostsOf(scenarioFrom(search)).map((h) => h.provider);
+  it("are the sample's, less the cloud account with cloud=none and the servers with servers=none", () => {
+    expect(providers("?mock")).toEqual(["proxmox", "vmware_esxi", "aws"]);
+    expect(providers("?mock&cloud=none")).toEqual(["proxmox", "vmware_esxi"]);
+    expect(providers("?mock&servers=none")).toEqual(["aws"]);
+    expect(providers("?mock&servers=none&cloud=none")).toEqual([]);
+  });
+});

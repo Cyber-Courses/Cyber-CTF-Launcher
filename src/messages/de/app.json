@@ -1,0 +1,38 @@
+{
+  "launchConfirm": {
+    "label": "Start eines Labs von der Website bestätigen",
+    "title": {
+      "here": "Dieses Lab auf diesem Computer ausführen?",
+      "server": "Dieses Lab auf deinem Server ausführen?",
+      "cloud": "Dieses Lab in deinem Cloud-Konto ausführen?"
+    },
+    "body": {
+      "here": "Ein Start von der Website will <lab>{lab}</lab> auf diesem Computer starten. Bestätige nur einen Start, den du selbst ausgelöst hast.",
+      "server": "Ein Start von der Website will <lab>{lab}</lab> auf <target>{target}</target> starten. Bestätige nur einen Start, den du selbst ausgelöst hast.",
+      "cloud": "Ein Start von der Website will <lab>{lab}</lab> auf <target>{target}</target> starten. Dabei werden kostenpflichtige Ressourcen in deinem Konto gestartet (sie stoppen später automatisch). Bestätige nur einen Start, den du selbst ausgelöst hast."
+    },
+    "privileged": "Dieses Lab hat privilegierte Maschinen: Sie erhalten Zugriff auf den Kernel des Computers, auf dem sie laufen.",
+    "repo": "Repo: {repo}",
+    "commit": "Commit: {commit}",
+    "failed": "Deine Antwort konnte nicht an Cyber CTF gesendet werden",
+    "decline": "Ablehnen",
+    "approve": {
+      "here": "Hier ausführen",
+      "server": "Auf meinem Server ausführen",
+      "cloud": "In meiner Cloud ausführen"
+    },
+    "expired": "Diese Anfrage ist abgelaufen: Das Lab wurde nicht gestartet. Starte es erneut über die Website, wenn du es noch willst.",
+    "close": "Schließen"
+  },
+  "quitGuard": {
+    "title": "Ein Lab startet oder stoppt noch",
+    "body": {
+      "one": "In der App wird gerade an einem Lab gearbeitet. Wenn du jetzt beendest, können halb erstellte Maschinen zurückbleiben, und ein Lab in einem Cloud-Konto verursacht Kosten, bis es abgebaut ist. Lass es im Hintergrund fertig laufen (die App schließt sich danach von selbst, spätestens nach einer Stunde), warte weiter oder beende trotzdem. Ein erneutes Beenden innerhalb von 20 Sekunden beendet ebenfalls sofort.",
+      "other": "In der App wird gerade an {count} Labs gearbeitet. Wenn du jetzt beendest, können halb erstellte Maschinen zurückbleiben, und ein Lab in einem Cloud-Konto verursacht Kosten, bis es abgebaut ist. Lass sie im Hintergrund fertig laufen (die App schließt sich danach von selbst, spätestens nach einer Stunde), warte weiter oder beende trotzdem. Ein erneutes Beenden innerhalb von 20 Sekunden beendet ebenfalls sofort."
+    },
+    "keepWaiting": "Weiter warten",
+    "quitAnyway": "Trotzdem beenden",
+    "finishInBackground": "Im Hintergrund abschließen",
+    "quitFailed": "Beenden fehlgeschlagen"
+  }
+}

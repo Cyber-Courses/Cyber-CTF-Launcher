@@ -1,0 +1,5 @@
+Name                Virtual Switch  Active Clients  VLAN ID
+------------------  --------------  --------------  -------
+Management Network  vSwitch0                     1        0
+VM Network          vSwitch0                     1        0
+iso1-lab            iso1-lab                     1        0

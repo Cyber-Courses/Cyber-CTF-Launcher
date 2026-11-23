@@ -1,0 +1,23 @@
+name: Node and pnpm
+description: >-
+  Set up pnpm and Node 22 (with the pnpm cache) and, by default, install the frozen lockfile.
+  Shared by the ci, gate, release and msix jobs. The pinned action SHAs live here.
+inputs:
+  install:
+    description: Run `pnpm install --frozen-lockfile` (set to "false" for lockfile-only jobs).
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+        # Only cache the pnpm store when we actually install: a lockfile-only job (install:false)
+        # never populates the store, so setup-node's cache-save post-step fails ("path does not
+        # exist") and takes the whole job down with it. No install, no cache.
+        cache: ${{ inputs.install == 'true' && 'pnpm' || '' }}
+    - if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile

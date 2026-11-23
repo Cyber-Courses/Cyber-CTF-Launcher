@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 691a6cf92df902f83d683f01d5e58e3a7fd9369f736a9e6e3dc8cdf3e7ea9fbc # shrinks to id = "A", decoy = None, prefix = [], layout = ".cyberctf-attack-vm/.vagrant/m", windows = false

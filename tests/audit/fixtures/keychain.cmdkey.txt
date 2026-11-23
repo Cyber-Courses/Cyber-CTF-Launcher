@@ -1,0 +1,1 @@
+    Target: LegacyGeneric:target=session.org.cyberctf.desktop

@@ -1,0 +1,341 @@
+//! The lab status model: what a running lab looks like to the UI. Shared by every runtime
+//! (Docker, VM, Terraform), kept apart from the command surface so adding a field here
+//! doesn't touch command registration or dispatch.
+
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+/// A port the software inside a container binds: `target` is the port inside the
+/// container, `published` is where it is reachable on 127.0.0.1 (0 = not published).
+#[derive(Clone, Debug, PartialEq, TS)]
+#[ts(rename = "LabPort")]
+pub struct Port {
+    /// Where it is reachable on 127.0.0.1 (0: not published).
+    #[ts(type = "number")]
+    pub published: Option<isothrum_runner::HostPort>,
+    /// The port inside the container.
+    #[ts(type = "number")]
+    pub target: isothrum_runner::GuestPort,
+    /// The account the service on it ships with, as the lab declares it: shown beside the port.
+    #[ts(optional)]
+    pub login: Option<Login>,
+}
+
+/// The UI reads `published` as a number, 0 when the port isn't published, and finds `login` only
+/// when the lab declares one.
+impl Serialize for Port {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct as _;
+        let mut port = s.serialize_struct("Port", 2 + usize::from(self.login.is_some()))?;
+        port.serialize_field("published", &self.published.map_or(0, isothrum_runner::HostPort::get))?;
+        port.serialize_field("target", &self.target)?;
+        if let Some(login) = &self.login {
+            port.serialize_field("login", login)?;
+        }
+        port.end()
+    }
+}
+
+/// The fixed account a lab's service ships with (a training lab's published sign-in, not a
+/// secret), for the player to sign in with.
+#[derive(Serialize, PartialEq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabLogin")]
+pub struct Login {
+    /// The account's name.
+    pub user: String,
+    /// Its password.
+    pub password: String,
+}
+
+// Leaves the password out, so a debug line never prints it.
+impl std::fmt::Debug for Login {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Login").field("user", &self.user).finish_non_exhaustive()
+    }
+}
+
+/// One machine of a lab (a container or a VM), as the lab page and its diagram show it.
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabMachine")]
+pub struct Machine {
+    /// The container (a small computer on the lab network).
+    pub name: String,
+    /// Its state as the runtime reports it, e.g. `running`, `exited` or `unhealthy`.
+    pub state: String,
+    /// The container's address on the lab network, e.g. "172.20.0.4" (empty if unknown).
+    #[serde(default)]
+    pub ip: String,
+    /// Ports the software inside it binds (for the network diagram).
+    #[serde(default)]
+    pub ports: Vec<Port>,
+    /// Every network the machine is plugged into, with its address there. A machine on
+    /// two networks is a pivot (dual-homed); empty when the runtime can't tell.
+    #[serde(default)]
+    pub interfaces: Vec<Interface>,
+    /// The services running inside, as the lab declares them (compose labels
+    /// `cyberctf.service.<name>: "<kind>:<port>,<port>"`). A container may run several;
+    /// empty when the lab declares none (never inferred).
+    #[serde(default)]
+    pub services: Vec<Service>,
+    /// Part of the lab's plumbing, not a target: the controller that provisions the machines
+    /// (Isoloom's `isoloom-controller`). Powered off once the lab is up, hidden from the
+    /// diagram, never counted as "down". (Isoloom will expose machine roles itself; until then
+    /// the controller is known by its name.)
+    #[serde(default)]
+    pub infra: bool,
+    /// Its graphical console (its screen), as the lab's run offers it where it runs: `vnc` or
+    /// `rdp`, or `none` and why. `None` when the run says nothing of it (a container).
+    #[serde(default)]
+    pub console: Option<Console>,
+}
+
+/// A machine's graphical console as the lab's run offers it.
+#[derive(Serialize, Debug, PartialEq, Eq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabConsole")]
+pub struct Console {
+    /// `vnc`, `rdp`, or `none`.
+    pub protocol: String,
+    /// Why there is none, or what it needs, in the run's words.
+    pub note: Option<String>,
+    /// Why it can't be shown now though the machine runs (its VM was started without a screen,
+    /// it doesn't answer), in the run's words: the page then offers no Screen button.
+    pub unavailable: Option<String>,
+    /// The hypervisor's own app this computer has to show the machine in ("VirtualBox"), beside
+    /// the built-in viewer; none where the lab's provider has none or this computer lacks it.
+    pub native_app: Option<String>,
+}
+
+impl Console {
+    /// The runner's offer of a machine's console, in the lab page's words, with the app this
+    /// computer has to open it in (`native_app`, [`crate::screen::native::installed`]).
+    pub(crate) fn of(offer: &isothrum_runner::ConsoleOffer, native_app: Option<&str>) -> Console {
+        Console {
+            protocol: super::isothrum::protocol_word(offer.protocol).to_owned(),
+            note: offer.note.clone(),
+            unavailable: offer.unavailable.clone(),
+            native_app: native_app.map(str::to_owned),
+        }
+    }
+}
+
+/// One service inside a machine, as declared by the lab.
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabService")]
+pub struct Service {
+    /// The lab's name for it, e.g. "portal", "ssh".
+    pub name: String,
+    /// What it is, as declared: "web", "database", "cache", "worker", "ssh" or free text.
+    pub kind: String,
+    /// The ports it listens on inside the container.
+    pub ports: Vec<u16>,
+}
+
+/// One network interface of a machine: the lab network it sits on and its address there.
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabInterface")]
+pub struct Interface {
+    /// The lab's own name for the network (the compose key, e.g. "dmz"), not Docker's.
+    pub network: String,
+    /// Its address on that network, e.g. "172.20.0.4".
+    pub ip: String,
+}
+
+/// A network segment of the lab (a Docker network = a switch the machines plug into).
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabNetwork")]
+pub struct Network {
+    /// The lab's own name for it (the compose key), e.g. "default", "dmz", "internal".
+    pub name: String,
+    /// CIDR, e.g. "172.20.0.0/16" (empty if Docker didn't report one).
+    pub subnet: String,
+    /// No route out (compose `internal: true`): its machines can't reach the internet.
+    pub internal: bool,
+}
+
+/// Where a lab runs, for the UI: its own runtime here, a VM here, a server, or a cloud account.
+#[derive(Serialize, Debug, PartialEq, Clone, Copy, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename = "LabPlace")]
+pub enum Place {
+    /// In containers on this machine's Docker.
+    Container,
+    /// In VMs on this machine: a VM lab, or a container lab as one VM per machine.
+    LocalVm,
+    /// On a saved server (Proxmox or ESXi).
+    Server,
+    /// In a cloud account.
+    Cloud,
+}
+
+/// How a lab was parked: its machines kept, to resume later without rebuilding them. `Pause`
+/// saves the VMs' state or freezes the containers (instant resume); `Shutdown` powers them off
+/// cleanly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum Park {
+    /// The VMs' state saved to disk, or the containers frozen: they resume where they were.
+    Pause,
+    /// The VMs powered off cleanly, kept.
+    Shutdown,
+}
+
+impl From<isothrum_runner::Park> for Park {
+    fn from(park: isothrum_runner::Park) -> Park {
+        match park {
+            isothrum_runner::Park::Pause => Park::Pause,
+            _ => Park::Shutdown,
+        }
+    }
+}
+
+/// A lab as the UI shows it right now: whether it runs, its machines and networks, where it
+/// runs and what can be done to it there.
+#[derive(Serialize, Debug, PartialEq, Clone, Default, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LabStatus {
+    /// Whether the lab is up (a lab whose launch failed reads as not running:
+    /// [`LabStatus::unless_launch_failed`]).
+    pub running: bool,
+    /// Set when the launcher parked the lab (paused or shut down) and it isn't running: its
+    /// machines exist and resume as they were, so the UI offers Resume, not "clean up".
+    pub parked: Option<Park>,
+    /// Its machines, the lab's plumbing among them ([`Machine::infra`]).
+    pub machines: Vec<Machine>,
+    /// The lab's network segments (Docker labs); empty when the runtime doesn't report them.
+    pub networks: Vec<Network>,
+    /// Loopback URL where the lab is reachable on this machine, once running (Docker labs
+    /// with a published port). None for VM labs or when nothing is published yet.
+    pub url: Option<String>,
+    /// Name of the server host or cloud account the lab runs on; None when it runs on this
+    /// machine (in a local VM too: `place` says that).
+    pub host: Option<String>,
+    /// The id of that saved server host or cloud account (its connection's), to find it among
+    /// the saved ones; None when it runs on this machine.
+    pub host_id: Option<String>,
+    /// Unix time a cloud lab stops itself (auto-stop), if it does.
+    pub expires_at: Option<u64>,
+    /// Where it runs; set by the runtime dispatcher (None from the per-runtime probes).
+    pub place: Option<Place>,
+    /// The engine or hypervisor it runs on: "docker", or a Vagrant provider id ("virtualbox",
+    /// "`vmware_desktop`", "parallels", ...), or a server/cloud provider. "On this machine" alone
+    /// is misleading for a VM lab: this says which hypervisor to look in.
+    pub provider: Option<String>,
+    /// A container lab (catalogue Docker) running as one VM per machine — its VM recipes rather
+    /// than its containers: on this machine (Vagrant), or on a cloud account (cloud-vm). Set by
+    /// the status dispatcher. The UI names the form.
+    pub per_machine: bool,
+    /// What a cloud-services lab exposes (its module's outputs, by the spec's names): its
+    /// entry points and credentials. Empty for the other labs.
+    pub outputs: Vec<Output>,
+    /// The lab's own words once it is up, placeholders filled in (cloud-services labs, whose
+    /// message names their outputs); None for the others, whose message is in the deploy log.
+    pub message: Option<String>,
+    /// Why the auto-stop couldn't destroy this lab, while it is past its stop time (it may still
+    /// be billing): set by the status dispatcher, None from the per-runtime probes.
+    pub reap_error: Option<crate::error::Wire>,
+    /// What can be done on the lab where it runs, in the form it was started in: set by the
+    /// status dispatcher (`lifecycle::controls`), none from the per-runtime probes.
+    pub controls: Vec<Control>,
+    /// The ways its run can be parked, as the runner says its form allows (`Status::parks`): what
+    /// [`controls`](LabStatus::controls) offers of parking where it runs here.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub parks: Vec<Park>,
+}
+
+/// One thing that can be done on a started lab where it runs: the backend's own rules, so the
+/// lab page offers exactly what the lifecycle accepts.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabControl")]
+pub enum Control {
+    /// Pausing it (its machines' state saved, its containers frozen).
+    Pause,
+    /// Shutting it down (its machines powered off, kept).
+    Shutdown,
+    /// Running its machines' provisioning again in place.
+    Provision,
+    /// Bringing machines that went down back up as they are, no rebuild (a resume of the run):
+    /// the lab page's repair beside Reset.
+    Repair,
+}
+
+impl LabStatus {
+    /// The status of a lab whose last launch or resume `failed` (its operation's verdict): not
+    /// running, even if its machines stayed up. A failed setup step leaves it unusable, and showing
+    /// it running with a healthy diagram misleads; the lab page and the attack box's auto-start go
+    /// by this alone, wherever the lab runs.
+    #[must_use]
+    pub fn unless_launch_failed(self, failed: bool) -> LabStatus {
+        LabStatus { running: self.running && !failed, ..self }
+    }
+}
+
+/// One thing a cloud-services lab exposes: a module output, under the spec's name for it.
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabOutput")]
+pub struct Output {
+    /// The spec's name for it.
+    pub name: String,
+    /// Its value, as the module gives it.
+    pub value: String,
+    /// Terraform marks it sensitive (a secret key): the UI masks it until asked.
+    pub sensitive: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use isothrum_runner::{GuestPort, HostPort};
+
+    use super::{LabStatus, Login, Port};
+
+    /// The lab page reads a port as `{published, target}`, each the bare number, `published` 0
+    /// when it isn't, with its `login` only when the lab declares one.
+    #[test]
+    fn a_lab_port_reads_as_the_ui_expects() {
+        let port = |published, target| Port { published, target: GuestPort::new(target), login: None };
+        assert_eq!(serde_json::to_value(port(Some(HostPort::new(8080)), 80)).unwrap(), serde_json::json!({"published": 8080, "target": 80}));
+        assert_eq!(serde_json::to_value(port(None, 22)).unwrap(), serde_json::json!({"published": 0, "target": 22}));
+        let login = Login { user: "admin".into(), password: "admin".into() };
+        let with_login = Port { login: Some(login), ..port(Some(HostPort::new(8080)), 80) };
+        assert_eq!(
+            serde_json::to_value(with_login).unwrap(),
+            serde_json::json!({"published": 8080, "target": 80, "login": {"user": "admin", "password": "admin"}})
+        );
+    }
+
+    #[test]
+    fn a_failed_launch_reads_as_not_running_even_with_machines_up() {
+        // Regression: only server and cloud labs used to be masked, so a local Docker or VM lab
+        // read as running after a failed launch.
+        let up = || LabStatus { running: true, ..LabStatus::default() };
+        assert!(up().unless_launch_failed(false).running, "nothing failed: running");
+        assert!(!up().unless_launch_failed(true).running);
+        assert!(!LabStatus::default().unless_launch_failed(false).running);
+    }
+}
+
+/// What the launch dialog shows before a cloud-services lab starts (in a build with the
+/// `cloud-services` feature): its cloud, what it costs and what it asks for. Read from the lab's spec at its pinned commit.
+#[derive(serde::Serialize, Debug, PartialEq, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "CloudPreview")]
+pub struct Preview {
+    /// The cloud the module runs on, by id (`aws`, `azure`, …).
+    pub provider: String,
+    /// What the spec says it costs per hour, in US dollars; None when it doesn't say.
+    pub hourly_usd: Option<f64>,
+    /// The launch-time inputs it takes.
+    pub inputs: Vec<String>,
+    /// Whether it opens something to this machine's public IP only.
+    pub allow_list: bool,
+    /// The names of what it exposes once up.
+    pub outputs: Vec<String>,
+}

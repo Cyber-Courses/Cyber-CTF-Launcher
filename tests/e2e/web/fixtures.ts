@@ -1,0 +1,270 @@
+import { test as base, expect, type Locator, type Page } from "@playwright/test";
+import type { Holdable } from "../../../src/lib/dev-mock/holds";
+import type { CommandError } from "../../../src/lib/tauri/generated/CommandError";
+import { AppShell } from "./pages/app-shell";
+import { LabScreen } from "./pages/lab";
+import { LabsScreen } from "./pages/labs";
+import { SettingsWindow } from "./pages/settings";
+
+/** The six languages the launcher ships (src/lib/i18n). */
+export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
+export type Locale = (typeof LOCALES)[number];
+
+/** What a missing translation renders: the key itself, like "labs.list.search". */
+const RAW_KEY = /^[a-z]+(\.[a-zA-Z]+)+$/;
+
+type Fixtures = {
+  /** The language the test starts in (localStorage `cyberctf.locale`, unless a page set one). */
+  appLocale: Locale;
+  /** Console errors, uncaught exceptions and missing-translation warnings, on every page of the
+   *  test; the test fails if any were seen. */
+  consoleErrors: string[];
+  /** The main window's frame on the test's page: its sidebar, title bar and open screen. */
+  app: AppShell;
+  /** The Labs screen on the test's page. */
+  labs: LabsScreen;
+  /** A lab's page on the test's page, and its "Where should the lab run?". */
+  lab: LabScreen;
+  /** The Settings window, in the test's page (`settingsWindow.open(section)` loads it there). */
+  settingsWindow: SettingsWindow;
+};
+
+export const test = base.extend<Fixtures>({
+  appLocale: ["en", { option: true }],
+  consoleErrors: [
+    async ({ context, appLocale }, use) => {
+      const errors: string[] = [];
+      // Seeded before any app script runs, on every page (Settings and the server setup open in
+      // new tabs): the language, and onboarding done so the shell shows.
+      await context.addInitScript((locale) => {
+        try {
+          // Only when not set yet: a language picked during the test survives a reload.
+          if (!localStorage.getItem("cyberctf.locale")) localStorage.setItem("cyberctf.locale", locale);
+          localStorage.setItem("cyberctf.onboarded", "1");
+        } catch {
+          /* storage unavailable */
+        }
+      }, appLocale);
+      const watch = (page: Page) => {
+        page.on("console", (m) => {
+          const text = m.text();
+          if (m.type() === "error" || (m.type() === "warning" && text.startsWith("i18n: missing message"))) errors.push(`${page.url()}: ${text}`);
+        });
+        page.on("pageerror", (e) => errors.push(`${page.url()}: ${e.message}`));
+      };
+      context.pages().forEach(watch);
+      context.on("page", watch);
+      await use(errors);
+      expect(errors, "console errors").toEqual([]);
+    },
+    { auto: true },
+  ],
+  app: async ({ page }, provide) => {
+    await provide(new AppShell(page));
+  },
+  labs: async ({ page }, provide) => {
+    await provide(new LabsScreen(page));
+  },
+  lab: async ({ page }, provide) => {
+    await provide(new LabScreen(page));
+  },
+  settingsWindow: async ({ page }, provide) => {
+    await provide(new SettingsWindow(page));
+  },
+});
+
+export { expect };
+
+/** Opens the main window with the mock and waits for the shell. `query` adds the mock's
+ *  scenario switches (src/lib/dev-mock/scenario.ts, `Scenario`), e.g. "&launch=fail". */
+export async function openApp(page: Page, query = "") {
+  await page.goto(`/?mock${query}`);
+  const app = new AppShell(page);
+  await expect(app.sidebar).toBeVisible();
+  await expect(app.title).toBeVisible();
+}
+
+/** What the dev mock adds to the window for a test (src/lib/dev-mock/index.ts). */
+type MockWindow = { __CYBERCTF_MOCK_RELEASE__: (step: string) => void };
+
+/** With `hold=<step>` (src/lib/dev-mock/holds.ts): lets the step the preview in `page` holds go
+ *  on. Until then, what the UI shows while the step lasts stays on screen for the test to see.
+ *  With `andClick`, also presses that button in the same go, inside the page, so nothing the page
+ *  runs on its own (a poll, a background re-check) sees the step go on before the click does. */
+export async function release(page: Page, step: Holdable, andClick?: Locator) {
+  if (andClick) {
+    await andClick.evaluate((button: HTMLElement, s) => {
+      (window as unknown as MockWindow).__CYBERCTF_MOCK_RELEASE__(s);
+      button.click();
+    }, step);
+    return;
+  }
+  await page.evaluate((s) => {
+    (window as unknown as MockWindow).__CYBERCTF_MOCK_RELEASE__(s);
+  }, step);
+}
+
+/** Settles once the page's finite animations (entrances, fades, transitions) have ended: measured
+ *  mid-animation, a contrast or a position reads wrong. Looping ones, like a spinner's or a
+ *  pulsing dot's, never end: not waited for. */
+export async function animationsFinished(page: Page) {
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
+}
+
+/** The command palette's shortcut where the page thinks it runs: ⌘K on macOS, Ctrl+K elsewhere
+ *  (by the user agent, which the "Desktop Chrome" device sets to Windows). */
+export async function paletteKey(page: Page) {
+  return (await page.evaluate(() => navigator.userAgent)).includes("Mac") ? "Meta+k" : "Control+k";
+}
+
+/** Visible texts (and placeholders, labels) on the page that look like a raw message key. */
+export function rawKeys(page: Page): Promise<string[]> {
+  return page.evaluate((source) => {
+    const re = new RegExp(source);
+    const found = new Set<string>();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = n.textContent?.trim() ?? "";
+      const el = n.parentElement;
+      if (text && re.test(text) && el && el.checkVisibility()) found.add(text);
+    }
+    for (const el of document.querySelectorAll<HTMLElement>("[placeholder], [aria-label], [title]")) {
+      for (const attr of ["placeholder", "aria-label", "title"]) {
+        const v = el.getAttribute(attr)?.trim();
+        if (v && re.test(v)) found.add(`${attr}=${v}`);
+      }
+    }
+    return [...found];
+  }, RAW_KEY.source);
+}
+
+/** Whether the page or its main scroll area scrolls sideways: [scrollWidth, clientWidth] pairs. */
+export function horizontalOverflow(page: Page) {
+  return page.evaluate(() => {
+    const boxes = [document.documentElement, document.body, ...document.querySelectorAll<HTMLElement>("main .overflow-y-auto")];
+    return boxes.filter((b) => b.scrollWidth > b.clientWidth + 1).map((b) => `${b.tagName.toLowerCase()}.${b.className}: ${b.scrollWidth} > ${b.clientWidth}`);
+  });
+}
+
+/** How a forced command answers: an error (the Rust core's, with its code, or plain text as a
+ *  tool's), or a value; only once the test lets it (`releaseForced`) when `held`. */
+export type Forced = ({ error: string | CommandError } | { value: unknown }) & { held?: boolean };
+
+/**
+ * Makes some Tauri commands fail (or answer `value`) on every page of the test, ahead of the dev
+ * mock, which answers the rest: the mock installs its `invoke` on `__TAURI_INTERNALS__`, and this
+ * wraps whatever is installed. A `held` command stays in flight until the test calls
+ * `releaseForced`, so the UI's state while it runs can be checked without racing it. Call before
+ * `openApp`; `reforce` changes the forced commands later, while the test runs.
+ */
+export async function forceCommands(page: Page, forced: Record<string, Forced>) {
+  await page.addInitScript((forced: Record<string, Forced>) => {
+    type Invoke = (cmd: string, args?: unknown, options?: unknown) => Promise<unknown>;
+    let real: Invoke | null = null;
+    // The held commands' answers wait on these until the test releases them.
+    const gates = new Map(
+      Object.entries(forced)
+        .filter(([, f]) => f.held)
+        .map(([cmd]) => [cmd, Promise.withResolvers<void>()] as const),
+    );
+    // Callbacks and window metadata, for what registers before the mock is installed (event
+    // listeners on mount); the mock replaces them with its own.
+    const callbacks = new Map<number, unknown>();
+    let next = 1;
+    const internals = {
+      transformCallback: (cb: unknown) => {
+        callbacks.set(next, cb);
+        return next++;
+      },
+      unregisterCallback: (id: number) => callbacks.delete(id),
+      metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
+    } as { invoke?: Invoke };
+    Object.defineProperty(internals, "invoke", {
+      configurable: true,
+      enumerable: true,
+      set(fn: Invoke) {
+        real = fn;
+      },
+      get() {
+        return async (cmd: string, args?: unknown, options?: unknown) => {
+          const f = forced[cmd];
+          if (!f) return real?.(cmd, args, options);
+          await gates.get(cmd)?.promise;
+          if ("error" in f) throw f.error;
+          return structuredClone(f.value);
+        };
+      },
+    });
+    const w = window as unknown as {
+      __TAURI_INTERNALS__: unknown;
+      __CYBERCTF_MOCK__: boolean;
+      __E2E_RELEASE_FORCED__: (cmd: string) => void;
+      __E2E_REFORCE__: (changes: Record<string, Forced | null>) => void;
+    };
+    w.__TAURI_INTERNALS__ = internals;
+    w.__E2E_RELEASE_FORCED__ = (cmd) => {
+      const gate = gates.get(cmd);
+      if (!gate) throw new Error(`${cmd} isn't a held forced command`);
+      gate.resolve();
+    };
+    // Forcings changed while the test runs: the next invoke of each command answers the new way
+    // (null: the mock answers it again).
+    w.__E2E_REFORCE__ = (changes) => {
+      for (const [cmd, f] of Object.entries(changes)) {
+        if (f === null) {
+          delete forced[cmd];
+          gates.delete(cmd);
+        } else {
+          forced[cmd] = f;
+          if (f.held) gates.set(cmd, Promise.withResolvers<void>());
+        }
+      }
+    };
+    // Lets the dev mock install itself over these internals.
+    w.__CYBERCTF_MOCK__ = true;
+  }, forced);
+}
+
+/** Lets a `held` forced command (see `forceCommands`) answer, in `page`. */
+export async function releaseForced(page: Page, cmd: string) {
+  await page.evaluate((c) => {
+    (window as unknown as { __E2E_RELEASE_FORCED__: (cmd: string) => void }).__E2E_RELEASE_FORCED__(c);
+  }, cmd);
+}
+
+/** Changes the forced commands of `page` (see `forceCommands`, which must have run for it) while
+ *  the test runs: a command's new answer, or null to let the mock answer it again. For what a
+ *  forcing in place since the page loaded can't say: a start that fails once and then goes
+ *  through, a session that is gone only after the start that found out. */
+export async function reforce(page: Page, changes: Record<string, Forced | null>) {
+  await page.evaluate((c) => {
+    (window as unknown as { __E2E_REFORCE__: (changes: Record<string, Forced | null>) => void }).__E2E_REFORCE__(c);
+  }, changes);
+}
+
+/** Sends an app event (what the Rust core emits: `quit-blocked`, `deep-link://new-url`…) to the
+ *  windows of the test's context, through the dev mock's event bus (src/lib/dev-mock/events.ts). */
+export function emitEvent(page: Page, event: string, payload: unknown) {
+  return page.evaluate(
+    ([event, payload]) => {
+      const bus = new BroadcastChannel("cyberctf-dev-mock-events");
+      bus.postMessage({ event, payload });
+      bus.close();
+    },
+    [event, payload] as const,
+  );
+}
+
+/** Answers the next confirmation the app asks in its own dialog (`confirmDestructive`, and the
+ *  warning `warnInDialog` shows) with its confirm button (`accept`) or Cancel; resolves with what
+ *  it asked (the title, a blank line, then the message) once the dialog has closed. Set it up
+ *  before the click that asks. */
+export async function answerConfirm(page: Page, accept: boolean): Promise<string> {
+  const dialog = page.getByRole("alertdialog");
+  await dialog.waitFor();
+  const title = await dialog.locator("#confirm-title").innerText();
+  const asked = `${title}\n\n${await dialog.locator("#confirm-body").innerText()}`;
+  await (accept ? dialog.getByRole("button").last() : dialog.getByRole("button", { name: "Cancel" })).click();
+  await page.locator("#confirm-title", { hasText: title }).waitFor({ state: "detached" });
+  return asked;
+}

@@ -1,0 +1,124 @@
+"use client";
+
+import { Settings2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CalloutRow } from "@/features/machine/machine-parts";
+import { failureHintKey, failureTitleKey, type FailureKind } from "@/features/labs/failure-hints";
+import type { LabOperation } from "@/features/labs/lab-detail/lab-state";
+import { useT } from "@/lib/i18n";
+import { describeError, errorCode, type CommandError } from "@/lib/errors";
+import { serverOpenSetup } from "@/lib/tauri";
+import { toast } from "@/lib/toast";
+
+/**
+ * The last operation on the lab failed: said right under the header, beside its actions (at the
+ * top of the page, in view), with the error, a hint when the cause is a known one, and, after a
+ * failed removal, that part of the lab is still up.
+ */
+export function FailureNotice({
+  title,
+  op,
+  message,
+  kind,
+  holder = null,
+  operation = null,
+  canRandomPorts = true,
+  stillUp,
+  onOpenServer,
+  onDismiss,
+}: {
+  /** The lab's title. */
+  title: string;
+  op: LabOperation;
+  message: string;
+  /** What kind of failure it is, when it has a known fix. */
+  kind: FailureKind | null;
+  /** For a port clash, what holds the host port ("nginx (pid 4123)"), when the backend found it. */
+  holder?: string | null;
+  /** The id of the operation that failed: what the player quotes when asking for help. */
+  operation?: string | null;
+  /** Whether random host ports are an option for this clash (a container here): false for a VM
+   *  here (its forwarded ports are fixed) or a server run, where freeing the port is the only fix. */
+  canRandomPorts?: boolean;
+  /** The lab still runs (a stop that failed). */
+  stillUp: boolean;
+  /** Opens the settings of the server the lab runs on (none: it runs on no saved server). */
+  onOpenServer?: () => void;
+  onDismiss: () => void;
+}) {
+  const t = useT();
+  const key = failureTitleKey(op);
+  // The port-clash hint depends on where it ran: a VM here forwards fixed ports, so "random ports"
+  // can't help; freeing the port is the only fix.
+  const hintKey = kind === "ports" && !canRandomPorts ? "labs.failure.hint.portsVm" : kind ? failureHintKey(kind) : null;
+  return (
+    <CalloutRow
+      tone="fail"
+      title={t(key, { title })}
+      actions={
+        <Button variant="ghost" size="xs" onClick={onDismiss} aria-label={t("labs.failure.dismiss")} title={t("labs.failure.dismiss")}>
+          <X />
+        </Button>
+      }
+    >
+      <span className="block break-words font-mono text-[0.6875rem]">{message}</span>
+      {kind === "ports" && holder && <span className="mt-1 block text-foreground">{t("labs.failure.portHeldBy", { holder })}</span>}
+      {hintKey && <span className="mt-1 block text-foreground">{t(hintKey)}</span>}
+      {stillUp && <span className="mt-1 block">{t("labs.failure.stillUp")}</span>}
+      {operation && <span className="mt-1 block text-muted-foreground">{t("labs.failure.operationId", { id: operation })}</span>}
+      {kind === "serverAuth" && onOpenServer && <OpenServerButton onOpen={onOpenServer} />}
+    </CalloutRow>
+  );
+}
+
+/** Opens the settings of the saved server `hostId` (the one the lab runs on), whose window takes
+ *  a new token or password; none for a lab on no saved server. */
+export function useOpenServer(hostId: string | null | undefined): (() => void) | undefined {
+  const t = useT();
+  if (!hostId) return undefined;
+  return () => {
+    serverOpenSetup(hostId, "server").catch((e: unknown) => {
+      toast(t("labs.failure.openServer"), describeError(e, t), "fail");
+    });
+  };
+}
+
+/** The server refused its saved credentials: the way to its settings, to give the new ones. */
+function OpenServerButton({ onOpen }: { onOpen: () => void }) {
+  const t = useT();
+  return (
+    <Button variant="outline" size="xs" className="mt-2" onClick={onOpen}>
+      <Settings2 /> {t("labs.failure.openServer")}
+    </Button>
+  );
+}
+
+/**
+ * The lab's status couldn't be read (Docker down, its run record unreadable, its files no longer
+ * able to be generated again): what the page shows may be stale, so the reason is said at the top
+ * until a read succeeds.
+ */
+export function StatusReadNotice({ title, error, onOpenServer }: { title: string; error: unknown; onOpenServer?: () => void }) {
+  const t = useT();
+  return (
+    <CalloutRow tone="fail" title={t("labs.statusError.title", { title })}>
+      <span className="block break-words font-mono text-[0.6875rem]">{describeError(error, t)}</span>
+      {/* The server refused its credentials (a token revoked): read again once they're updated. */}
+      {errorCode(error) === "serverAuthFailed" && onOpenServer && <OpenServerButton onOpen={onOpenServer} />}
+    </CalloutRow>
+  );
+}
+
+/**
+ * The auto-stop couldn't destroy this lab past its stop time (expired credentials, a removed
+ * account…): it may still be billing, so it is said at the top of the page until it is gone.
+ */
+export function ReapFailedNotice({ title, error }: { title: string; error: CommandError }) {
+  const t = useT();
+  return (
+    <CalloutRow tone="fail" title={t("labs.reapFailed.title", { title })}>
+      <span className="block break-words font-mono text-[0.6875rem]">{describeError(error, t)}</span>
+      <span className="mt-1 block text-foreground">{t("labs.reapFailed.hint")}</span>
+    </CalloutRow>
+  );
+}

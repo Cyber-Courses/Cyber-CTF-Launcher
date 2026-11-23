@@ -1,0 +1,864 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { MachineSetup } from "@/features/machine/machine-setup";
+import { MachineStepBody, SetupOutcome, useMachineSetup, type MachineStep, type MachineSetupState } from "@/features/machine/setup-steps";
+import { wslState } from "@/features/machine/setup-steps/steps";
+import { getAttackImage, getAutoAttackBox, setAttackImage } from "@/lib/settings";
+import { canContinue } from "@/features/machine/setup-steps/steps";
+import { firstPending } from "@/features/machine/setup-steps/step-status";
+import { must } from "@/components/test-support";
+import type { ProviderStatus, SystemReport, WslState } from "@/lib/tauri";
+import {
+  INSTALLS_OFF,
+  INSTALLS_OFF_NOTE,
+  freshDebian,
+  freshReport,
+  hypervisorStatus as hv,
+  hypervisors,
+  readyReport,
+  withNeeds,
+  withSetup,
+} from "@/test/fixtures";
+import { answersDialog, commands, dialogsAsked, installTauri, progressLines, rejectWith, stream } from "@/test/tauri";
+import { agreeToInstall } from "@/test/install-consent";
+import { button, flush, settle } from "@/test/ui";
+import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
+
+const text = () => document.body.textContent;
+
+/** One step body with a live setup state, on `machine` with the setup's options the core works
+ *  out for it; `onSetup` sees each render's state. */
+function Step({
+  step,
+  report: machine,
+  onRefresh = () => {},
+  onSetup,
+}: {
+  step: MachineStep;
+  report: SystemReport;
+  onRefresh?: () => void;
+  onSetup?: (s: MachineSetupState) => void;
+}) {
+  const report = withSetup(machine);
+  const setup = useMachineSetup(report, onRefresh);
+  onSetup?.(setup);
+  return (
+    <>
+      <MachineStepBody step={step} report={report} setup={setup} />
+      <SetupOutcome report={report} setup={setup} />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ package manager, WSL */
+
+describe("package manager step", () => {
+  it("shows an installed package manager", () => {
+    installTauri();
+    render(<Step step="pkgmgr" report={readyReport()} />);
+    expect(text()).toContain("brew4.4.0");
+  });
+
+  it("warns Intel Mac players that Homebrew installs may compile from source, and nobody else", () => {
+    const { unmount } = render(<Step step="pkgmgr" report={{ ...readyReport(), os: "macos", arch: "x86_64" }} />);
+    expect(text()).toContain("Intel Mac");
+    unmount();
+    const arm = render(<Step step="pkgmgr" report={{ ...freshReport("macos"), arch: "aarch64" }} />);
+    expect(text()).not.toContain("Intel Mac");
+    arm.unmount();
+    render(<Step step="pkgmgr" report={{ ...freshReport("linux"), arch: "x86_64" }} />);
+    expect(text()).not.toContain("Intel Mac");
+  });
+
+  it("gives Homebrew's install line on a Mac, and copies it", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const writeText = vi.fn<(s: string) => Promise<void>>(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<Step step="pkgmgr" report={freshReport("macos")} />);
+    expect(text()).toContain("Run this in Terminal");
+    await user.click(button(/^\s*copy$/i));
+    await flush();
+    expect(writeText.mock.calls[0][0]).toContain("Homebrew/install");
+    expect(text()).toContain("Copied");
+    await user.click(button(/brew\.sh/));
+    await flush();
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: "https://brew.sh" });
+  });
+
+  it("links to App Installer on Windows and names the Linux package manager", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const r = render(<Step step="pkgmgr" report={freshReport("windows")} />);
+    await user.click(button(/^\s*get$/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/apps\.microsoft\.com/);
+    r.unmount();
+    const linux = render(<Step step="pkgmgr" report={freshReport("linux")} />);
+    expect(text()).toContain("package manager (apt)");
+    linux.unmount();
+    render(<Step step="pkgmgr" report={{ ...freshReport("linux"), pkgManager: { name: "", installed: false, version: null } }} />);
+    expect(text()).toContain("Install your distribution’s package manager to use");
+  });
+});
+
+describe("WSL step", () => {
+  it("turns on WSL, then asks for a restart", async () => {
+    const calls = installTauri({ install_dependency: (a) => (stream(a, ...progressLines("Enabling feature")), null) });
+    const user = userEvent.setup();
+    const onRefresh = vi.fn();
+    render(<Step step="virtualization" report={freshReport("windows")} onRefresh={onRefresh} />);
+    expect(screen.queryByRole("status")).toBeNull();
+    await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "wsl" });
+    expect(text()).toContain("Enabling feature");
+    expect(screen.getByRole("status").textContent).toContain("Restart Windows to finish");
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("shows a failed WSL install in its log", async () => {
+    installTauri({
+      install_dependency: () => {
+        rejectWith("elevation refused");
+      },
+    });
+    const user = userEvent.setup();
+    render(<Step step="virtualization" report={freshReport("windows")} />);
+    await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(text()).toContain("✗ elevation refused");
+  });
+});
+
+/** Windows, with the machine check's WSL answer. */
+const windows = (state: WslState | null, reopensAfterRestart = true, virtualizationOff = false): SystemReport =>
+  withSetup({
+    ...freshReport("windows"),
+    wsl: state ? { state, reopensAfterRestart, virtualizationOff } : null,
+  });
+
+/** The setup window at its WSL step (the second, after the package manager), on `report` with the
+ *  setup's options the core works out for it. */
+function SetupAtWsl({ report }: { report: SystemReport }) {
+  return <MachineSetup report={withSetup(report)} onRefresh={() => {}} onClose={() => {}} startAt={{ step: "virtualization", nonce: 1 }} />;
+}
+
+describe("WSL step, from the machine check", () => {
+  it("is simply done when WSL 2 is on", () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("ready")} />);
+    expect(text()).toContain("On and running");
+    expect(screen.queryByRole("button", { name: /turn on wsl 2|restart now|done this/i })).toBeNull();
+    expect(button(/^continue$/i)).toBeTruthy();
+  });
+
+  it("is done when Docker already runs, whatever the WSL check could tell (#224)", () => {
+    // Windows 11 with Docker Desktop running on WSL 2: onboarding asked to turn WSL 2 on (a UAC
+    // prompt and a restart for nothing) while the Machine checklist said it was done.
+    for (const state of [null, "unknown", "missing"] as const) {
+      installTauri();
+      const report = withSetup({ ...windows(state), docker: { ...windows(state).docker, installed: true }, dockerRunning: true });
+      render(<SetupAtWsl report={report} />);
+      expect(screen.queryByRole("button", { name: /turn on wsl 2|restart now|done this/i })).toBeNull();
+      expect(button(/^continue$/i)).toBeTruthy();
+      expect(wslState(report)).toBe("ready");
+      cleanup();
+    }
+  });
+
+  it("offers a restart when WSL 2 waits for one, with a way to restart later", () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("needsReboot")} />);
+    expect(screen.getByRole("status").textContent).toContain("Restart Windows to finish");
+    expect(button(/restart now/i)).toBeTruthy();
+    expect(button(/restart later/i).hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByRole("button", { name: /turn on wsl 2|done this/i })).toBeNull();
+    // The manual way stays.
+    expect(text()).toContain("Do it by hand instead");
+  });
+
+  it("offers to turn WSL 2 on when it is missing, or skip", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const onRefresh = vi.fn();
+    render(<Step step="virtualization" report={windows("missing")} onRefresh={onRefresh} />);
+    expect(button(/turn on wsl 2/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
+    expect(text()).not.toContain("couldn’t tell");
+    await user.click(button(/re-check/i));
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(commands(calls)).not.toContain("machine_restart");
+  });
+
+  it("asks the player only when the check can't tell", () => {
+    installTauri();
+    const r = render(<SetupAtWsl report={windows("unknown")} />);
+    expect(text()).toContain("couldn’t tell whether WSL 2 is on");
+    expect(button(/i’ve done this/i)).toBeTruthy();
+    r.unmount();
+    render(<SetupAtWsl report={windows("missing")} />);
+    expect(screen.queryByRole("button", { name: /i’ve done this/i })).toBeNull();
+    expect(button(/skip for now/i)).toBeTruthy();
+  });
+
+  it("offers the restart once Turn on WSL 2 finished, whatever the last check said", async () => {
+    installTauri({ install_dependency: (a) => (stream(a, ...progressLines("The requested operation is successful.")), null) });
+    const user = userEvent.setup();
+    render(<SetupAtWsl report={windows("missing")} />);
+    await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(button(/restart now/i)).toBeTruthy();
+    expect(button(/restart later/i)).toBeTruthy();
+    expect(text()).toContain("The requested operation is successful.");
+  });
+
+  it("a failed Turn on WSL 2 doesn't offer a restart", async () => {
+    installTauri({
+      install_dependency: () => {
+        rejectWith("elevation refused");
+      },
+    });
+    const user = userEvent.setup();
+    render(<SetupAtWsl report={windows("missing")} />);
+    await user.click(button(/turn on wsl 2/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
+  });
+
+  it("restarts only after the player confirms in the system dialog, saying what happens", async () => {
+    let yes = false;
+    const calls = installTauri({ "plugin:dialog|message": (a) => answersDialog(yes)(a) });
+    const user = userEvent.setup();
+    render(<Step step="virtualization" report={windows("needsReboot")} />);
+    await user.click(button(/restart now/i));
+    await flush();
+    const [asked] = dialogsAsked(calls);
+    expect(asked.message).toContain("open apps close without saving");
+    expect(asked.message).toContain("Cyber CTF opens again when you sign back in");
+    // Cancel keeps everything.
+    expect(commands(calls)).not.toContain("machine_restart");
+    yes = true;
+    await user.click(button(/restart now/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "machine_restart")?.args).toEqual({ reason: "Cyber CTF: restarting to finish turning on WSL 2.", feature: "wsl" });
+    expect(screen.getByRole("status").textContent).toContain("Restarting in a few seconds");
+    expect(button(/restart now/i).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("says to reopen Cyber CTF by hand when it can't reopen itself, and shows a failed restart", async () => {
+    const calls = installTauri({
+      machine_restart: () => {
+        rejectWith("Access is denied.");
+      },
+    });
+    const user = userEvent.setup();
+    render(<Step step="virtualization" report={windows("needsReboot", false)} />);
+    await user.click(button(/restart now/i));
+    await flush();
+    expect(dialogsAsked(calls)[0].message).toContain("open Cyber CTF again");
+    // The button comes back, to try again.
+    expect(button(/restart now/i).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("status").textContent).not.toContain("Restarting");
+  });
+});
+
+describe("WSL step, restarting once", () => {
+  /** The step drawn afresh on each `round`, as the onboarding does, with one setup state. */
+  function Remounting({ round, report }: { round: number; report: SystemReport }) {
+    const setup = useMachineSetup(report, () => {});
+    return <MachineStepBody key={round} step="virtualization" report={report} setup={setup} />;
+  }
+
+  it("a remounted step can't ask for a second restart during the countdown", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const report = windows("needsReboot");
+    const r = render(<Remounting round={1} report={report} />);
+    await user.click(button(/restart now/i));
+    await flush();
+    r.rerender(<Remounting round={2} report={report} />);
+    expect(screen.getByRole("status").textContent).toContain("Restarting in a few seconds");
+    expect(button(/restart now/i).hasAttribute("disabled")).toBe(true);
+    expect(commands(calls).filter((c) => c === "machine_restart")).toHaveLength(1);
+  });
+
+  it("says virtualization looks off in the firmware, instead of asking for another restart", () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("unknown", true, true)} />);
+    expect(screen.getByRole("status").textContent).toContain("Virtualization is probably off in your PC’s firmware");
+    expect(text()).not.toContain("couldn’t tell");
+    expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
+    expect(button(/i’ve done this/i)).toBeTruthy();
+  });
+});
+
+/* ------------------------------------------------------------------ engine */
+
+/** The engine step on a fresh Mac, with its calls and its re-check. */
+function freshMacEngineStep() {
+  const calls = installTauri();
+  const onRefresh = vi.fn();
+  const user = userEvent.setup();
+  render(<Step step="docker" report={freshReport("macos")} onRefresh={onRefresh} />);
+  return { calls, onRefresh, user };
+}
+
+describe("engine step", () => {
+  it("says nothing more when the chosen engine is in use", () => {
+    installTauri();
+    render(<Step step="docker" report={readyReport()} />);
+    expect(radioWith("Docker Desktop").getAttribute("aria-checked")).toBe("true");
+    expect(text()).toContain("in use");
+    expect(screen.queryByRole("button", { name: /re-check|install|start|use /i })).toBeNull();
+  });
+
+  it("switches Docker to another running engine", async () => {
+    const calls = installTauri();
+    const onRefresh = vi.fn();
+    const user = userEvent.setup();
+    render(<Step step="docker" report={{ ...readyReport(), dockerEnginesRunning: ["docker-desktop", "orbstack"] }} onRefresh={onRefresh} />);
+    await user.click(radioWith("OrbStack"));
+    expect(text()).toContain("OrbStack is running, but Docker uses Docker Desktop right now.");
+    await user.click(button(/use orbstack/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "docker_use_engine")?.args).toMatchObject({ engine: "orbstack" });
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("names another engine when Docker uses one without a tile", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    render(<Step step="docker" report={{ ...readyReport(), dockerEngine: "podman", dockerEnginesRunning: ["podman", "colima"] }} />);
+    await user.click(radioWith("Colima"));
+    expect(text()).toContain("Docker uses another engine right now.");
+  });
+
+  it("starts a stopped engine, and offers its site when that fails", async () => {
+    let fail = false;
+    const calls = installTauri({
+      docker_start_engine: () => {
+        if (fail) rejectWith("Docker Desktop is not installed");
+        return null;
+      },
+    });
+    const onRefresh = vi.fn();
+    const user = userEvent.setup();
+    render(<Step step="docker" report={{ ...readyReport(), dockerRunning: false, dockerEngine: null, dockerEnginesRunning: [] }} onRefresh={onRefresh} />);
+    expect(text()).toContain("Docker Desktop is installed but not running.");
+    await user.click(button(/start docker desktop/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "docker_start_engine")?.args).toMatchObject({ engine: "docker-desktop" });
+    expect(onRefresh).toHaveBeenCalledOnce();
+    fail = true;
+    await user.click(button(/start docker desktop/i));
+    await flush();
+    expect(text()).toContain("Docker Desktop is not installed");
+    await user.click(button(/get docker desktop/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: "https://www.docker.com/products/docker-desktop/" });
+  });
+
+  it("says, while Docker Desktop starts and while it waits, that its agreement is the player's to accept in its window", async () => {
+    let answer: (() => void) | null = null;
+    installTauri({
+      docker_start_engine: () =>
+        new Promise<null>((_, reject) => {
+          answer = () => {
+            // The core's coded error, as a command rejects with it.
+            reject(
+              Object.assign(new Error("Docker Desktop is waiting for you to accept its Subscription Service Agreement in its window."), {
+                code: "dockerDesktopAgreement",
+              }),
+            );
+          };
+        }),
+    });
+    const user = userEvent.setup();
+    render(<Step step="docker" report={{ ...readyReport(), dockerRunning: false, dockerEngine: null, dockerEnginesRunning: [] }} onRefresh={vi.fn()} />);
+    await user.click(button(/start docker desktop/i));
+    expect(screen.getByTestId("install-hint").textContent).toContain(
+      "If Docker Desktop shows its Subscription Service Agreement, accept it in its window: Cyber CTF never accepts it for you.",
+    );
+    (answer as unknown as () => void)();
+    await flush();
+    // Waiting for the player: a hint of what to do, not a failure, and no link to get it again.
+    expect(screen.getByTestId("install-hint").textContent).toContain(
+      "Docker Desktop is waiting for you to accept its agreement in its window. Accept it there, then check again.",
+    );
+    expect(screen.queryByRole("button", { name: /get docker desktop/i })).toBeNull();
+    expect(button(/start docker desktop/i).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("says Docker Desktop is paid in larger companies, and names the free engines", async () => {
+    const { user } = freshMacEngineStep();
+    expect(text()).toContain("Docker Desktop needs a paid subscription in larger companies");
+    expect(text()).toContain("Colima and Podman, which are free");
+    // Not once another engine is picked, nor where Docker Engine is the one installed (Linux).
+    await user.click(radioWith("Colima"));
+    expect(text()).not.toContain("paid subscription");
+    cleanup();
+    render(<Step step="docker" report={freshReport("linux")} />);
+    expect(text()).not.toContain("paid subscription");
+  });
+
+  it("offers no one-click install the policy turns off, and says why", async () => {
+    // Regression: Install was offered, and failed only once clicked.
+    const calls = installTauri(INSTALLS_OFF);
+    const user = userEvent.setup();
+    render(<Step step="docker" report={freshReport("macos")} />);
+    await flush();
+    expect(text()).toContain(INSTALLS_OFF_NOTE);
+    const install = button(/install docker desktop/i);
+    expect(install.hasAttribute("disabled")).toBe(true);
+    await user.click(install);
+    expect(commands(calls)).not.toContain("install_dependency");
+    cleanup();
+    render(<Step step="vagrant" report={freshReport("macos")} />);
+    await flush();
+    expect(button(/install vagrant/i).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("installs the recommended engine, then asks to finish in its installer", async () => {
+    const { calls, onRefresh, user } = freshMacEngineStep();
+    expect(text()).toContain("Cyber CTF can install Docker Desktop for you.");
+    await installDockerDesktop(user, calls);
+    // Docker Desktop shows its agreement at its first start: the player accepts it there.
+    expect(text()).toContain("Launch Docker Desktop and accept its Subscription Service Agreement in its window");
+    await user.click(button(/re-check/i));
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("links out for an engine Cyber CTF does not install", async () => {
+    const { calls, onRefresh, user } = freshMacEngineStep();
+    await user.click(radioWith("Colima"));
+    expect(text()).toContain("Install Colima, start it, then re-check.");
+    await user.click(button(/get colima/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: "https://github.com/abiosoft/colima" });
+    await user.click(button(/re-check/i));
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("explains the Linux post-install and the Windows reboot", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const r = render(<Step step="docker" report={freshReport("linux")} />);
+    expect(radioWith("Docker Engine").getAttribute("aria-checked")).toBe("true");
+    expect(text()).toContain("sudo usermod -aG docker $USER");
+    // Docker Desktop on Linux: no post-install for Docker Engine.
+    await user.click(radioWith("Docker Desktop"));
+    expect(text()).not.toContain("sudo systemctl enable --now docker");
+    r.unmount();
+    render(<Step step="docker" report={freshReport("windows")} />);
+    expect(text()).toContain("A reboot may be needed after enabling WSL.");
+  });
+
+  it("asks to finish another engine's install after Cyber CTF opened its installer", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    render(<Step step="docker" report={freshDebian()} />);
+    await user.click(button(/install docker engine/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(text()).toContain("Finish installing Docker Engine, start it, then press Re-check.");
+  });
+});
+
+/* ------------------------------------------------------------------ attack box */
+
+describe("attack box step", () => {
+  it("picks an image, toggles the auto-start and warns without an engine", async () => {
+    installTauri({ image_download_size: () => null });
+    const user = userEvent.setup();
+    render(<Step step="attack" report={freshReport("linux")} />);
+    await flush();
+    expect(text()).toContain("large download");
+    expect(text()).toContain("It runs on your container engine");
+    await user.click(radioWith("Parrot"));
+    expect(getAttackImage()).toBe("parrotsec/security");
+    await user.click(screen.getByRole("switch", { name: /start it with each lab/i }));
+    expect(getAutoAttackBox()).toBe(false);
+  });
+
+  it("names a custom image from Settings", async () => {
+    installTauri({ image_download_size: () => 1_200_000_000 });
+    setAttackImage("ghcr.io/me/box");
+    render(<Step step="attack" report={readyReport()} />);
+    await flush();
+    expect(text()).toContain("Using a custom image from Settings: ghcr.io/me/box");
+    expect(text()).not.toContain("It runs on your container engine");
+  });
+});
+
+/* ------------------------------------------------------------------ hypervisor and Vagrant */
+
+describe("VM step", () => {
+  it("says no local hypervisor applies", () => {
+    installTauri();
+    render(<Step step="vm" report={{ ...readyReport(), vmProviders: [hv({ provider: "vmware_esxi", remote: true })] }} />);
+    expect(text()).toContain("No local hypervisor applies to this machine.");
+  });
+
+  it("installs a hypervisor Cyber CTF can install", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    render(<Step step="vm" report={freshReport("macos")} />);
+    await user.click(radioWith("UTM"));
+    expect(text()).toContain("Cyber CTF can install UTM for you.");
+    await user.click(radioWith("VirtualBox"));
+    expect(text()).toContain("Cyber CTF can install VirtualBox for you.");
+    await user.click(button(/install virtualbox/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "virtualbox" });
+    expect(text()).toContain("Installing VirtualBox…");
+  });
+
+  it("links to the vendor's download page, and checks again", async () => {
+    const calls = installTauri();
+    const onRefresh = vi.fn();
+    const user = userEvent.setup();
+    render(<Step step="vm" report={freshReport("windows")} onRefresh={onRefresh} />);
+    await user.click(radioWith("VMware Workstation"));
+    expect(text()).toContain("Broadcom offers VMware Workstation only on its own page. Download it there, install it, then come back here and check again.");
+    await user.click(button(/open broadcom's download page/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(
+      /^https:\/\/support\.broadcom\.com\/group\/ecx\/productdownloads\?subfamily=VMware%20Workstation%20Pro/,
+    );
+    await user.click(button(/check again/i));
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status").textContent).toBe("Checking this machine…");
+  });
+
+  it("says why an installed hypervisor can't run here", () => {
+    installTauri();
+    render(
+      <Step
+        step="vm"
+        report={{
+          ...readyReport(),
+          os: "linux",
+          vmProviders: [hv({ provider: "libvirt", available: false, reason: { code: "kvmDenied", args: { group: "kvm" } } })],
+        }}
+      />,
+    );
+    expect(text()).toContain("Installed, but it can't run here.");
+    expect(text()).toContain("You can't use /dev/kvm yet: add yourself to the kvm group");
+  });
+});
+
+describe("Vagrant step", () => {
+  it("says there is nothing for Vagrant to drive without a local hypervisor", () => {
+    installTauri();
+    render(<Step step="vagrant" report={{ ...readyReport(), vmProviders: [] }} />);
+    expect(text()).toContain("nothing for Vagrant to drive here");
+  });
+
+  it("installs Vagrant, then the hypervisor's plugin", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const report: SystemReport = withNeeds({
+      ...readyReport(),
+      os: "windows",
+      vagrant: { installed: false, version: null },
+      vmProviders: [hv({ provider: "vmware_desktop", available: false, plugin: "vagrant-vmware-desktop", pluginInstalled: false, utility: "missing" })],
+    });
+    const r = render(<Step step="vagrant" report={report} />);
+    expect(text()).toContain("vagrant-vmware-desktop, once Vagrant is installed.");
+    expect(button(/install plugin/i).hasAttribute("disabled")).toBe(true);
+    expect(text()).toContain("Vagrant VMware Utility");
+    await user.click(button(/install vagrant/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "vagrant" });
+    r.unmount();
+    render(<Step step="vagrant" report={withNeeds({ ...report, vagrant: { installed: true, version: null } })} />);
+    expect(text()).toContain("Installed");
+    await user.click(button(/install plugin/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_vagrant_plugin")?.args).toMatchObject({ plugin: "vagrant-vmware-desktop" });
+    expect(text()).toContain("Installing the Vagrant plugin vagrant-vmware-desktop…");
+  });
+
+  /** The owner's Apple Silicon Mac when the loop was seen: Fusion installed, Vagrant in with other
+   *  hypervisors' plugins, neither VMware's plugin nor HashiCorp's utility. */
+  const fusionMac = (over: Partial<ProviderStatus> = {}): SystemReport =>
+    withNeeds({
+      ...readyReport(),
+      os: "macos",
+      arch: "aarch64",
+      vagrant: { installed: true, version: "2.4.9" },
+      ...hypervisors([
+        hv({
+          provider: "vmware_desktop",
+          available: false,
+          plugin: "vagrant-vmware-desktop",
+          pluginInstalled: false,
+          utility: "missing",
+          reason: { code: "pluginMissing", args: { plugin: "vagrant-vmware-desktop" } },
+          ...over,
+        }),
+        hv({ provider: "utm", plugin: "vagrant_utm" }),
+      ]),
+    });
+  const requirement = (title: string) => {
+    const row = screen.getByText(title).closest("[data-requirement]");
+    if (!(row instanceof HTMLElement)) throw new Error(`no requirement row ${title}`);
+    return row;
+  };
+
+  it("installs both of VMware's parts, the plugin through Vagrant and HashiCorp's utility, and only then lets the flow on", async () => {
+    // Regression: the utility was an optional link out, never installed or checked, so the steps
+    // finished and the Machine page said "Needs setup" again.
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const seen: { state?: MachineSetupState } = {};
+    render(
+      <Step
+        step="vagrant"
+        report={fusionMac()}
+        onSetup={(s) => {
+          seen.state = s;
+        }}
+      />,
+    );
+    expect(requirement("VMware Fusion add-on for Vagrant").dataset.requirement).toBe("todo");
+    expect(requirement("Vagrant VMware Utility").dataset.requirement).toBe("todo");
+    expect(within(requirement("Vagrant VMware Utility")).queryByRole("link")).toBeNull();
+    await user.click(within(requirement("VMware Fusion add-on for Vagrant")).getByRole("button", { name: /install plugin/i }));
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_vagrant_plugin")?.args).toMatchObject({ plugin: "vagrant-vmware-desktop" });
+    await user.click(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /^install$/i }));
+    await agreeToInstall(user);
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "vmware-utility" });
+    expect(text()).toContain("Installing the Vagrant VMware Utility…");
+    // Whatever the installs said, the step waits on the machine check: both still missing here.
+    expect(canContinue("vagrant", fusionMac(), must(seen.state, "the setup state"))).toBe(false);
+    expect(canContinue("vagrant", fusionMac({ pluginInstalled: true }), must(seen.state, "the setup state"))).toBe(false);
+  });
+
+  it("reads VMware as set up once the plugin is in and the utility runs, and not before", () => {
+    installTauri();
+    const ready = fusionMac({ available: true, pluginInstalled: true, utility: "running", reason: null });
+    expect(ready.vmProviders[0].needs).toEqual([]);
+    const { unmount } = render(<Step step="vagrant" report={ready} />);
+    expect(requirement("VMware Fusion add-on for Vagrant").dataset.requirement).toBe("done");
+    expect(requirement("Vagrant VMware Utility").dataset.requirement).toBe("done");
+    unmount();
+    const setup = { hypervisor: "vmware_desktop" } as unknown as MachineSetupState;
+    expect(canContinue("vagrant", ready, setup)).toBe(true);
+    expect(firstPending("vm", ready, { docker: null, vm: { result: "ok", at: 1 } }, "vmware_desktop")).toBeNull();
+    // The plugin alone, or the utility installed but stopped: still something to do.
+    for (const short of [fusionMac({ pluginInstalled: true }), fusionMac({ pluginInstalled: true, utility: "stopped" })]) {
+      expect(canContinue("vagrant", short, setup)).toBe(false);
+      expect(firstPending("vm", short, { docker: null, vm: { result: "ok", at: 1 } }, "vmware_desktop")).toBe("vagrant");
+    }
+  });
+
+  it("a failed utility install reads as failed, not done, and the flow waits", async () => {
+    installTauri({
+      install_dependency: () => {
+        rejectWith("The package isn't signed by HashiCorp. Nothing was installed.");
+      },
+    });
+    const user = userEvent.setup();
+    const seen: { state?: MachineSetupState } = {};
+    const report = fusionMac({ pluginInstalled: true });
+    render(
+      <Step
+        step="vagrant"
+        report={report}
+        onSetup={(s) => {
+          seen.state = s;
+        }}
+      />,
+    );
+    await user.click(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /^install$/i }));
+    await agreeToInstall(user);
+    await flush();
+    const row = requirement("Vagrant VMware Utility");
+    expect(row.dataset.requirement).toBe("failed");
+    expect(row.textContent).toContain("The install failed: The package isn't signed by HashiCorp. Nothing was installed.");
+    expect(text()).toContain("✗ The package isn't signed by HashiCorp.");
+    expect(canContinue("vagrant", report, must(seen.state, "the setup state"))).toBe(false);
+  });
+
+  it("an installed utility whose service stopped is offered again, which restarts it", () => {
+    installTauri();
+    render(<Step step="vagrant" report={fusionMac({ pluginInstalled: true, utility: "stopped" })} />);
+    expect(requirement("Vagrant VMware Utility").textContent).toContain("isn't running");
+    expect(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /install again/i })).toBeTruthy();
+  });
+
+  it("shows a failed plugin install, on its row too", async () => {
+    installTauri({
+      install_vagrant_plugin: () => {
+        rejectWith("network unreachable");
+      },
+    });
+    const user = userEvent.setup();
+    render(
+      <Step
+        step="vagrant"
+        report={{ ...readyReport(), os: "linux", vmProviders: [hv({ provider: "qemu", available: false, plugin: "vagrant-qemu", pluginInstalled: false })] }}
+      />,
+    );
+    await user.click(button(/install plugin/i));
+    await flush();
+    expect(text()).toContain("✗ network unreachable");
+    expect(requirement("QEMU add-on for Vagrant").dataset.requirement).toBe("failed");
+  });
+});
+
+/* ------------------------------------------------------------------ tests and the outcome */
+
+describe("test steps and the outcome", () => {
+  it("skips the tests on a machine with nothing to test", () => {
+    installTauri();
+    const r = render(<Step step="docker-test" report={freshReport("linux")} />);
+    expect(text()).toContain("No container engine is running.");
+    expect(text()).toContain("Set up a container engine to run them.");
+    expect(text()).toContain("Install a hypervisor to run them.");
+    r.unmount();
+    render(<Step step="vm-test" report={freshReport("linux")} />);
+    expect(text()).toContain("No hypervisor is installed.");
+  });
+
+  it("runs the container test and reports it in the outcome", async () => {
+    installTauri();
+    render(<Step step="docker-test" report={readyReport()} />);
+    await flush();
+    expect(text()).toContain("Tested and ready to run.");
+    expect(text()).toContain("Not tested.");
+  });
+
+  it("reports a failed VM test in the outcome", async () => {
+    installTauri({
+      machine_selftest: () => {
+        rejectWith("boot timed out");
+      },
+    });
+    render(<Step step="vm-test" report={{ ...readyReport(), os: "linux" }} />);
+    await flush();
+    expect(text()).toContain("The test failed. Go back to run it again.");
+    expect(text()).toContain("Engine running, not tested.");
+  });
+
+  it("prefetches each test's download once the machine can run it", async () => {
+    const calls = installTauri();
+    const { rerender } = render(<Step step="pkgmgr" report={freshReport("linux")} />);
+    await flush();
+    expect(commands(calls)).not.toContain("machine_selftest_prefetch");
+    rerender(<Step step="pkgmgr" report={{ ...readyReport(), os: "linux" }} />);
+    await flush();
+    rerender(<Step step="pkgmgr" report={{ ...readyReport(), os: "linux", cpu: 1 } as SystemReport} />);
+    await flush();
+    const prefetch = calls.filter((c) => c.cmd === "machine_selftest_prefetch").map((c) => c.args?.kind);
+    expect(prefetch).toEqual(["docker", "vm"]);
+  });
+
+  it("outcome works before the machine check answers", () => {
+    installTauri();
+    function Outcome() {
+      const setup = useMachineSetup(null, () => {});
+      return <SetupOutcome report={null} setup={setup} />;
+    }
+    render(<Outcome />);
+    expect(text()).toContain("Set up a container engine to run them.");
+  });
+});
+
+/* ------------------------------------------------------------------ setup window */
+
+describe("MachineSetup window", () => {
+  it("names the OS in its lead and ignores an unknown start step", async () => {
+    installTauri();
+    for (const [os, name] of [
+      ["windows", "Windows"],
+      ["linux", "Linux"],
+      ["macos", "macOS"],
+    ] as const) {
+      const r = render(<MachineSetup report={{ ...readyReport(), os }} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "nope", nonce: 1 }} />);
+      await flush();
+      expect(text()).toContain(name);
+      // No step to open at: the choice of path, nothing counted yet.
+      expect(text()).toContain("What do you want to run?");
+      expect(text()).not.toMatch(/Step \d/);
+      r.unmount();
+    }
+  });
+
+  it("holds the flow while an install runs", async () => {
+    let finish: () => void = () => {};
+    installTauri({
+      install_dependency: () =>
+        new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        ),
+    });
+    const user = userEvent.setup();
+    render(<MachineSetup report={freshReport("macos")} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "docker", nonce: 1 }} />);
+    await flush();
+    await user.click(button(/install docker desktop/i));
+    await agreeToInstall(user);
+    await flush();
+    expect(button(/back/i).hasAttribute("disabled")).toBe(true);
+    await settle(() => {
+      finish();
+    });
+    await flush();
+    expect(button(/back/i).hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("one jewel per view", () => {
+  const jewels = () => Array.from(document.querySelectorAll(".btn-jewel"));
+
+  it("a VM step with no hypervisor offers Skip for now as ghost glass, its Install as the jewel", async () => {
+    installTauri();
+    render(<MachineSetup report={freshDebian()} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vm", nonce: 1 }} />);
+    await flush();
+    expect(button(/skip for now/i).className).toContain("btn-glass");
+    expect(jewels()).toHaveLength(1);
+  });
+
+  it("the WSL step's I've done this is ghost glass beside Turn on WSL 2", async () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("unknown")} />);
+    await flush();
+    expect(button(/done this/i).className).toContain("btn-glass");
+    expect(jewels().length).toBeLessThanOrEqual(1);
+  });
+
+  it("the Vagrant step has one jewel: Vagrant first, its plugin only once Vagrant is in", async () => {
+    installTauri();
+    const libvirt = hv({ provider: "libvirt", plugin: "vagrant-libvirt", pluginInstalled: false });
+    const report = withNeeds({ ...freshDebian(), vmProviders: [libvirt] });
+    const r = render(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vagrant", nonce: 1 }} />);
+    await flush();
+    expect(jewels().map((b) => b.textContent)).toEqual(["Install Vagrant"]);
+    r.unmount();
+    render(
+      <MachineSetup
+        report={withNeeds({ ...report, vagrant: { installed: true, version: "2.4.3" } })}
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+        startAt={{ step: "vagrant", nonce: 1 }}
+      />,
+    );
+    await flush();
+    expect(jewels().map((b) => b.textContent)).toEqual(["Install plugin"]);
+  });
+});

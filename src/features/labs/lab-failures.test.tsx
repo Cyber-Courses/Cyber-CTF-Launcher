@@ -1,0 +1,298 @@
+// @vitest-environment jsdom
+import type React from "react";
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ImportLab } from "@/features/labs/import-lab";
+import { LabBrief } from "@/features/labs/lab-brief";
+import { RowAction } from "@/features/labs/lab-row-actions";
+import { SignInBanner } from "@/features/labs/labs-list";
+import { useLabActions } from "@/features/labs/use-lab-actions";
+import type { Lab } from "@/features/labs/use-labs";
+import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
+import { CALLED_OFF } from "@/features/labs/lab-operations";
+import { Toaster } from "@/components/ui/toaster";
+import { must, toastsShown } from "@/components/test-support";
+import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
+import { containerMachine, labStatus, testLab, upStatus } from "@/features/labs/labs-test-kit";
+import { installTauri, rejects } from "@/test/tauri";
+import { flush } from "@/test/ui";
+
+// The failures a player can run into around starting a lab that the earlier suites left
+// untested: each one is said where the player is (a toast), and nothing crashes or hangs.
+
+// The dialog plugin: the folder the player picks, or a picker that fails.
+const picker = vi.hoisted(() => ({ answer: (): Promise<unknown> => Promise.resolve(null) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: () => picker.answer() }));
+
+const idle = { busy_labs: () => [], active_operations: () => [] };
+const blind = testLab("lab-sqli", { title: "Blind orders", runtime: { runtime: "DOCKER", architectures: ["x86_64"], providers: [] } });
+const goat: Lab = testLab("lab-goat", {
+  title: "EC2 SSRF",
+  runtime: { runtime: "CLOUD", architectures: [], providers: ["aws"], repository: "CyberCTF/cloudgoat-ec2-ssrf", commit: "0".repeat(40) },
+});
+
+/** The failure toasts on screen, as text. */
+const alerts = () => screen.queryAllByRole("alert").map((a) => a.textContent);
+
+/** The lab actions hook, rendered with the Toaster so what it tells shows. */
+function renderActions() {
+  let actions: ReturnType<typeof useLabActions> | null = null;
+  function Probe() {
+    actions = useLabActions(() => {});
+    return null;
+  }
+  render(
+    <>
+      <Probe />
+      <Toaster />
+    </>,
+  );
+  return () => must(actions, "the lab actions");
+}
+
+const quiet = { running: false, parked: false as const, busy: false, doing: null, setup: null, connectCloud: false };
+const rowProps = { url: null, state: quiet, loggedIn: true, onStop: vi.fn() };
+
+beforeEach(() => {
+  toastsShown();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  picker.answer = () => Promise.resolve(null);
+});
+
+/** Renders the Import button with the toaster and clicks it: the picker answers as `picker` says. */
+async function importFromPicker() {
+  const user = userEvent.setup();
+  render(
+    <>
+      <ImportLab />
+      <Toaster />
+    </>,
+  );
+  await user.click(screen.getByRole("button", { name: /Import a lab/ }));
+  await flush();
+}
+
+describe("importing a local lab", () => {
+  it("says the import failed when the folder picker fails, and offers to import again", async () => {
+    picker.answer = () => Promise.reject(new Error("no dialog here"));
+    installTauri();
+    await importFromPicker();
+    expect(alerts().join("\n")).toContain("Couldn't import that lab");
+    expect(alerts().join("\n")).toContain("no dialog here");
+    expect(screen.getByRole("button", { name: /Import a lab/ }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("says the import failed when the lab can't start, with the reason, and is ready for another", async () => {
+    picker.answer = () => Promise.resolve("/Users/player/labs/mine");
+    const calls = installTauri({ lab_launch_local: rejects({ code: "other", message: "no isoloom.yml in /Users/player/labs/mine" }) });
+    await importFromPicker();
+    expect(calls.find((c) => c.cmd === "lab_launch_local")?.args).toMatchObject({ path: "/Users/player/labs/mine" });
+    expect(alerts().join("\n")).toContain("Couldn't import that lab");
+    expect(alerts().join("\n")).toContain("no isoloom.yml");
+    expect(document.body.textContent).not.toContain("Importing…");
+    expect(screen.getByRole("button", { name: /Import a lab/ }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("starts nothing when the player cancels the picker", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    render(<ImportLab />);
+    await user.click(screen.getByRole("button", { name: /Import a lab/ }));
+    await flush();
+    expect(calls.map((c) => c.cmd)).not.toContain("lab_launch_local");
+  });
+});
+
+describe("an operation the backend refused", () => {
+  it("says another operation is still running, as a refusal and not a failed start", async () => {
+    installTauri({ ...idle, lab_launch: rejects({ code: "alreadyInProgress", message: "lab-sqli: a launch is already in progress" }) });
+    const actions = renderActions();
+    await act(() => actions().launch(blind, null, undefined, { ports: "default" }));
+    expect(alerts().join("\n")).toContain("Another operation is still running on this lab");
+    expect(alerts().join("\n")).not.toContain("Couldn’t start");
+    // Nothing ran, so no run is left behind reading as a failed deploy.
+    expect(getDeploySnapshot().runs[blind.id]).toBeUndefined();
+  });
+});
+
+describe("a cloud lab started without an account", () => {
+  it("says to pick one of the player's cloud accounts", async () => {
+    // As the backend refuses it, by its code.
+    installTauri({ ...idle, lab_launch: rejects({ code: "pickCloudAccount", message: "pick an account" }) });
+    const actions = renderActions();
+    await act(() => actions().launch(goat, null, undefined));
+    const toast = must(
+      alerts().find((a) => a.includes("Couldn’t start EC2 SSRF")),
+      "the failed start toast",
+    );
+    expect(toast).toContain("pick one of your cloud accounts to start it on");
+  });
+});
+
+describe("Reset after a stop that failed or was called off", () => {
+  /** Reset pressed on the page of a lab with a machine down, its stop resolving to `stopped` (as
+   *  useLabActions' stop does): the stop ran once and the lab wasn't started again. */
+  async function resetStoppingWith(stopped: unknown) {
+    installTauri(idle);
+    const user = userEvent.setup();
+    const onStop = vi.fn(() => Promise.resolve(stopped));
+    const h = renderLabPage(blind, { status: upStatus([containerMachine("api"), containerMachine("db", "exited")]), onStop });
+    render(<Toaster />);
+    await flush(50);
+    expect(document.body.textContent).toContain("db is down");
+    await user.click(screen.getByRole("button", { name: /Reset lab/ }));
+    await flush(50);
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(h.onStart).not.toHaveBeenCalled();
+    // The banner is back to its resting state, ready for another try.
+    expect(screen.getByRole("button", { name: /Reset lab/ }).hasAttribute("disabled")).toBe(false);
+  }
+
+  it("says the reset stopped and doesn't start the lab again", async () => {
+    // The failure, as useLabActions' stop resolves to when the removal fails.
+    await resetStoppingWith("Couldn't remove network lab-sqli_default: has active endpoints");
+    expect(alerts().join("\n")).toContain("Reset stopped: the lab couldn't be removed, so it wasn't started again");
+    expect(alerts().join("\n")).toContain("has active endpoints");
+  });
+
+  it("starts nothing again, and says no failure, after a stop the player called off when asked", async () => {
+    // As useLabActions' stop resolves when the player declines the node keys' question.
+    await resetStoppingWith(CALLED_OFF);
+    expect(alerts()).toEqual([]);
+  });
+});
+
+describe("the cloud account setup can't open", () => {
+  it("says so from a lab row's Connect button", async () => {
+    installTauri({ server_open_setup: rejects({ code: "other", message: "window already closing" }) });
+    const user = userEvent.setup();
+    render(
+      <>
+        <RowAction {...rowProps} state={{ ...quiet, setup: "Connect an AWS account", connectCloud: true }} />
+        <Toaster />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: /Connect/ }));
+    await flush();
+    expect(alerts().join("\n")).toContain("Couldn't open the cloud account setup");
+    expect(alerts().join("\n")).toContain("window already closing");
+  });
+
+  it("says so from the lab page's Connect an account button", async () => {
+    installTauri({ ...idle, server_list: () => ({ default: null, hosts: [] }), server_open_setup: rejects({ code: "other", message: "webview denied" }) });
+    const user = userEvent.setup();
+    renderLabPage(goat, { status: labStatus() });
+    render(<Toaster />);
+    await flush(50);
+    await user.click(screen.getByRole("button", { name: /Connect an account on AWS/ }));
+    await flush();
+    expect(alerts().join("\n")).toContain("Couldn't open the cloud account setup");
+    expect(alerts().join("\n")).toContain("webview denied");
+  });
+});
+
+describe("a sign-in that can't start", () => {
+  const onLogin = () => vi.fn(() => Promise.reject(new Error("browser refused the link")));
+
+  /** Renders `el` with the toaster and clicks its Sign in button. */
+  async function signInFrom(el: React.ReactElement) {
+    const user = userEvent.setup();
+    render(
+      <>
+        {el}
+        <Toaster />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: /Sign in/ }));
+    await flush();
+  }
+
+  it("is said from a lab row", async () => {
+    installTauri();
+    await signInFrom(<RowAction {...rowProps} loggedIn={false} onLogin={onLogin()} />);
+    expect(alerts().join("\n")).toContain("Couldn't start signing in");
+    expect(alerts().join("\n")).toContain("browser refused the link");
+  });
+
+  it("is said from the labs list's sign-in banner", async () => {
+    installTauri();
+    await signInFrom(<SignInBanner onLogin={onLogin()} />);
+    expect(alerts().join("\n")).toContain("Couldn't start signing in");
+  });
+
+  it("is said from the lab page's header", async () => {
+    installTauri(idle);
+    const user = userEvent.setup();
+    renderLabPage(blind, { status: labStatus(), loggedIn: false, onLogin: onLogin() });
+    render(<Toaster />);
+    await flush(50);
+    await user.click(screen.getByRole("button", { name: /Sign in to start/ }));
+    await flush();
+    expect(alerts().join("\n")).toContain("Couldn't start signing in");
+    expect(alerts().join("\n")).toContain("browser refused the link");
+  });
+});
+
+describe("a cloud lab whose cost preview can't be read", () => {
+  it("says the estimate couldn't be read and why, never that the lab gives none", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    installTauri({ ...idle, lab_cloud_preview: rejects({ code: "other", message: "git fetch failed" }) });
+    const user = userEvent.setup();
+    renderLabPage(goat, { status: labStatus() });
+    await flush(50);
+    expect(document.body.textContent).toContain("Billed to your cloud account while it runs.");
+    expect(document.body.textContent).not.toContain("$0.02");
+    await user.click(screen.getByRole("button", { name: /Start lab/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Couldn't read the lab's cost estimate (git fetch failed). Its resources are billed all the same.");
+    expect(dialog.textContent).not.toContain("This lab gives no cost estimate.");
+  });
+});
+
+describe("a lab whose brief can't be read", () => {
+  it("says the brief couldn't be read and why, never that the lab has none", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    installTauri({ api_query: rejects({ code: "other", message: "the website is offline" }) });
+    render(<LabBrief labId="lab-sqli" />);
+    await flush();
+    expect(document.body.textContent).toContain("Couldn't read the brief (the website is offline).");
+    expect(document.body.textContent).not.toContain("No briefing for this lab yet.");
+  });
+
+  // Clean Code ch.13: an answer for a lab the page moved away from used to land last and show
+  // that lab's brief on the next one's page.
+  it("shows the brief of the lab shown, whichever answer comes last", async () => {
+    const answers: Record<string, (brief: string) => void> = {};
+    installTauri({
+      api_query: (args) =>
+        new Promise((resolve) => {
+          const id = (args?.variables as { id: string }).id;
+          answers[id] = (brief) => {
+            resolve({ labs: [{ contentMd: brief }] });
+          };
+        }),
+    });
+    const { rerender } = render(<LabBrief labId="lab-a" />);
+    await flush();
+    rerender(<LabBrief labId="lab-b" />);
+    await flush();
+    await act(async () => {
+      must(answers["lab-b"])("Brief of lab B");
+      await flush();
+      must(answers["lab-a"])("Brief of lab A");
+      await flush();
+    });
+    expect(document.body.textContent).toContain("Brief of lab B");
+    expect(document.body.textContent).not.toContain("Brief of lab A");
+  });
+
+  it("says a lab without a brief has none", async () => {
+    installTauri({ api_query: () => ({ labs: [{ contentMd: null }] }) });
+    render(<LabBrief labId="lab-sqli" />);
+    await flush();
+    expect(document.body.textContent).toContain("No briefing for this lab yet.");
+  });
+});

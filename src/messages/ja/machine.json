@@ -1,0 +1,439 @@
+{
+  "errors": {
+    "openSetup": "マシンのセットアップを開けませんでした",
+    "copy": "クリップボードにコピーできませんでした",
+    "switchEngine": "Docker エンジンを切り替えられませんでした",
+    "stopWorkload": "停止できませんでした"
+  },
+  "screen": {
+    "title": "マシン",
+    "lead": "このコンピューターで実行できるものと、現在実行中のもの。",
+    "needsSetup": {
+      "one": "{count} 種類のラボにセットアップが必要です",
+      "other": "{count} 種類のラボにセットアップが必要です"
+    },
+    "readyForLabs": "ラボの準備完了",
+    "uptime": "稼働時間 {uptime}",
+    "addProvider": "プロバイダーを追加",
+    "cpu": "CPU",
+    "cores": {
+      "one": "{count} コア",
+      "other": "{count} コア"
+    },
+    "memory": "メモリ",
+    "disk": "ディスク",
+    "lowDisk": {
+      "title": "ディスク容量が不足しています",
+      "meta": "空き {free}",
+      "body": "空き容量は {free} のみです。アタックボックスだけで約 3.4 GB あり、ラボのイメージごとにさらに増えます。ラボを起動する前に空き容量を確保してください。"
+    },
+    "providers": "プロバイダー",
+    "providersMeta": "このマシンでラボを実行するもの",
+    "test": "テスト",
+    "hideTest": "テストを隠す",
+    "fix": "修正",
+    "useServer": "サーバーを使う",
+    "useDefault": "既定にする",
+    "defaultMark": "既定",
+    "defaultHint": {
+      "docker": "コンテナラボはこのエンジンで実行されます。",
+      "vm": "VM ラボはこのハイパーバイザーで実行されます。"
+    },
+    "notTestedYet": "未テスト",
+    "tested": "{ago} にテスト済み",
+    "lastTestFailed": "{ago} の前回のテストは失敗",
+    "freeHintDocker": "コンテナラボには約 {want} の空きメモリが必要です。現在の空き：{free}。",
+    "freeHintVm": "VM ラボには約 {want} の空きメモリが必要です。現在の空き：{free}。",
+    "status": {
+      "ready": "準備完了",
+      "testFailed": "テスト失敗",
+      "noPermission": "権限なし",
+      "stopped": "停止中",
+      "needsSetup": "セットアップが必要",
+      "cantRunHere": "このマシンでは実行不可"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "エンジンが動作中で、このアカウントで使えます。コンテナラボを実行できます。",
+        "vm": "Vagrant とそのプラグインがそろっています。VM ラボを実行できます。"
+      },
+      "testFailed": "準備はできていますが、前回のセルフテストが失敗しました。テストで原因を確認してください。",
+      "noPermission": "エンジンは動作中ですが、このアカウントではまだ使えません。",
+      "stopped": "インストール済みですが、エンジンが停止しています。ラボを実行するには起動してください。",
+      "needsSetup": "必要なものがまだインストールされていません。修正でセットアップできます。",
+      "cantRunHere": "インストール済みですが、このマシンでは実行できません。名前の下の行に理由があります。"
+    },
+    "docker": {
+      "denied": "Docker は起動していますが、このユーザーには使用権限がない可能性があります。自分を docker グループに追加し、一度ログアウトしてから再ログインしてください。",
+      "stopped": "コンテナエンジンはインストールされていますが、起動していません。ラボを実行するには起動してください。"
+    },
+    "vm": {
+      "automatic": "（自動選択、「設定」で変更可能）",
+      "vagrantMissing": "Vagrant またはハイパーバイザー用の Vagrant プラグインがありません。"
+    },
+    "details": "詳細",
+    "detail": {
+      "containerEngine": "コンテナエンジン",
+      "installed": "インストール済み",
+      "notInstalled": "未インストール",
+      "running": "実行中",
+      "notRunning": "停止中",
+      "builtIn": "内蔵",
+      "installedWithPlugin": "インストール済み · {plugin}",
+      "pluginMissing": "プラグイン {plugin} がありません",
+      "utilityMissing": "インストール済み · {plugin} · Vagrant VMware Utility が動いていません"
+    }
+  },
+  "empty": {
+    "title": "インストールされたプロバイダーはありません",
+    "description": "このマシンでラボを実行するには、コンテナーエンジンまたはハイパーバイザーをインストールしてください。"
+  },
+  "running": {
+    "title": "実行中",
+    "inUse": "{size} 使用中",
+    "empty": "実行中のものはありません。",
+    "readFailed": "このマシンで実行中のものを読み取れませんでした（{why}）。",
+    "setupTest": "セットアップテスト",
+    "containers": {
+      "one": "{count} 個のコンテナ",
+      "other": "{count} 個のコンテナ"
+    },
+    "vms": {
+      "one": "{count} 台の VM",
+      "other": "{count} 台の VM"
+    },
+    "stopping": "停止中…",
+    "stop": "停止"
+  },
+  "downloads": {
+    "title": "ダウンロード",
+    "cleanUp": "クリーンアップ",
+    "total": "ラボのダウンロード {size}",
+    "empty": "ラボのダウンロードはまだありません",
+    "containerImages": {
+      "one": "{count} 個のコンテナイメージ",
+      "other": "{count} 個のコンテナイメージ"
+    },
+    "vmImages": {
+      "one": "{count} 個の VM イメージ",
+      "other": "{count} 個の VM イメージ"
+    },
+    "removing": "削除中…",
+    "remove": "削除",
+    "freed": "{size} を解放しました。",
+    "nothingFreed": "削除できるものはありませんでした（すべて使用中）。",
+    "cleanFailed": "ダウンロードを削除できませんでした",
+    "readFailed": "Cyber CTF がダウンロードしたものを読み取れませんでした: {why}",
+    "confirmTitle": "ラボのダウンロード {size} を削除しますか？",
+    "confirmBody": "ラボは次回の起動時に必要なものを再ダウンロードします。使用中のものは残ります。"
+  },
+  "selfTest": {
+    "containerTitle": "コンテナラボのテスト",
+    "vmTitle": "VM ラボのテスト",
+    "machineDockerDescription": "ラボネットワーク上で 2 つのコンテナを動かし、その後削除します。",
+    "machineVmDescription": "実際のテスト用 VM を起動して確認し、その後削除します。",
+    "testing": "テスト中",
+    "passed": "成功",
+    "failed": "失敗",
+    "runAgain": "再実行",
+    "retry": "再試行",
+    "run": "テストを実行",
+    "skipped": "スキップ",
+    "docker": {
+      "engine": "コンテナエンジンが応答する",
+      "pull": "テスト用イメージをダウンロード",
+      "start": "2 コンテナのテストラボを起動",
+      "network": "コンテナ同士が通信できる",
+      "port": "このマシンからラボのポートに到達できる",
+      "cleanup": "クリーンアップ"
+    },
+    "vm": {
+      "vagrant": "Vagrant がインストールされている",
+      "provider": "ハイパーバイザーの準備ができている",
+      "hypervisor": "ハイパーバイザーが応答する",
+      "box": "小さなテスト用 VM イメージを取得",
+      "boot": "テスト用 VM を起動",
+      "exec": "VM 内でコマンドを実行",
+      "network": "ラボネットワーク上で VM に到達できる",
+      "cleanup": "テスト用 VM を削除"
+    }
+  },
+  "setup": {
+    "checking": "このマシンを確認中…",
+    "title": "この<em>マシン</em>をセットアップ",
+    "lead": "{os} でラボを実行できるよう、一つずつ準備していきます。",
+    "stepOf": "ステップ {current} / {total}",
+    "stepFailed": "このステップを読み込めませんでした",
+    "pathTitle": "何を実行しますか？",
+    "pathDescription": "ラボの種類ごとに短いパスがあります。1 つ選んでください。このマシンの現在の状態から始まり、ほかのパスにはいつでも戻ってこられます。",
+    "back": "戻る",
+    "done": "完了",
+    "readyTitle": "セットアップが完了しました",
+    "readyDescription": "このガイドは「マシン」ページからいつでも再実行できます。",
+    "paths": {
+      "docker": "コンテナラボ",
+      "vm": "VM ラボ",
+      "dockerNote": "このマシン上のコンテナと、その隣で動く攻撃ボックス。",
+      "vmNote": "ハイパーバイザー上の完全な仮想マシン：ドメイン、Windows ホスト、複数ホストのネットワーク。",
+      "ready": "準備完了",
+      "review": "確認",
+      "progress": "{done} / {total} 完了",
+      "setUp": "セットアップ"
+    }
+  },
+  "add": {
+    "title": "<em>プロバイダー</em>を追加",
+    "lead": "{os} で実行できるのにまだ入っていないもの。1 つインストールしてテストし、ラボが使うものにしてください。",
+    "engines": "コンテナエンジン",
+    "enginesMeta": "コンテナラボ用",
+    "hypervisors": "ハイパーバイザー",
+    "hypervisorsMeta": "VM ラボ用",
+    "nothing": "{os} で実行できるものはすべてインストール済みです。",
+    "installed": "インストール済み。テストしてから既定にしてください。"
+  },
+  "steps": {
+    "aPackageManager": "パッケージマネージャー",
+    "macLocalNetwork": "macOS から、Cyber CTF によるローカルネットワーク上のデバイスの検出と、通知の表示（ラボの準備完了、失敗など）の許可を求められる場合があります。「許可」を選んでください。ラボには前者が必要です。",
+    "macTerminal": "シェルはターミナルで開きます。初回は macOS から Cyber CTF によるターミナルの制御の許可を求められるので、「OK」を選んでください。",
+    "macInstallerVm": "インストーラーが別ウィンドウで開き、パスワードを求められます。VirtualBox は「システム設定 > プライバシーとセキュリティ」での承認も必要な場合があります。",
+    "macInstaller": "インストーラーが別ウィンドウで開き、パスワードを求められます。",
+    "pkgmgr": {
+      "title": "パッケージマネージャー",
+      "description": "Cyber CTF は、システムのパッケージマネージャーである {pm} を通じて、その他すべてをインストールします。セットアップは一度だけで済みます。"
+    },
+    "virtualization": {
+      "title": "仮想化を有効にする（WSL 2）",
+      "description": "Docker Desktop は WSL 2 を通じて Linux コンテナを実行します。一度有効にするだけです。Windows で最も見落とされがちなステップです。"
+    },
+    "docker": {
+      "title": "コンテナエンジン",
+      "descriptionWindows": "コンテナラボには Docker 互換のエンジンが 1 つ必要です（Windows では WSL 2 上で動作します）。お好みのものを選んでください。",
+      "description": "コンテナラボには Docker 互換のエンジンが 1 つ必要です。お好みのものを選んでください。どれでも動作します。"
+    },
+    "attack": {
+      "title": "攻撃マシン",
+      "description": "ラボを攻撃するためのマシンです。各ラボの隣に、そのネットワーク上で起動するコンテナです。ツールセットを選んでください。後から「設定」で変更できます。"
+    },
+    "vm": {
+      "title": "仮想マシン",
+      "description": "完全な VM で構成されたラボ（Active Directory ドメイン、Windows ホスト、ルーター、複数ホストのネットワーク）には、ハイパーバイザーが 1 つ必要です。お好みのものを選んでください。後から「マシン」ページで追加することもできます。"
+    },
+    "vagrant": {
+      "title": "プロビジョニング",
+      "description": "Cyber CTF は、無料ツールの Vagrant を使って、ハイパーバイザー上に各ラボの仮想マシンを作成・起動します。ほとんどのハイパーバイザーでは、そのための小さなアドオン（プラグイン）も必要です。"
+    },
+    "dockerTest": {
+      "title": "コンテナラボをテスト",
+      "description": "2 つのコンテナからなる小さなラボを起動し、動作を確認してから削除します。ダウンロードは約 2 MB です。"
+    },
+    "vmTest": {
+      "title": "VM ラボをテスト",
+      "description": "実際のテスト用 VM を起動し、動作を確認してから削除します。数分かかります。初回は小さな VM イメージをダウンロードします（以降はキャッシュされます）。"
+    },
+    "next": {
+      "done": "完了しました",
+      "skip": "今はスキップ",
+      "continue": "続行",
+      "restartLater": "後で再起動する"
+    }
+  },
+  "body": {
+    "installed": "インストール済み",
+    "installLog": "インストール",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "pkgmgr": {
+      "macRun": "ターミナルでこれを実行してから戻ってきてください。自動的に検出されます：",
+      "winget": "アプリ インストーラー（winget）",
+      "wingetHint": "Microsoft Store からインストールしてから戻ってきてください。",
+      "get": "入手",
+      "linux": "ワンクリックインストールを使うには、ディストリビューションのパッケージマネージャーをインストールしてください。",
+      "linuxNamed": "ワンクリックインストールを使うには、ディストリビューションのパッケージマネージャー（{name}）をインストールしてください。",
+      "intelMac": "これは Intel Mac です。Homebrew はもうこの環境向けのビルド済みパッケージを配布していないため、インストール時にソースからコンパイルされ、数分余計にかかることがあります。"
+    },
+    "wsl": {
+      "intro": "Cyber CTF が WSL 2 を有効にします。Windows から一度だけ許可を求められ（通常の管理者確認）、その後再起動が必要です。",
+      "log": "WSL 2 を有効にしています。続行するには Windows の確認を承認してください…",
+      "turningOn": "WSL 2 を有効化中…",
+      "turnOn": "WSL 2 を有効にする",
+      "restart": "WSL 2 は有効になりました。有効化を完了するには Windows を再起動してください。",
+      "byHand": "手動で行う",
+      "step1": "<b>PowerShell</b> を管理者として開きます（右クリックして「管理者として実行」）。",
+      "step2": "次を実行し、完了したら再起動します：",
+      "step3": "後で Docker から仮想化がオフだと表示された場合は、「Windows の機能の有効化または無効化」を開いて <b>Virtual Machine Platform</b> と <b>Windows Subsystem for Linux</b> を有効にし、BIOS/UEFI で仮想化が有効になっていることを確認してください。",
+      "guide": "Microsoft の WSL インストールガイド",
+      "readyTitle": "WSL 2",
+      "readyDetail": "有効で動作中",
+      "restartNow": "今すぐ再起動",
+      "restarting": "数秒後に再起動します…",
+      "confirmTitle": "今すぐ Windows を再起動しますか？",
+      "confirmBody": "数秒後に Windows が再起動し、開いているアプリは保存せずに閉じられます。先に作業内容を保存してください。",
+      "reopens": "再度サインインすると Cyber CTF が自動で開きます。セットアップは最初のステップから始まりますが、完了済みの項目は完了として表示されます。",
+      "reopenByHand": "再度サインインしたら Cyber CTF をもう一度開いてください。セットアップは最初のステップから始まりますが、完了済みの項目は完了として表示されます。",
+      "restartReason": "Cyber CTF: WSL 2 の有効化を完了するために再起動します。",
+      "restartFailed": "Windows を再起動できませんでした",
+      "unknown": "WSL 2 が有効かどうかを Cyber CTF で判断できませんでした。すでに有効にして再起動済みなら、続行してください。",
+      "recheck": "再確認",
+      "firmware": "WSL 2 は有効ですが、再起動後も Windows でハイパーバイザーが動作していません。PC のファームウェアで仮想化が無効になっている可能性があります。BIOS/UEFI の設定で Intel VT-x または AMD-V (SVM) を有効にしてから再起動してください。ここから再起動し直しても解決しません。"
+    },
+    "dockerTestDescription": "busybox、ラボネットワーク上の 2 つのコンテナ。",
+    "vmTestDescription": "起動し、コマンドを実行し、ラボネットワーク上で ping を送り、削除します。",
+    "nothingToTest": "テストできるものはまだありません",
+    "noEngine": "実行中のコンテナエンジンがありません。戻ってセットアップするか、今はスキップしてください。",
+    "noHypervisor": "ハイパーバイザーがインストールされていません。戻ってインストールするか、今はスキップしてください。",
+    "outcome": {
+      "containerLabs": "コンテナラボ",
+      "vmLabs": "VM ラボ",
+      "ready": "テスト済みで、実行の準備ができています。",
+      "failed": "テストに失敗しました。戻って再実行してください。",
+      "engineRunning": "エンジンは実行中ですが、未テストです。",
+      "setUpEngine": "実行するにはコンテナエンジンをセットアップしてください。",
+      "notTested": "未テストです。",
+      "installHypervisor": "実行するにはハイパーバイザーをインストールしてください。"
+    },
+    "distribution": "このディストリビューションはまだガイド付きセットアップに対応していません。{name} をご自身でインストールしてから、再確認してください。"
+  },
+  "engine": {
+    "notes": {
+      "dockerDesktop": "公式アプリ。最も簡単にセットアップできます。大企業では有料です。",
+      "dockerEngine": "ネイティブのデーモン、デスクトップアプリなし。",
+      "orbstack": "高速でメモリ消費が少なめ。個人利用は無料です。",
+      "colima": "オープンソース、コマンドラインのみ。"
+    },
+    "otherRunning": "{engine} は実行中ですが、Docker は現在 {current} を使用しています。",
+    "anotherEngine": "別のエンジン",
+    "switching": "切り替え中…",
+    "use": "{engine} を使う",
+    "starting": "{engine} を起動中… 初回の起動には 1 分ほどかかる場合があります。",
+    "notRunning": "{engine} はインストールされていますが、起動していません。",
+    "get": "{name} を入手",
+    "startingButton": "起動中…",
+    "startingDockerDesktop": "Docker Desktop が Subscription Service Agreement を表示したら、そのウィンドウで同意してください。Cyber CTF が代わりに同意することはありません。",
+    "start": "{engine} を起動",
+    "canInstall": "Cyber CTF が {name} をインストールできます。",
+    "dockerDesktopLicence": "Docker Desktop は、大企業（従業員 250 人超、または年間売上 1,000 万ドル超）では有料サブスクリプションが必要です。Cyber CTF は無料の Colima や Podman、個人利用は無料の OrbStack でもラボを実行できます。",
+    "installLog": "コンテナエンジンをインストール中…",
+    "installing": "インストール中…",
+    "install": "{name} をインストール",
+    "recheck": "再確認",
+    "installThenRecheck": "{engine} をインストールして起動してから、再確認してください。",
+    "finishDockerDesktop": "Docker Desktop を起動し、ウィンドウで Subscription Service Agreement に同意してから、再チェックを押してください。",
+    "finishOther": "{engine} のインストールを完了させて起動してから、「再確認」を押してください。",
+    "windowsReboot": "WSL を有効にした後、再起動が必要な場合があります。Docker から仮想化がオフだと表示された場合は、前のステップに戻ってください。",
+    "linuxPostInstall": "Docker Engine のインストール後、ユーザーが実行できるようにしてサービスを起動します：",
+    "linuxRelog": "その後、一度ログアウトしてから再ログインしてください。",
+    "trademarks": "Docker および Docker ロゴは Docker, Inc. の商標です。その他のエンジン名は各所有者に帰属します。Cyber CTF はこれらのいずれとも提携していません。"
+  },
+  "vm": {
+    "noHypervisor": "このマシンに適用できるローカルのハイパーバイザーはありません。VM ラボは代わりにサーバー（ESXi / Proxmox）で実行できます。",
+    "cantRunHere": "インストール済みですが、ここでは実行できません。",
+    "installedHere": "このマシンにインストール済みです。",
+    "canInstall": "Cyber CTF がインストールできます。",
+    "vendorSite": "ベンダーのサイトからインストールしてください。",
+    "canInstallNamed": "Cyber CTF が {name} をインストールできます。",
+    "installLog": "{name} をインストール中…",
+    "installing": "インストール中…",
+    "install": "{name} をインストール",
+    "installThenRecheck": "{name} をインストールしてから、再確認してください。",
+    "get": "{name} を入手",
+    "recheck": "再確認",
+    "trademarks": "VirtualBox は Oracle の商標です。QEMU およびその他のハイパーバイザー名は各所有者に帰属します。Cyber CTF はこれらのいずれとも提携していません。",
+    "vagrantNothing": "このマシンに適用できるローカルのハイパーバイザーがないため、ここでは Vagrant が操作する対象がありません。VM ラボは代わりにサーバーで実行できます。",
+    "vagrantDetail": "ラボの VM を作成・起動します。",
+    "installVagrantLog": "Vagrant をインストール中…",
+    "installVagrant": "Vagrant をインストール",
+    "pluginTitle": "Vagrant 用 {name} アドオン",
+    "pluginLater": "{plugin}（Vagrant のインストール後）。",
+    "pluginLog": "Vagrant プラグイン {plugin} をインストール中…",
+    "shareNote": "KVM がプロセッサーの仮想化を使用しているため、VirtualBox は VM を起動できません。Cyber CTF で両者に共有させることができます。共有すると、KVM は自身の VM の実行中だけこれを使います。パスワードを求められます。",
+    "share": "VirtualBox に使わせる",
+    "sharing": "設定中…",
+    "shareLog": "KVM と VirtualBox でプロセッサーの仮想化を共有しています…",
+    "installPlugin": "プラグインをインストール",
+    "utilityDetail": "VMware プラグインが VMware を操作するための HashiCorp のサービスです。HashiCorp の署名付きパッケージからインストールし、パスワードを求められます。",
+    "utilityTitle": "Vagrant VMware Utility",
+    "utilityStopped": "インストール済みですが、サービスが動いていません。再インストールするか、コンピューターを再起動すると起動します。",
+    "utilityInstall": "インストール",
+    "utilityRestart": "再インストール",
+    "utilityLog": "Vagrant VMware Utility をインストール中…",
+    "installFailed": "インストールに失敗しました: {why}",
+    "installYourself": "ご自身でインストールしてください。",
+    "restartToFinish": "{name} は有効になりました。有効化を完了するには Windows を再起動してください。",
+    "restartReason": "Cyber CTF: {name} の有効化を完了するために再起動しています。"
+  },
+  "attack": {
+    "download": "ダウンロード {size}",
+    "largeDownload": "大容量のダウンロード",
+    "custom": "「設定」のカスタムイメージを使用中：<mono>{image}</mono>",
+    "autoStart": "各ラボと一緒に起動",
+    "autoStartHint": "オフの場合は、必要なときにラボのページから起動します。",
+    "needsEngine": "コンテナエンジン上で動作するため、エンジンをセットアップすると使えるようになります。",
+    "firstStart": "イメージは、ラボが初めて起動するときにダウンロードされます。"
+  },
+  "unavailable": {
+    "vagrantMissing": "Vagrant がインストールされていません。",
+    "virtualboxStuck": "VirtualBox が応答しません（バックグラウンドサービスが停止しています）。VirtualBox とすべての VM ウィンドウを終了するか、コンピューターを再起動してから、もう一度確認してください。",
+    "hypervOff": "Hyper-V が有効になっていません（Windows の機能 > Hyper-V）。または、この Windows エディションには Hyper-V がありません。",
+    "hypervNeedsAdmin": "Vagrant が Hyper-V を操作できるのは、管理者または Hyper-V Administrators のメンバーだけです。「自分のアカウントを許可」を選ぶ（その後 Windows からサインアウトして再度サインイン）か、Cyber CTF を管理者として実行してください。",
+    "hypervisorStopped": "Hyper-V は有効ですが、Windows のハイパーバイザーが動いていません。ファームウェアで仮想化を有効にするか、管理者として bcdedit /set hypervisorlaunchtype auto を実行してから、Windows を再起動してください。",
+    "mkisofsMissing": "QEMU の VM には mkisofs が必要ですが、インストールされていません。Vagrant はこれを使って、各 VM にラボのネットワークを与えるディスクを作成します。QEMU をもう一度インストールする（これで追加されます）か、sudo apt-get install genisoimage を実行してから、もう一度確認してください。",
+    "virtiofsdMissing": "{hypervisor} でこのコンピューターのフォルダーを VM と共有する（アタックボックスの共有フォルダー）には virtiofsd が必要ですが、インストールされていません。{hypervisor} をもう一度インストールする（これで追加されます）か、sudo apt-get install virtiofsd（Fedora では sudo dnf install virtiofsd）を実行してから、もう一度確認してください。",
+    "notInstalled": "`{program}` が見つかりませんでした。",
+    "notInstalledNoProgram": "インストールされていません。",
+    "newLogin": "ログイン後に {group} グループに追加されました。反映するには、ログアウトして再度ログイン（または再起動）してください。",
+    "noKvm": "このマシンでは KVM を使えません（/dev/kvm がありません）。ファームウェアで仮想化を有効にするか、別のハイパーバイザーを使ってください。",
+    "kvmDenied": "まだ /dev/kvm を使えません。{group} グループに自分を追加し、サインアウトして再度サインインしてください。",
+    "kvmUnusable": "/dev/kvm を開けません: {error}。コンピューターを再起動してから、もう一度確認してください。",
+    "hypervisorTooOld": "{name} {version} は古すぎます。{min} 以降が必要です。{name} を更新してから、もう一度確認してください。",
+    "pluginTooOld": "Vagrant プラグイン `{plugin}` {version} は古すぎます。{min} 以降が必要です。更新するにはもう一度インストールしてください。",
+    "pluginMissing": "Vagrant プラグイン `{plugin}` がインストールされていません。",
+    "pluginsUnknown": "Vagrant プラグイン `{plugin}` がインストールされているか判断できません。`vagrant plugin list` が失敗しました（{reason}）。ターミナルで実行して原因を確認し、再チェックしてください。",
+    "vmwareUtilityStopped": "Vagrant VMware Utility はインストールされていますが、サービスが動いていません。もう一度インストールする（再起動されます）か、コンピューターを再起動してください。",
+    "vmwarePluginWithoutUtility": "Vagrant の VMware プラグイン (vagrant-vmware-desktop) が Vagrant VMware Utility なしでインストールされているため、どのハイパーバイザーでも Vagrant が動きません。Vagrant VMware Utility をインストールするか、プラグインを削除して (vagrant plugin uninstall vagrant-vmware-desktop)、もう一度確認してください。",
+    "vmwareUtilityMissing": "Vagrant VMware Utility がインストールされていません。VMware プラグインが VMware を操作するための HashiCorp のサービスです。",
+    "virtualboxDriver": "VirtualBox のカーネルドライバー（vboxdrv）がこのカーネル（{kernel}）で読み込まれていないため、VirtualBox は VM を起動できません。カーネルのヘッダー（Debian と Ubuntu では linux-headers-{kernel}）をインストールし、ドライバーをビルドしてから（Oracle の VirtualBox は sudo /sbin/vboxconfig、ディストリビューションの VirtualBox は sudo dpkg-reconfigure virtualbox-dkms）、もう一度確認してください。セキュアブートが有効な場合、ドライバーは署名しないと読み込まれません。",
+    "kernelRestart": "VirtualBox のカーネルドライバーは、一緒にインストールされた新しいカーネル（{kernel}）用にビルドされます。コンピューターを再起動してそのカーネルで起動してから、もう一度確認してください。",
+    "kvmHoldsVirtualization": "KVM がこのコンピューターのハードウェア仮想化（VT-x または AMD-V）を使用しています。Linux は KVM のモジュールが読み込まれた時点でこれを有効にする（Linux 6.12 以降の既定）ため、VirtualBox は VM を起動できません（「VT-x is being used by another hypervisor」）。KVM で動作する libvirt か QEMU を使うか、KVM に VirtualBox と共有させてください。共有すると、KVM は自身の VM の実行中だけこれを使います。",
+    "kvmSharesAfterRestart": "KVM は次に読み込まれたときから、このコンピューターのハードウェア仮想化を VirtualBox と共有するよう設定されています。適用するにはコンピューターを再起動してください。"
+  },
+  "asks": {
+    "title": "{name} をインストールする前に",
+    "lead": "これから起きることを先にお知らせします:",
+    "before": {
+      "passwordMac": "macOS が専用のウインドウでパスワードを求めます。",
+      "passwordUac": "Windows が変更の許可を求めます(ユーザー アカウント制御)。",
+      "passwordPkexec": "システムが専用のウインドウでパスワードを求めます。",
+      "vendorAgreement": "{app} は初回起動時に {agreement} を表示します。使うにはそこで同意してください。Cyber CTF が代わりに同意することはありません。",
+      "vendorWindow": "{app} が専用のウインドウを開きます。最後まで進めてください。",
+      "systemExtension": "システム設定 › プライバシーとセキュリティ で {vendor} のシステム拡張を許可する必要があります。",
+      "restart": "完了後にコンピュータを再起動する必要があります。",
+      "relogin": "完了後に一度サインアウトして、もう一度サインインする必要があります。",
+      "longBuild": "ソースからビルドするため、約 {minutes} 分かかることがあります。",
+      "downloadByHand": "{vendor} は自社のページでのみ提供しています。ご自身でダウンロードしてインストールしてください。"
+    },
+    "readAgreement": "{agreement} を読む",
+    "install": "インストール",
+    "cancel": "キャンセル",
+    "nowTitle": "いま起きていること",
+    "now": {
+      "passwordMac": "いま開いたウインドウで macOS がパスワードを求めています。",
+      "passwordUac": "いま開いたウインドウで Windows が変更の許可を求めています。",
+      "passwordPkexec": "いま開いたウインドウでシステムがパスワードを求めています。",
+      "vendorAgreement": "{app} は初回起動時に {agreement} を表示します。そのウィンドウで同意してください。",
+      "agreementWaiting": "{app} はウィンドウで契約への同意を待っています。そこで同意してから、もう一度確認してください。",
+      "vendorWindow": "{app} が専用のウインドウを開きました。そちらで完了してください。",
+      "systemExtension": "完了したら、システム設定 › プライバシーとセキュリティ で {vendor} のシステム拡張を許可してください。",
+      "restart": "完了したら、コンピュータを再起動してください。",
+      "relogin": "完了したら、一度サインアウトしてもう一度サインインしてください。",
+      "longBuild": "ソースからビルドしています。約 {minutes} 分かかることがあります。このウインドウは開いたままで大丈夫です。",
+      "downloadByHand": "{vendor} のページからダウンロードしてインストールし、もう一度確認してください。"
+    },
+    "byHand": {
+      "steps": "{vendor} は {name} を自社のページでのみ提供しています。そこでダウンロードしてインストールし、ここに戻ってもう一度確認してください。",
+      "open": "{vendor} のダウンロードページを開く",
+      "check": "もう一度確認",
+      "checking": "このコンピュータを確認しています…",
+      "notYet": "{name} はまだインストールされていません。インストールを完了してから、もう一度確認してください。"
+    }
+  }
+}

@@ -1,0 +1,90 @@
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { commandsFrom, permissionSets } from "@/test/command-graph";
+
+// Each window may call only the commands its permission set allows (src-tauri/permissions/
+// windows.toml, granted by src-tauri/capabilities/*.json). These are the files each window
+// loads; a command one of them invokes but its set doesn't allow would fail at runtime.
+const LAYOUT = "app/layout.tsx";
+const WINDOWS: Record<string, string[]> = {
+  "main-window": [LAYOUT, "app/page.tsx"],
+  // Settings loads the main entry with ?window=settings: the app shell runs its hooks, then
+  // renders only the settings screen.
+  "settings-window": [
+    LAYOUT,
+    "components/shell/settings-window.tsx",
+    "features/machine/use-machine-report.ts",
+    "components/shell/use-auth-session.ts",
+    "components/shell/use-sidebar-labs.ts",
+    "features/labs/runs/operations.ts",
+    "lib/appearance.ts",
+    "lib/deep-link.ts",
+    "lib/use-tauri-event.ts",
+    "lib/app-events.ts",
+  ],
+  "server-setup-window": [LAYOUT, "app/server-setup/page.tsx"],
+  "machine-setup-window": [LAYOUT, "app/machine-setup/page.tsx"],
+  "shell-window": [LAYOUT, "app/shell/page.tsx"],
+  "screen-window": [LAYOUT, "app/screen/page.tsx"],
+};
+
+const sorted = (s: Set<string> | undefined) => [...(s ?? [])].sort();
+
+describe("window permissions", () => {
+  const sets = permissionSets();
+
+  it("has a permission set for every kind of window", () => {
+    expect(sorted(new Set(sets.keys()))).toEqual(Object.keys(WINDOWS).sort());
+  });
+
+  // The first window walks most of the app's files (parsed once, then shared by the others): a
+  // limit of its own, the parse of a few hundred files under a loaded machine's share of the CPU.
+  it.each(Object.entries(WINDOWS))("%s allows exactly the commands its pages invoke", { timeout: 60_000 }, (set, entries) => {
+    expect(sorted(sets.get(set))).toEqual(sorted(commandsFrom(entries)));
+  });
+
+  it("keeps the terminal's input and output to the terminal windows", () => {
+    const pty = ["terminal_open", "terminal_write", "terminal_resize", "terminal_close"];
+    for (const [set, allowed] of sets) {
+      if (set !== "shell-window") expect(pty.filter((c) => allowed.has(c))).toEqual([]);
+    }
+  });
+
+  it("keeps a machine's screen, and its password, to the screen windows", () => {
+    const screen = ["screen_connect", "screen_open_rdp", "screen_password", "screen_sign_in"];
+    for (const [set, allowed] of sets) {
+      if (set !== "screen-window") expect(screen.filter((c) => allowed.has(c))).toEqual([]);
+    }
+    // And a screen window reaches nothing else: no terminal, no lab operation.
+    expect(sorted(sets.get("screen-window"))).toEqual([...screen].sort());
+  });
+
+  it("lets every window minimize, maximize and close itself from its own title bar, on Linux and Windows only", () => {
+    // There the windows have no system frame (src-tauri/src/app/window.rs): the page's title bar
+    // (components/window-title-bar.tsx) has the buttons. macOS keeps the system's.
+    const dir = fileURLToPath(new URL("../../../src-tauri/capabilities/", import.meta.url));
+    type Capability = { identifier: string; windows: string[]; platforms?: string[]; permissions: (string | { identifier: string })[] };
+    const capabilities = fs.readdirSync(dir).map((f) => JSON.parse(fs.readFileSync(dir + f, "utf8")) as Capability);
+    const ids = (c: Capability) => c.permissions.map((p) => (typeof p === "string" ? p : p.identifier));
+    const controls = ["core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-close"];
+    const bar = capabilities.find((c) => c.identifier === "window-controls");
+    expect(bar?.platforms).toEqual(["linux", "windows"]);
+    expect(bar && ids(bar)).toEqual(controls);
+    const everyWindow = capabilities.filter((c) => c !== bar).flatMap((c) => c.windows);
+    expect(bar?.windows.slice().sort()).toEqual(everyWindow.sort());
+    // Minimize and maximize nowhere else; close, which the setup and shell pages use themselves
+    // ("Done", "Close"), not for the main window on macOS.
+    for (const c of capabilities.filter((c) => c !== bar)) {
+      expect(ids(c).filter((id) => controls.slice(0, 2).includes(id))).toEqual([]);
+      if (c.windows.includes("main")) expect(ids(c)).not.toContain("core:window:allow-close");
+    }
+  });
+
+  it("gives the terminal windows no opener: the xterm page opens no links", () => {
+    const file = fileURLToPath(new URL("../../../src-tauri/capabilities/shell-windows.json", import.meta.url));
+    const capability = JSON.parse(fs.readFileSync(file, "utf8")) as { permissions: (string | { identifier: string })[] };
+    const ids = capability.permissions.map((p) => (typeof p === "string" ? p : p.identifier));
+    expect(ids.filter((id) => id.startsWith("opener:"))).toEqual([]);
+  });
+});

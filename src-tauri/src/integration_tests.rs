@@ -1,0 +1,239 @@
+//! Real labs, end to end, on the real tools: Docker, local hypervisors, cloud accounts and
+//! servers, driven through the launcher's own code. Every test here is opt-in (`#[ignore]`): it
+//! reads its knobs from `CYBERCTF_TEST_*` and returns early without them. `tests/integration/run.sh`
+//! runs them by tier; docs/contributing/testing/integration.md says what each one guards against.
+
+mod attack_box;
+mod cli_lab;
+mod corpus_docker;
+mod docker_lab;
+mod flag_contract;
+mod launch_commands;
+mod per_machine;
+mod replace;
+mod resilience;
+mod resilience_vm;
+mod server_lab;
+mod setup;
+pub(crate) mod support;
+mod vm_lab;
+
+/// A scenario starts and stops its lab through the launcher's own functions (`launch::start_*`,
+/// `runtime::start`, `lifecycle::stop_run`, `stop_lab`), never by calling the runner's `up` or
+/// `down` on a run it opened itself: what the launcher does around the runner (generating the
+/// files, the form's marks, the hypervisor's checks and retries) is what a real run goes through.
+/// A scenario once built its start by hand, so it skipped UTM's retry and failed on a UTM run
+/// where the app would not have.
+#[cfg(test)]
+/// The scenarios' Rust sources (their files and their folders: `support/`, a family's own
+/// modules), each as its path under `src/integration_tests` and its text, but the files
+/// `exempt` names.
+fn scenario_sources(exempt: &[(&str, &str)]) -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
+    let mut sources = Vec::new();
+    let mut dirs = vec![root.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let name = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+            if path.extension().is_none_or(|x| x != "rs") || exempt.iter().any(|(f, _)| *f == name) {
+                continue;
+            }
+            sources.push((name, std::fs::read_to_string(&path).unwrap()));
+        }
+    }
+    sources
+}
+
+#[cfg(test)]
+mod start_path {
+
+    /// The scenarios that drive a run they open themselves, each with why: the server ones take
+    /// the host's connection from their knobs, with no saved host for the launcher's start to read.
+    const OPENS_ITS_OWN_RUN: &[(&str, &str)] = &[("server_lab.rs", "a server's connection from its knobs, not a saved host")];
+
+    /// The runs a scenario opens itself: `Deployment::…`.
+    const RUNS: [&str; 1] = ["Deployment::"];
+
+    /// What starts or stops a run.
+    const CHANGES: [&str; 2] = [".up(", ".down("];
+
+    /// Where `code` starts or stops a run it opened itself: a statement that opens one and calls
+    /// `up` or `down` on it, or `up` or `down` on a variable bound to one. Reading it (`status`,
+    /// `check`) and handing it to the launcher (`lifecycle::stop_run(Deployment::…)`) are fine.
+    fn direct_changes(code: &str) -> Vec<String> {
+        let statements: Vec<&str> = code.split(';').collect();
+        let opened = |s: &str| RUNS.iter().any(|r| s.contains(r));
+        let changes = |s: &str, on: &str| CHANGES.iter().any(|c| s.contains(&format!("{on}{c}")));
+        let bound: Vec<String> =
+            statements.iter().filter(|s| opened(s)).filter_map(|s| s.trim().strip_prefix("let ")?.split([' ', ':', '=']).next().map(str::to_owned)).collect();
+        statements
+            .iter()
+            .filter(|s| (opened(s) && changes(s, "") && !s.contains("stop_run(")) || bound.iter().any(|v| changes(s, v)))
+            .map(|s| s.trim().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_scenario_starts_and_stops_its_lab_the_way_the_launcher_does() {
+        let mut found = Vec::new();
+        for (name, code) in super::scenario_sources(OPENS_ITS_OWN_RUN) {
+            found.extend(direct_changes(&code).into_iter().map(|s| format!("{name}: {s}")));
+        }
+        assert!(found.is_empty(), "start or stop the lab through launch:: / lifecycle::, not the runner:\n{}", found.join("\n"));
+    }
+
+    #[test]
+    fn a_run_started_by_hand_is_told_from_one_read_or_handed_over() {
+        // A scenario that once did: the run opened and brought up in one expression.
+        let by_hand = "let up = async {\n lab::prepare(&dir, t)?;\n isothrum::Deployment::vm(&home, &dir, &id)?.up(&[], Some(p), &mut log(&id)).await\n}";
+        assert_eq!(direct_changes(by_hand).len(), 1);
+        // A run bound to a variable, then brought up or down.
+        assert_eq!(direct_changes("let run = Deployment::on_server(&home, &dir, id, Runtime::Vm, place).unwrap();\nlet up = run.up(Inputs::default(), None, &mut log).await;\nlet down = run.down(&mut log).await;").len(), 2);
+        // Read, checked, or handed to the launcher's stop: fine.
+        for fine in [
+            "isothrum::Deployment::vm(&home, &dir, &id).unwrap().status().await;",
+            "isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.check().await;",
+            "let stopped = lifecycle::stop_run(isothrum::Deployment::vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;",
+            "let started = launch::start_vms(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut log(&id)).await;",
+        ] {
+            assert!(direct_changes(fine).is_empty(), "{fine}");
+        }
+        // Every exemption names its reason.
+        assert!(OPENS_ITS_OWN_RUN.iter().all(|(_, why)| !why.is_empty()));
+    }
+}
+
+/// A scenario waits for what it can see (`support::eventually`), not for a time it guesses: a
+/// guessed time is too short on a slow machine and wasted on a fast one, and when it runs out the
+/// failure says nothing of what was seen.
+#[cfg(test)]
+mod waits {
+    /// The sleeps a scenario keeps, by file: how many, and why each is a time and not a condition.
+    const SLEEPS: &[(&str, usize, &str)] = &[
+        ("support.rs", 1, "eventually's own pause between two looks"),
+        ("resilience_vm.rs", 1, "the kill must land while Vagrant provisions the VM it made, a moment nothing marks"),
+    ];
+
+    #[test]
+    fn a_scenario_waits_for_what_it_sees_not_for_a_time() {
+        let mut found = Vec::new();
+        for (name, code) in super::scenario_sources(&[]) {
+            let sleeps = code.matches("sleep(").count();
+            let kept = SLEEPS.iter().find(|(file, ..)| *file == name).map_or(0, |(_, n, _)| *n);
+            if sleeps != kept {
+                found.push(format!("{name}: {sleeps} sleeps, {kept} kept"));
+            }
+        }
+        assert!(found.is_empty(), "wait with support::eventually, or name the sleep and why here:\n{}", found.join("\n"));
+        assert!(SLEEPS.iter().all(|(_, n, why)| *n > 0 && !why.is_empty()));
+    }
+}
+
+/// Each file of scenarios under `integration_tests/`: its module name and its code.
+#[cfg(test)]
+fn scenario_files() -> Vec<(String, String)> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
+    std::fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|x| x == "rs"))
+        .map(|path| (path.file_stem().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&path).unwrap()))
+        .collect()
+}
+
+/// Every opt-in scenario is run by something: `tests/integration/run.sh`, a workflow (by its
+/// name or its module's), or the testing docs that say how to run it by hand. One that nothing
+/// named (the Docker corpus) was never run.
+#[cfg(test)]
+mod reached {
+    use std::path::Path;
+
+    #[test]
+    fn every_opt_in_scenario_is_run_by_the_runner_a_workflow_or_the_docs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let read = |p: &Path| std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+        let mut runners = read(&root.join("tests/integration/run.sh"));
+        for doc in ["docs/contributing/testing/release-check.md", "docs/contributing/testing/integration.md"] {
+            runners.push_str(&read(&root.join(doc)));
+        }
+        for entry in std::fs::read_dir(root.join(".github/workflows")).unwrap().flatten() {
+            runners.push_str(&read(&entry.path()));
+        }
+        let mut unrun = Vec::new();
+        for (module, code) in super::scenario_files() {
+            let mut lines = code.lines();
+            while let Some(line) = lines.next() {
+                if !line.trim_start().starts_with("#[ignore") {
+                    continue;
+                }
+                let Some(name) = lines.find_map(|l| l.split("fn ").nth(1)).and_then(|rest| rest.split('(').next()) else { continue };
+                if !runners.contains(name) && !runners.contains(&format!("'integration_tests::{module}::'")) {
+                    unrun.push(format!("{module}::{name}"));
+                }
+            }
+        }
+        assert!(unrun.is_empty(), "name these in tests/integration/run.sh, a workflow or docs/testing: {unrun:?}");
+    }
+}
+
+/// Every scenario runs through `support::scenario`, so its lab is torn down whatever happens in
+/// its checks: one left behind fails the scenarios after it (a UTM VM still registered made every
+/// later VM import fail, after an `expect` ended a scenario before its stop).
+#[cfg(test)]
+mod teardown {
+    #[test]
+    fn every_file_of_scenarios_runs_them_through_the_guard() {
+        let unguarded: Vec<String> = super::scenario_files()
+            .into_iter()
+            .filter(|(_, code)| code.contains("#[ignore") && !code.contains("scenario("))
+            .map(|(module, _)| format!("{module}.rs"))
+            .collect();
+        assert!(unguarded.is_empty(), "run the scenario through support::scenario: {unguarded:?}");
+    }
+}
+
+/// A scenario's app is `TestApp::scenario`, whose folders the runner puts in the scenario's temp
+/// folder, so its lab's runs (Vagrant's `.vagrant`, a VM's disks) go with that folder, a capped
+/// scenario's VMs ended first. A `TestApp::new` keeps them in the system's place, out of the
+/// runner's reach: a capped scenario's VMware VMs kept running from Application Support (#308).
+/// The unit tests (`mod tests`) keep `TestApp::new`, and so does a cloud scenario.
+#[cfg(test)]
+mod app_root {
+
+    /// The files whose scenario keeps its app in the system's place, each with why.
+    const KEEPS_THE_SYSTEMS_PLACE: &[(&str, &str)] = &[(
+        "attack_box.rs",
+        "its AWS scenario: past its cap the cloud lab still bills, and its run's state, which destroys it, must outlive the scenario's folder",
+    )];
+
+    /// What `code` runs before its unit tests (`mod tests`, last in a file).
+    fn outside_unit_tests(code: &str) -> &str {
+        code.split("\nmod tests {").next().unwrap_or(code)
+    }
+
+    #[test]
+    fn a_scenarios_app_keeps_its_folders_in_the_scenarios_temp_folder() {
+        let mut found = Vec::new();
+        for (name, code) in super::scenario_sources(KEEPS_THE_SYSTEMS_PLACE) {
+            if outside_unit_tests(&code).contains("TestApp::new(") {
+                found.push(name);
+            }
+        }
+        assert!(found.is_empty(), "a scenario's app is TestApp::scenario(), not TestApp::new(): {found:?}");
+    }
+
+    #[test]
+    fn a_unit_tests_app_is_told_from_a_scenarios() {
+        let file = "async fn a_lab_runs() {\n    let t = TestApp::scenario();\n}\n\n#[cfg(test)]\nmod tests {\n    fn f() { let t = TestApp::new(); }\n}\n";
+        assert!(!outside_unit_tests(file).contains("TestApp::new("));
+        assert!(outside_unit_tests(&file.replace("scenario()", "new()")).contains("TestApp::new("));
+        // Every exemption names its reason.
+        assert!(KEEPS_THE_SYSTEMS_PLACE.iter().all(|(_, why)| !why.is_empty()));
+    }
+}

@@ -1,0 +1,149 @@
+# Integration tests
+
+What only the real tools show: a lab on real Docker, Vagrant, hypervisors and clouds, end to end.
+One command runs it, one verdict per scenario:
+
+```sh
+tests/integration/run.sh                                                 # the local tier (pnpm test:integration)
+CYBERCTF_TEST_INTEGRATION_TIERS="local aws" tests/integration/run.sh     # and the AWS tier: billed while it runs, ~20 minutes
+CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh          # a lab on a Proxmox / ESXi host
+ONLY="attack-box-docker attack-box-vm" tests/integration/run.sh
+```
+
+Each scenario is an opt-in Rust test (`#[ignore]`, so `cargo test` never runs it), given the
+knobs it needs; its output is in `tests/integration/.state/logs/<scenario>.log`, its checks (`ok:`
+/ `FAILED:`) on the screen. The labs are Isoloom's examples (`CYBERCTF_TEST_ISOLOOM_DIR`, default
+`../isoloom`). Run it before a release that touches running labs, after a change to Isoloom or
+Isothrum, and after any field bug in the tiers below (then add the scenario that would have caught
+it).
+
+A scenario's lab is torn down (stopped, and what it left checked) whatever happens in its checks,
+a panic included: each runs through `support::scenario`, which records the panic as a failed
+check and runs the teardown after it. A lab one scenario leaves behind fails the ones after it (a
+UTM VM still registered made every later VM import fail).
+
+`--results <file>` appends a JSON record per scenario there, and `--list` prints the scenarios with
+the knobs each reads ([tests/README.md](../../../tests/README.md#results)). `--only <scenario>@<provider>`
+runs one scenario on one hypervisor (`vm-lab@virtualbox`: a harness's finest shard; `@docker`
+or no `@` names none).
+
+The runner fails fast. Each scenario is killed past its cap, 8 minutes
+(`CYBERCTF_TEST_INTEGRATION_TIMEOUT`; the `attack-box-*` ones get 10 while their images are
+pulled on every run), cargo and the test binary with the VMs it holds. And once a scenario fails
+on the platform itself, in the launcher's own words (a lab that can't run on that hypervisor, an
+architecture it doesn't support, a tool or plugin not installed, a hypervisor not responding,
+Docker not running: `PLATFORM_FAILURE` in `run.sh`, which a unit test in
+`integration_tests/support.rs` holds to the launcher's messages), the remaining scenarios on that
+provider are skipped with that failure as their reason; a failure in the lab fails its scenario
+alone.
+
+A scenario's id is its file's name and, for a file of several, the form or lab it runs:
+`attack-box-vm` is `integration_tests/attack_box.rs` on the VM form.
+[tests/README.md](../../../tests/README.md#knobs) lists every knob.
+
+## Local tier
+
+Docker, and Vagrant with QEMU (`CYBERCTF_TEST_VM_PROVIDER`). About 30 minutes, most of it Kali's install on the VM form.
+
+| Scenario                             | Proves                                                                                                                                                                                                                                      | Guards against (found)                                                                                                                                                                                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attack-box-docker`                  | the attack box added to a running Docker lab as a machine of it, reaching `web`, called `attackbox`, the shared folder seen both ways at `/shared`, `su` to `player` taking the password the launcher keeps (and refusing another), removed | the box is the lab's: regenerated with it, the run updated, taken out by `--remove-orphans`; on an Arm Mac it runs Kali's arm64 image natively (it was emulated amd64)                                                                                                    |
+| `attack-box-vm`                      | the same among a VM lab's, a Kali VM with `kali-linux-headless`                                                                                                                                                                             | on an Arm Mac Kali has no Vagrant box: a native Debian made Kali. Its set-up keeps the VM's kernel (Kali's didn't fit the EFI partition), takes Kali's archive only, pinned (Debian's newer `tzdata` blocked Kali's), and lets renamed libraries overwrite (the t64 move) |
+| `docker-lab-hello-stack`             | a Docker lab's whole life: up, status, park and resume, checks, down, nothing left                                                                                                                                                          |                                                                                                                                                                                                                                                                           |
+| `docker-lab-segmented`               | the same with several networks and no published port                                                                                                                                                                                        |                                                                                                                                                                                                                                                                           |
+| `vm-lab`                             | a VM lab up to down on the hypervisor, then no VM of it left there (asked of that hypervisor; one it can't ask fails the check)                                                                                                             |                                                                                                                                                                                                                                                                           |
+| `per-machine`                        | a container lab run as one VM per machine, its checks passing in the VMs, the page's operations following that form                                                                                                                         | the example's MariaDB refusing root over TCP (its seed's way in)                                                                                                                                                                                                          |
+| `launch-commands`                    | a local lab launched and torn down through the app's own commands, its log streamed                                                                                                                                                         |                                                                                                                                                                                                                                                                           |
+| `cli-lab-docker`                     | a Docker lab through the command line (`cyberctf labs install`, `labs status`, `labs stop --yes`, run as a script runs them, `--json`): up, the run's events streamed, its checks passing, stopped, nothing left                            |                                                                                                                                                                                                                                                                           |
+| `corpus-docker`                      | your own CTF lab folders (`CYBERCTF_TEST_CORPUS_LABS`, comma-separated) on Docker through the runner: up, ready, their checks, park and resume, down, nothing left; skipped while unset                                                     |                                                                                                                                                                                                                                                                           |
+| `replace-docker`                     | a running Docker lab's folder is not replaced: an update and a re-import are refused while it runs, and go through once it is stopped                                                                                                       | the update and the import asked the lab folder (Vagrant's `.vagrant`, `deployments/`), where the runner keeps nothing, so a run's files were swapped out from under it                                                                                                    |
+| `replace-vm`                         | the same for a VM lab                                                                                                                                                                                                                       |                                                                                                                                                                                                                                                                           |
+| `resilience-docker-removed`          | a container of a running lab removed (`docker rm -f`): the page shows it gone, a resume is refused naming it, a stop and start (the page's reset) brings the lab back whole, nothing left                                                   | the gone machine left out of the page, which drew a healthy lab without it; a resume that started the rest and called the lab ready                                                                                                                                       |
+| `resilience-docker-stopped`          | a container of a running lab stopped (`docker stop`): shown down, and a resume brings it back                                                                                                                                               |                                                                                                                                                                                                                                                                           |
+| `resilience-docker-removed-starting` | a container removed while the start waits for it: the start fails saying why (or, if it went after, the page shows it gone), and a start again brings the lab up                                                                            |                                                                                                                                                                                                                                                                           |
+| `resilience-docker-port-taken`       | a port the lab publishes held by another process at start: refused, the port named, nothing left; once free, it starts                                                                                                                      |                                                                                                                                                                                                                                                                           |
+| `resilience-docker-killed-start`     | the process running the start killed (SIGKILL) once a container exists: its run reads failed, not ready, a start again ends the tools it left and brings the lab up                                                                         | a killed start left its record `starting`: its run read as ready and the next start was refused as already running                                                                                                                                                        |
+| `resilience-docker-daemon-stopped`   | Docker stopped while the start waits (throwaway machines only): the start says Docker isn't running, and once Docker is back a start works                                                                                                  | the start said "`lab step up` failed: Cannot connect to the Docker daemon"                                                                                                                                                                                                |
+| `resilience-vm-destroyed`            | a VM of a running lab destroyed (`vagrant destroy -f`): shown gone, a resume refused without making it again, a start again rebuilds the lab                                                                                                | a resume made the VM again from its box, unprovisioned, and called the lab ready                                                                                                                                                                                          |
+| `resilience-vm-powered-off`          | a VM of a running lab powered off (`vagrant halt --force`): shown off, and a resume boots it again                                                                                                                                          |                                                                                                                                                                                                                                                                           |
+| `resilience-vm-killed-start`         | the process running a VM lab's start killed while Vagrant provisions: failed, a start again ends its Vagrant and works                                                                                                                      |                                                                                                                                                                                                                                                                           |
+| `resilience-vm-killed-provisioning`  | a VM killed by its hypervisor's own tool while `vagrant up` provisions it (throwaway machines only, `CYBERCTF_TEST_RESILIENCE_VM_KILL`): the start fails or finishes whole, a start again works                                             |                                                                                                                                                                                                                                                                           |
+
+The `resilience-*` scenarios are the real-host part of [resilience.md](resilience.md),
+the catalogue of what a player does that breaks a lab. A killed-start scenario runs the start in a
+child process, this test binary again running
+`integration_tests::resilience::the_child_starts_the_lab_it_is_handed` (never a scenario of its
+own), and kills it. Those marked "throwaway machines only" skip unless
+`CYBERCTF_TEST_RESILIENCE_THROWAWAY=1`, which a harness sets on throwaway VMs alone: they
+stop Docker, or a VM by its hypervisor's own tool, for the whole machine. A scenario whose lab the
+launcher refuses on the hypervisor it is given (a VM on a network, on UTM: Isoloom's own rule,
+as the launch says it) is recorded as skipped with the launcher's words, before anything starts.
+
+## AWS tier
+
+The AWS CLI signed in (`aws login`), Terraform, `CYBERCTF_TEST_AWS_REGION` (default `eu-west-3`). The lab
+runs in that account through the launcher's own cloud start and stop, then the account is
+checked for anything of it left (instances, networks, key pairs).
+
+| Scenario                | Proves                                                                                            | Guards against (found)                                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attack-box-aws-docker` | cloud-docker: the box a container in the lab's cloud VM, its shell over SSH into it, nothing left | the box wrapped in a VM of its own; a lab left behind                                                                                                                                               |
+| `attack-box-aws-vm`     | cloud-vm: the box a Kali instance among the lab's, added by updating the run, nothing left        | Debian booted instead of Kali (the Marketplace AMI), a 20 GB disk under Kali's 25, the box as a target, the host name `kali`, set-up run again on every update, the instances replaced by an update |
+
+A sign-in that runs out mid-run left a lab's network behind once (an empty VPC, its firewall and
+key): the launcher now asks the cloud's CLI before every change and refuses, saying to sign in
+again (`runtime/isothrum/cloud_runs.rs`, unit-tested); the runner skips the AWS tier's scenarios
+signed out (a failure under `STRICT=1`).
+
+## Server tier
+
+A Proxmox or an ESXi host you provide, named by its knobs: `pnpm test:servers` (or
+`tests/integration/run.sh --tiers server`) runs the host's connection test, then a lab on it
+through the runner, as the launcher drives it, and on Proxmox its VM test, after which nothing of
+it is left. Without every
+setting a scenario needs, it is skipped, naming those not set:
+
+- `server-lab-proxmox-connection`: `CYBERCTF_TEST_PVE_HOST` and `_PASSWORD`; with `_TOKEN_ID`,
+  `_TOKEN_SECRET` and `_SSH_KEY` it also checks the API token (`_FINGERPRINT` pins a self-signed
+  certificate; `_STORAGE`, `_BRIDGE` and `_NODE` default to `local-lvm`, `vmbr1` and `pve`).
+- `server-lab-proxmox-setup`: the connection test's knobs, `_TOKEN_ID`, `_TOKEN_SECRET` and `_SSH_KEY`
+  all needed.
+- `server-lab-proxmox`: `CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN_ID`, `_TOKEN_SECRET`, `_NODE`,
+  `_BRIDGE`, `_SSH_KEY` (the snippet upload signs in to the node with it) and
+  `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus `_JUMP` when the lab bridge is internal to the node;
+  `_STORAGE` (VM disks, images and snippets; `local-lvm` by default) and `_FINGERPRINT` as for the
+  connection test.
+- `server-lab-vm-test-proxmox`: the same knobs as `server-lab-proxmox`.
+- `server-lab-esxi`: `CYBERCTF_TEST_ESXI_HOST` and `_PASSWORD`, plus `_DATASTORE` and `_NETWORK`.
+
+`--results <file>` records each scenario with its verdict and log, as every tier does.
+
+| Scenario                        | Proves                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `server-lab-proxmox-connection` | the Servers page's Test on Proxmox: root's password, a wrong one, a missing bridge; the API token and a wrong secret |
+| `server-lab-proxmox-setup`      | the Servers page's three setups on Proxmox: root's password, an API token, a key the node lets in; each one tested   |
+| `server-lab-proxmox`            | a VM lab on Proxmox: up, status, checks over SSH through the node, down                                              |
+| `server-lab-vm-test-proxmox`    | the Servers page's VM test on Proxmox: every step of its plan passes in order, nothing of it left                    |
+| `server-lab-esxi`               | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down                                             |
+
+## Bare-machine tier (a fresh machine, or check-only anywhere)
+
+The launcher's guided machine setup on a fresh, bare Windows or Linux guest, end to end and
+without a window: `integration_tests::setup::the_guided_setup_readies_this_machine`. It installs
+what the setup window would (the same plan, `machine::setup`, through the same functions as the
+window's commands), one action at a time with its own log, then checks each wanted tool ready by
+the machine report, runs the Docker and VM self-tests and starts and stops an example lab. It
+installs real tools as an administrator, so it is not in `tests/integration/run.sh`: a harness
+runs it on a fresh machine from the built test binary, pass after pass (a pass ends at WSL's
+restart or the docker group's new login), and gives its knobs (`CYBERCTF_TEST_SETUP_PATHS`,
+`_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`, `_CHECK_ONLY`, `_RESTART_EXIT`; the test's module
+documentation says each). Without them it returns at once. With `_RESTART_EXIT` (the products'
+workspace gives `75`), a pass that ends for a restart or a new login exits with that code once its
+records are written: the harness's cue to restart the machine and run the next pass.
+
+With `CYBERCTF_TEST_SETUP_CHECK_ONLY=1` it is safe on any machine, a developer's included: it runs
+the machine check and the plan exactly as the app does and writes the same report and records,
+but installs, starts, removes and restarts nothing, and runs no self-test or lab. Each item is
+`pass` or `fail` for what the check found, or `skip` with the reason `check-only: would <action>`
+for what the setup would do (`would install Vagrant`, `would run the Docker self-test`, a
+`ready:<tool>` that `would be ready once set up`).

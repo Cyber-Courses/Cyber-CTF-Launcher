@@ -1,0 +1,517 @@
+name: Release
+
+# Builds the Cyber CTF desktop launcher for macOS (universal), Windows and Linux (x64 + arm64) and
+# publishes the installers to a GitHub Release. Trigger by pushing a tag like `v0.1.0`
+# (or run manually). A tag build is published and sent to Homebrew + apt once every
+# platform is green; a manual run stays a draft.
+#
+# Beside the installers the release carries THIRD_PARTY_NOTICES (also inside each installed app),
+# CycloneDX SBOMs of the Rust and npm dependencies, SHA256SUMS of every asset with its keyless
+# Sigstore signature (SHA256SUMS.sigstore.json, cosign), a build provenance attestation of each
+# asset and an SBOM attestation of each package (`gh attestation verify <file> --repo <this repo>`).
+# A tag build says which signing secret is missing before building, and checks every signature it
+# made. docs/contributing/release-process.md walks a maintainer through it;
+# docs/admins/admin-guide.md ("Verify a download") shows a user how to check a download.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  # One release per tag/ref at a time; never cancel one mid-upload.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Least privilege at the top: only the jobs that write to the GitHub Release (third-party, release,
+# attest, publish) raise themselves to contents: write below; attest alone may sign attestations. prepare creates the draft with the cyber-ctf-creator
+# App token (not GITHUB_TOKEN), and the distribute/store reusable-workflow calls stay read-only.
+permissions:
+  contents: read
+
+jobs:
+  # The Tauri JS/Rust version guard. The gate runs it too, but this one is seconds long, so
+  # a tag with JS↔Rust drift would otherwise only fail inside tauri-action after the 5-platform
+  # build. Lockfile-only (reads pnpm-lock.yaml + Cargo.lock in seconds, no Rust toolchain); the
+  # draft and the build matrix both wait on it.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-node-pnpm
+        with:
+          install: "false"
+      - run: pnpm check:tauri
+      # A tag build ships to users: signed on Windows (Authenticode, Azure Artifact Signing) and
+      # macOS (Developer ID, notarized), with signed updates. Each build signs what it has secrets
+      # for (the sign steps below test each one), so a missing secret ships that platform unsigned,
+      # as 1.8.9 did, and this step says which in a warning, before any build: a release is not
+      # held back by one signature (v1.9.0 stopped here on the six Azure secrets, 2026-11-13). The
+      # step sees only whether each secret is set.
+      - name: Signing secrets (tag builds)
+        if: github.ref_type == 'tag'
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID != '' }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET != '' }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID != '' }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT != '' }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT != '' }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE != '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 != '' }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID != '' }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER != '' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID AZURE_SIGNING_ENDPOINT \
+            AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY APPLE_API_KEY_P8 APPLE_API_KEY_ID APPLE_API_ISSUER TAURI_SIGNING_PRIVATE_KEY; do
+            if [ "${!name}" != true ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::warning::These signing secrets aren't set, so what they sign ships unsigned: ${missing[*]}"
+            echo "Not signed: ${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # The whole check (gate.yml): tags don't trigger it, so a release runs it itself and stops on
+  # a red step. The draft, and every build after it, wait on it.
+  gate:
+    uses: ./.github/workflows/gate.yml
+
+  # The draft release, made once before the builds: each platform job only uploads to it.
+  # Created with the org's cyber-ctf-creator app: on v0.3.8 GITHUB_TOKEN was refused creating it
+  # ("Resource not accessible by integration") on every attempt, while uploading to an existing
+  # draft and publishing it still worked.
+  prepare:
+    needs: [preflight, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.draft.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.APP_ID_GENERATOR }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY_GENERATOR }}
+          owner: Cyber-Courses
+          repositories: Cyber-CTF-Launcher
+      - id: draft
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REF_NAME: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
+          tag="${REF_NAME:-v$version}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              echo "Release $tag exists."; exit 0
+            fi
+            if gh release create "$tag" --repo "${{ github.repository }}" --draft --target "${{ github.sha }}" \
+                --title "Cyber CTF v$version" --notes "Download the installer for your platform below."; then
+              exit 0
+            fi
+            echo "Creating $tag failed (attempt $attempt); retrying."
+            sleep $((attempt * 15))
+          done
+          exit 1
+
+  # What the release says about its third-party software, made once (it is the same on every
+  # platform): THIRD_PARTY_NOTICES (licence texts) and CycloneDX SBOMs, attached to the release,
+  # and the notices handed to each build below to go inside the installed app.
+  third-party:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Uploads the notices and SBOMs to the draft release.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-about@0.9.2,cargo-cyclonedx@0.5.9
+      - name: Notices and SBOMs
+        run: |
+          set -euo pipefail
+          # The SBOMs' timestamp is the commit's, so a rebuild of the same commit gives the same files.
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          pnpm notices THIRD_PARTY_NOTICES
+          pnpm sbom sbom
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: third-party-notices
+          path: THIRD_PARTY_NOTICES
+          if-no-files-found: error
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" THIRD_PARTY_NOTICES sbom/cyberctf-rust.cdx.json sbom/cyberctf-npm.cdx.json --clobber --repo "${{ github.repository }}"
+
+  release:
+    needs: [preflight, prepare, third-party]
+    # Uploads the built installers to the GitHub Release (tauri-action + the DMG re-upload).
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rust-targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          # Linux on ubuntu-22.04: its glibc is the floor the shipped .deb / AppImage target, so the
+          # installers run on older distros. Do not move this to a newer runner.
+          - platform: ubuntu-22.04
+            args: ""
+            rust-targets: ""
+          - platform: ubuntu-22.04-arm
+            args: ""
+            rust-targets: ""
+          # x64: the NSIS installer (per user) and the MSI (per machine, for Intune/GPO).
+          - platform: windows-latest
+            args: ""
+            rust-targets: ""
+          # Windows on Arm (Snapdragon PCs), built natively on GitHub's Arm runner. NSIS only: the
+          # MSI (for managed deployment) is built for x64.
+          - platform: windows-11-arm
+            args: "--bundles nsis"
+            rust-targets: ""
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - if: startsWith(matrix.platform, 'ubuntu')
+        uses: ./.github/actions/apt-deps
+        with:
+          extra-packages: curl wget file
+
+      # Node version comes from package.json "packageManager"; the composite installs the lockfile.
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{ matrix.rust-targets }}
+          # release builds the real frontend via `tauri build`, so no placeholder.
+          placeholder-frontend: "false"
+
+      # THIRD_PARTY_NOTICES (from the third-party job) goes inside the app, beside its resources.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: third-party-notices
+      - name: Bundle THIRD_PARTY_NOTICES
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s THIRD_PARTY_NOTICES
+          node -e '
+            const fs = require("fs"), p = "src-tauri/tauri.conf.json", c = JSON.parse(fs.readFileSync(p, "utf8"));
+            const r = c.bundle.resources ?? {};
+            if (Array.isArray(r)) throw new Error("bundle.resources is a list: make it a map (source: target) to add the notices");
+            c.bundle.resources = { ...r, "../THIRD_PARTY_NOTICES": "THIRD_PARTY_NOTICES" };
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+          '
+
+      # Windows Authenticode via Azure Artifact Signing (formerly Trusted Signing). Tauri runs
+      # signCommand on the app binary and the installers (NSIS, MSI). A tag build never gets here
+      # without the AZURE_* secrets (preflight); a manual run without them builds unsigned. The
+      # Store MSIX is signed by Microsoft either way. trusted-signing-cli is pinned: it signs with
+      # the release's Azure credentials.
+      - name: Set up Authenticode signing (Windows)
+        if: startsWith(matrix.platform, 'windows') && env.AZURE_CLIENT_ID != ''
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+        run: |
+          set -euo pipefail
+          cargo install trusted-signing-cli --version 0.11.0 --locked
+          # JavaScript in single quotes: its ${...} are template literals, not shell expansions.
+          # shellcheck disable=SC2016
+          node -e '
+            const fs = require("fs"), p = "src-tauri/tauri.conf.json", c = JSON.parse(fs.readFileSync(p, "utf8"));
+            const e = process.env;
+            c.bundle.windows = { ...c.bundle.windows, signCommand:
+              `trusted-signing-cli -e ${e.AZURE_SIGNING_ENDPOINT} -a ${e.AZURE_SIGNING_ACCOUNT} -c ${e.AZURE_SIGNING_PROFILE} -d CyberCTF %1` };
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+          '
+
+      # Notarization uses an App Store Connect API key. GitHub secrets can only hold
+      # text, so the .p8 is stored base64-encoded and written to a file here; the path
+      # and key id are exported for the tauri-action step below. macOS only.
+      - name: Prepare notarization API key (macOS)
+        if: matrix.platform == 'macos-latest' && env.APPLE_API_KEY_P8 != ''
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          echo "$APPLE_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/apple_api_key.p8"
+          echo "APPLE_API_KEY=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/apple_api_key.p8" >> "$GITHUB_ENV"
+
+      # macOS Developer ID signing cert. Exported only when the cert secret exists (like the
+      # notarization key above), so an absent cert yields an unsigned build rather than a failed
+      # `security import` on an empty value. tauri-action reads these from the job env.
+      - name: Set up macOS code signing
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERTIFICATE != ''
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          {
+            printf 'APPLE_CERTIFICATE<<_EOF_\n%s\n_EOF_\n' "$APPLE_CERTIFICATE"
+            printf 'APPLE_CERTIFICATE_PASSWORD<<_EOF_\n%s\n_EOF_\n' "$APPLE_CERTIFICATE_PASSWORD"
+            printf 'APPLE_SIGNING_IDENTITY<<_EOF_\n%s\n_EOF_\n' "$APPLE_SIGNING_IDENTITY"
+          } >> "$GITHUB_ENV"
+
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater artifact signing (set) - produces the signed .sig + latest.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS code signing: Developer ID Application cert (.p12) imported by tauri-action.
+          # Empty secrets = unsigned build. APPLE_API_KEY / APPLE_API_KEY_PATH come from the
+          # The notarization key and the signing cert come from the GITHUB_ENV set in the steps
+          # above (exported only when their secrets exist), so they are not listed here; an absent
+          # cert simply yields an unsigned build. APPLE_API_ISSUER is harmless when empty (it is
+          # only used alongside the key, which is itself absent then).
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # Read by trusted-signing-cli (Windows signCommand); unused elsewhere.
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: "Cyber CTF v__VERSION__"
+          releaseBody: "Download the installer for your platform below."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+          # latest.json's plain `windows-x86_64` entry (read by older launchers) stays the NSIS
+          # installer when an MSI is built too; newer ones read their installer's own entry.
+          updaterJsonPreferNsis: true
+
+      # Every Windows file Tauri signed must carry a valid Authenticode signature: the installers
+      # and the app inside them. Runs whenever signing was set up (always on a tag build).
+      - name: Verify the Authenticode signatures (Windows)
+        if: startsWith(matrix.platform, 'windows') && env.AZURE_CLIENT_ID != ''
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = 'src-tauri/target/release/bundle'
+          $files = @(Get-ChildItem "$bundle/nsis/*-setup.exe", "$bundle/msi/*.msi" -ErrorAction SilentlyContinue) +
+            @(Get-Item 'src-tauri/target/release/cyberctf-desktop.exe', 'src-tauri/target/release/cyberctf.exe')
+          if (-not ($files | Where-Object { $_.Extension -in '.msi' -or $_.Name -like '*-setup.exe' })) { throw 'No installer was built.' }
+          $bad = 0
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature -FilePath $f.FullName
+            Write-Host "$($f.Name): $($sig.Status) ($($sig.SignerCertificate.Subject))"
+            if ($sig.Status -ne 'Valid') { Write-Host "::error::$($f.Name) is not validly signed: $($sig.StatusMessage)"; $bad++ }
+          }
+          if ($bad -gt 0) { exit 1 }
+
+      # The app's code signature, deep and strict, and Gatekeeper's verdict on it (Developer ID,
+      # notarized and stapled by tauri-action). Runs whenever signing was set up (always on a tag
+      # build); Gatekeeper's check needs the notarization key too.
+      - name: Verify the code signature (macOS)
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          set -euo pipefail
+          app=$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
+          test -n "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier)='
+          if [ -n "${APPLE_API_KEY_PATH:-}" ]; then
+            spctl -a -vvv -t exec "$app"
+          fi
+
+      # tauri-action notarizes + staples the .app but ships the DMG wrapper un-notarized.
+      # Notarize + staple the DMG itself and replace it on the release so a downloaded
+      # DMG opens with no Gatekeeper warning. macOS + tag builds only.
+      - name: Notarize + staple the DMG (macOS)
+        if: matrix.platform == 'macos-latest' && github.ref_type == 'tag' && env.APPLE_API_KEY_PATH != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Tauri names the DMG itself (no odd characters); take the one there is.
+          # shellcheck disable=SC2012
+          dmg=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          echo "Notarizing $dmg"
+          xcrun notarytool submit "$dmg" \
+            --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+          xcrun stapler staple "$dmg"
+          spctl -a -vvv -t open --context context:primary-signature "$dmg"
+          gh release upload "$TAG" "$dmg" --clobber --repo "${{ github.repository }}"
+
+      # The runner is ephemeral, but don't leave the notarization key on disk any longer than needed.
+      - name: Remove the notarization API key (macOS)
+        if: always() && matrix.platform == 'macos-latest'
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/apple_api_key.p8"
+
+  # Every asset is on the draft (the DMG replaced by its notarized copy): SHA256SUMS of them all,
+  # signed keylessly with cosign (the certificate names this workflow at the tag, recorded in
+  # Sigstore's public log), a build provenance attestation of each asset and an SBOM attestation
+  # of each package (Sigstore-signed, stored by GitHub), so anyone can check a download came from
+  # this workflow and what it is built from (docs/admins/admin-guide.md, "Verify a download").
+  # Runs when the draft exists, whatever the builds did: a platform whose build failed is missing
+  # from the release, not a reason to ship nothing (every build's result is in the job graph, and
+  # `publish` names what is missing). Nothing built at all is the one failure.
+  attest:
+    needs: [prepare, release]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # read the draft's assets, upload SHA256SUMS and its signature
+      id-token: write # sign SHA256SUMS and the attestations (Sigstore, keyless: no key is stored)
+      attestations: write
+    steps:
+      - name: Checksums of every asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir assets
+          # A re-run finds the SHA256SUMS of the run before and its signature: they aren't subjects.
+          rm -f assets/SHA256SUMS assets/SHA256SUMS.sigstore.json
+          if [ -z "$(ls -A assets)" ]; then
+            echo "::error::No build uploaded an installer: nothing to publish."
+            exit 1
+          fi
+          (cd assets && sha256sum -- *) > SHA256SUMS
+          cat SHA256SUMS
+          # The packages the SBOMs describe: every asset but the SBOMs, the notices and the
+          # updater's manifest and signatures.
+          if ! grep -vE '  (.*\.cdx\.json|THIRD_PARTY_NOTICES|latest\.json|.*\.sig)$' SHA256SUMS > packages.sha256; then
+            echo "::error::No build uploaded an installer: nothing to publish."
+            exit 1
+          fi
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: SHA256SUMS
+      # The SBOMs (the third-party job's), each attested of every package: `gh attestation verify
+      # <file> --repo <this repo> --predicate-type https://cyclonedx.org/bom`.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: packages.sha256
+          sbom-path: assets/cyberctf-rust.cdx.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: packages.sha256
+          sbom-path: assets/cyberctf-npm.cdx.json
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+      # A keyless signature: the certificate names this workflow at the ref it ran for, and the
+      # signature is recorded in Sigstore's public transparency log (Rekor). Then checked as a user
+      # checks it (docs/admins/admin-guide.md, "Verify a download").
+      - name: Sign SHA256SUMS
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+          cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: Attach SHA256SUMS and its signature to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" SHA256SUMS SHA256SUMS.sigstore.json --clobber --repo "${{ github.repository }}"
+
+  # What built (the DMG notarized when it could be), checksummed and attested: take the draft live,
+  # naming the platforms whose build failed in its notes, then ship it to Homebrew and apt. Tag
+  # builds only; a manual run stays a draft to review.
+  publish:
+    needs: [attest, release]
+    if: always() && github.ref_type == 'tag' && needs.attest.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Takes the draft release live (gh release edit).
+    permissions:
+      contents: write
+    steps:
+      - name: The platforms missing from this release, in its notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' > assets.txt
+          missing=()
+          grep -q '_universal\.dmg$' assets.txt || missing+=("macOS (universal .dmg)")
+          grep -q '_amd64\.deb$' assets.txt || missing+=("Linux x64 (.deb, .rpm, AppImage)")
+          grep -q '_arm64\.deb$' assets.txt || missing+=("Linux arm64 (.deb, .rpm, AppImage)")
+          grep -q '_x64-setup\.exe$' assets.txt || missing+=("Windows x64 (.exe installer, .msi)")
+          grep -q '_arm64-setup\.exe$' assets.txt || missing+=("Windows on Arm (.exe installer)")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            note="Not in this release (its build failed; see the release workflow run): $(IFS='; '; echo "${missing[*]}")."
+            echo "::warning::$note"
+            echo "$note" >> "$GITHUB_STEP_SUMMARY"
+            gh release view "$TAG" --repo "${{ github.repository }}" --json body --jq .body > body.md
+            printf '\n\n> %s\n' "$note" >> body.md
+            gh release edit "$TAG" --repo "${{ github.repository }}" --notes-file body.md
+          fi
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "${{ github.repository }}"
+
+  # Called directly: a release published with GITHUB_TOKEN fires no release event.
+  distribute:
+    needs: publish
+    uses: ./.github/workflows/distribute.yml
+    with:
+      tag: ${{ github.ref_name }}
+    # Only the cyber-ctf-creator App credentials, not every repo secret.
+    secrets:
+      APP_ID_GENERATOR: ${{ secrets.APP_ID_GENERATOR }}
+      APP_PRIVATE_KEY_GENERATOR: ${{ secrets.APP_PRIVATE_KEY_GENERATOR }}
+
+  # Windows: the same release to the Microsoft Store (MSIX, signed by the Store). Its own job, so
+  # a Store hiccup (a submission still in certification blocks a new one) never holds back
+  # GitHub, Homebrew or apt.
+  store:
+    needs: publish
+    uses: ./.github/workflows/msix.yml
+    with:
+      tag: ${{ github.ref_name }}
+      # Repo variable STORE_AUTO_SUBMIT=false: leave the Store submission as a draft to review.
+      commit: ${{ vars.STORE_AUTO_SUBMIT != 'false' }}
+    # Only the Partner Center credentials, not every repo secret.
+    secrets:
+      STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+      STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+      STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}

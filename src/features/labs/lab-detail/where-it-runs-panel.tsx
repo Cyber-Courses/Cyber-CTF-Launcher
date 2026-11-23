@@ -1,0 +1,147 @@
+"use client";
+
+import { Cpu } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui/panel";
+import { StatusDot } from "@/components/ui/status-pill";
+import { runPlaces } from "@/features/labs/lab-runtime";
+import { PLACE_ICONS } from "@/features/labs/run-place-icons";
+import type { LabAnswer } from "@/features/labs/use-lab-answer";
+import type { LabRuntimeInfo } from "@/features/labs/use-labs";
+import { labRequirements, type LabRequirements, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
+import { cn } from "@/lib/class-names";
+import { useT, type MessageKey, type T } from "@/lib/i18n";
+import { useRead, valueOf } from "@/lib/use-read";
+import { gigabytes, MIB } from "@/lib/format";
+
+/** What a place the lab supports but the launcher isn't set up for yet tells the player to do. */
+const SETUP_HINT: Partial<Record<string, MessageKey>> = {
+  local_vm: "labs.detail.installHypervisor",
+  server: "labs.detail.connectServer",
+  cloud: "labs.detail.connectAccount",
+};
+
+/** A lab's minimum-to-run requirements, read from its spec at the catalogue's commit (null until
+ *  read, or when the lab has no machines of its own). */
+function useLabRequirements(labId: string, runtime: LabRuntimeInfo): LabRequirements | null {
+  const { repository, commit } = runtime;
+  const key = repository && commit ? `${labId}@${repository}/${commit}` : null;
+  return valueOf(useRead(key, () => labRequirements(labId, repository ?? "", commit ?? ""), "reading the lab's requirements"));
+}
+
+/** "2–6 vCPU · 2.7–13 GB RAM · 20–60 GB disk" from a lab's lightest-to-heaviest range, a single
+ *  value where the ends meet. Memory, which the spec counts in MiB, is in the decimal GB the rest of
+ *  the app shows (the machine's free memory beside it). */
+function requirementsSummary(t: T, r: LabRequirements): string {
+  const range = (min: number | string, max: number | string) => (min === max ? String(min) : `${String(min)}–${String(max)}`);
+  const gb = (mib: number) => gigabytes(mib * MIB);
+  return t("labs.detail.requirementsSummary", {
+    cpu: range(r.min.cpus, r.max.cpus),
+    ram: range(gb(r.min.memoryMb), gb(r.max.memoryMb)),
+    disk: range(r.min.diskGb, r.max.diskGb),
+  });
+}
+
+/** One place in the panel: ready (green), configurable (amber, with what to set up), or
+ *  unsupported by the lab at all (faint, "n/a"). */
+function PlaceRow({ place, t }: { place: ReturnType<typeof runPlaces>[number]; t: T }) {
+  const { key, state } = place;
+  const Icon = PLACE_ICONS[key];
+  const ready = state === "ready";
+  // Supported by the lab, but the launcher isn't set up for it yet: amber, with what to do.
+  const configurable = state === "configurable";
+  const hint = configurable ? SETUP_HINT[key] : undefined;
+  return (
+    <div
+      className="flex items-center gap-2.5 border-t border-border px-4 py-2 text-[0.8125rem] first:border-t-0"
+      title={state === "unsupported" ? t("labs.detail.notAvailable") : hint ? t(hint) : undefined}
+    >
+      <Icon className={cn("size-3.5 shrink-0", ready ? "text-jewel-text" : configurable ? "text-warning" : "text-faint opacity-50")} />
+      <span className={state === "unsupported" ? "text-faint" : "text-foreground"}>{t(`labs.places.${key}`)}</span>
+      {hint && <span className="ml-auto font-mono text-[0.6875rem] text-muted-foreground">{t(hint)}</span>}
+      {state === "unsupported" && <span className="ml-auto font-mono text-[0.6875rem] text-faint">{t("labs.detail.na")}</span>}
+    </div>
+  );
+}
+
+/** Every place the lab could run and its state, once the backend's run options are read (they
+ *  apply the administrator's policy, which the catalogue doesn't know): until then a line says
+ *  they are being read, and a failure is said with why, never read as the catalogue's guess. A lab
+ *  without a source to read them from (imported from a folder) goes by its runtime alone. */
+function Places({
+  runtime,
+  hostArch,
+  emulates,
+  setup,
+  read,
+}: {
+  runtime: LabRuntimeInfo;
+  hostArch: string;
+  emulates: boolean;
+  setup: { readyVms: Provider[]; hosts: ServerHost[] };
+  read: LabAnswer<LabRunOptions>;
+}) {
+  const t = useT();
+  if (read.pending) return <p className="px-4 py-2.5 text-[0.8125rem] text-muted-foreground">{t("labs.detail.placesReading")}</p>;
+  if (read.error) return <p className="px-4 py-2.5 text-[0.8125rem] text-destructive">{t("labs.detail.placesUnread", { why: read.error })}</p>;
+  return runPlaces(runtime, hostArch, emulates, { ...setup, options: read.value }).map((place) => <PlaceRow key={place.key} place={place} t={t} />);
+}
+
+/** Before it runs, the aside would otherwise be empty for a VM lab: say what the lab is and
+ *  where it can run, and what it needs, so the page reads as complete at rest. */
+export function WhereItRunsPanel({
+  labId,
+  runtime,
+  hostArch,
+  readyVms,
+  hosts,
+  optionsRead,
+  native,
+  emulates,
+  isDocker,
+  meta,
+  cost = null,
+}: {
+  labId: string;
+  runtime: LabRuntimeInfo;
+  hostArch: string;
+  /** The local hypervisors ready on this machine, so "VM here" reads as ready, not "install one". */
+  readyVms: Provider[];
+  /** The saved servers and cloud accounts, and the lab's run options as read (still being read,
+   *  or why they couldn't be): the page's own reads, which the launch picker shows too. */
+  hosts: ServerHost[];
+  optionsRead: LabAnswer<LabRunOptions>;
+  native: boolean;
+  emulates: boolean;
+  isDocker: boolean;
+  meta: string;
+  /** A cloud lab's estimated cost (null: none given, or not a cloud lab). */
+  cost?: string | null;
+}) {
+  const t = useT();
+  const requirements = useLabRequirements(labId, runtime);
+  return (
+    <Panel>
+      <PanelHeader title={t("labs.detail.whereItRuns")} meta={meta} />
+      <div>
+        <Places runtime={runtime} hostArch={hostArch} emulates={emulates} setup={{ readyVms, hosts }} read={optionsRead} />
+        {requirements && (
+          <div className="flex items-center gap-2.5 border-t border-border px-4 py-2 text-[0.8125rem]">
+            <Cpu className="size-3.5 shrink-0 text-faint" />
+            <span className="text-muted-foreground">{t("labs.detail.systemRequirements")}</span>
+            <span className="ml-auto font-mono text-[0.6875rem] text-foreground">{requirementsSummary(t, requirements)}</span>
+          </div>
+        )}
+        {runtime.runtime === "CLOUD" && (
+          <div className="border-t border-border px-4 py-2.5 text-[0.75rem] leading-relaxed text-muted-foreground">
+            {cost ? t("labs.cloud.billedEstimate", { cost }) : t("labs.cloud.billedWhileRunning")}
+          </div>
+        )}
+        {!native && (
+          <div className="flex items-center gap-2.5 border-t border-border px-4 py-2.5 text-[0.75rem] text-muted-foreground">
+            <StatusDot tone="warn" /> {isDocker ? t("labs.detail.emulatedContainers") : emulates ? t("labs.detail.emulatedQemu") : t("labs.detail.foreignCpu")}
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}

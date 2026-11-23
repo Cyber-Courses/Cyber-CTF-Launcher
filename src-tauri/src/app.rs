@@ -1,0 +1,530 @@
+//! The app shell: starting the launcher (or the runner service), its plugins, windows, menu and
+//! quitting, and the log file.
+
+pub mod events;
+pub mod logging;
+pub mod menu;
+pub mod operations;
+pub mod quit;
+pub(crate) mod runs;
+pub mod setup_window;
+pub mod updates;
+pub mod window;
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use tauri::{Manager, RunEvent, WindowEvent};
+
+use crate::platform::private_fs;
+use crate::{AppHandle, AppRuntime, account, commands, platform, runtime, terminal};
+
+type App = tauri::App<AppRuntime>;
+
+impl From<&AppHandle> for platform::AppDirs {
+    /// The app's folders, as Tauri resolves them for this app.
+    fn from(app: &AppHandle) -> platform::AppDirs {
+        let paths = app.path();
+        platform::AppDirs::new(paths.app_data_dir().ok(), paths.app_cache_dir().ok())
+    }
+}
+
+/// Opens folder `path` in the system's file manager (through the opener plugin).
+pub fn open_folder(path: &std::path::Path) -> crate::error::Result<()> {
+    tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| crate::error::Error::Invalid(format!("couldn't open {}: {e}", path.display())))
+}
+
+/// Records this process's tools from now on in the runner's ledger in the app's data folder,
+/// which a later start reads to end what an app killed outright left running; the
+/// folder, when the OS gave the app's.
+pub(crate) fn record_tools(app: &AppHandle) -> Option<PathBuf> {
+    let dir = platform::AppDirs::from(app).data_file(platform::processes::LEDGER_DIR)?;
+    platform::processes::keep_ledger_in(dir.clone());
+    Some(dir)
+}
+
+/// How often expired cloud labs are looked for and torn down.
+const REAP_EVERY: Duration = Duration::from_secs(300);
+
+/// What the start of the process sets up for either role that runs Tauri: the context (the
+/// embedded config and assets, pointed at an end-to-end run's folders) and what was found of the
+/// system proxy, for the log once it is up.
+struct Started {
+    context: tauri::Context<AppRuntime>,
+    proxy_note: Option<String>,
+}
+
+/// Runs the launcher, as the app or as the runner service of a home (see `crate::run`).
+///
+/// # Errors
+///
+/// When Tauri can't build the app (its embedded configuration is broken).
+pub fn run() -> tauri::Result<()> {
+    // Before anything reads or writes a folder: an app given an end-to-end run's folder it won't
+    // keep to (a build without `wdio`) stops here rather than use the user's own folders.
+    if let Some(why) = platform::test_root::refusal() {
+        eprintln!("Cyber CTF won't start: {why}");
+        std::process::exit(2);
+    }
+    // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
+    logging::install_panic_hook();
+    // SAFETY: called first thing, before anything starts a thread (Tauri, tokio and the plugins
+    // all start later).
+    #[allow(unsafe_code, reason = "the start's claim to be the only thread, which only `run` can make")]
+    let Started { context, proxy_note } = start(unsafe { platform::sys::SingleThreaded::assume() });
+    let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
+    app.run(|app, event| on_run_event(app, &event));
+    Ok(())
+}
+
+/// The start both Tauri roles share, while `only` this thread runs: GUI launches don't get the
+/// shell PATH (docker, vagrant, ovftool) nor, on macOS, the proxy, so both are set here, before
+/// any thread can read the environment. The OVF Tool the setup places in the app data folder is
+/// on `PATH` too, for the runner service and the labs' runs.
+#[allow(clippy::needless_pass_by_value, reason = "taking the token ends the start's claim to be the only thread")]
+fn start(only: platform::sys::SingleThreaded) -> Started {
+    // `<exe> serve --home <home>`: this process is the runner service of that home (see
+    // `run_service::host`), nothing of the app starts.
+    if let Some(code) = crate::run_service::host::serve_if_asked(std::env::args()) {
+        std::process::exit(code);
+    }
+    crate::runtime::server::connection_test::mark_started();
+    // One context for whichever role this process plays. Its main window gets the app's frame
+    // (none on Linux and Windows) before it is created.
+    let mut context = tauri::generate_context!();
+    window::frame_configured(context.config_mut());
+    // An end-to-end run's app (a `wdio` build given the run's folder) keeps all of its own there,
+    // never in the user's folders; the runner service it starts gets the same context.
+    let test_root = platform::test_root::root();
+    if let Some(root) = &test_root {
+        test_root_config(context.config_mut(), root);
+    }
+    platform::env_path::augment(&only, &own_tool_dirs(&context.config().identifier, test_root.as_deref()));
+    #[cfg(target_os = "macos")]
+    let proxy_note = platform::proxy::inherit_system_proxy(&only);
+    #[cfg(not(target_os = "macos"))]
+    let proxy_note = None;
+    Started { context, proxy_note }
+}
+
+/// The app's services, made once here and reached through the app's state: the app and a unit
+/// test's app (`testing::test_app`) are put together alike.
+pub(crate) fn services(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntime> {
+    builder.manage(terminal::Terminals::default())
+}
+
+/// The app: its plugins, window and menu events, and setup (`proxy_note`: what startup found of
+/// the system proxy, for the log).
+fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
+    let mut builder = services(tauri::Builder::<AppRuntime>::new());
+    // First: a cyberctf:// link opened while the app runs goes to that window (Windows/Linux would
+    // otherwise start a second instance). Off during a GUI e2e run (TAURI_WEBDRIVER_PORT set), so a
+    // test instance runs beside an installed app and parallel runs don't collide.
+    if std::env::var_os("TAURI_WEBDRIVER_PORT").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // The windows may be hidden (finishing in the background) or minimized: bring the main
+            // one back, and keep the app open instead of exiting once its deploys end.
+            quit::stop_lingering();
+            window::reveal_main(app);
+        }));
+    }
+    builder = builder
+        .plugin(logging::plugin(logging::APP_LOG))
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init());
+    // WebdriverIO e2e: the embedded W3C WebDriver server and the plugin @wdio/tauri-service checks
+    // for. Behind the `wdio` feature, so a release build carries neither.
+    #[cfg(feature = "wdio")]
+    {
+        builder = builder.plugin(tauri_plugin_wdio::init()).plugin(tauri_plugin_wdio_webdriver::init()).plugin(wdio_storage_plugin());
+    }
+    builder
+        // Quitting mid-deploy can leave resources running (a cloud apply keeps billing). Hold the
+        // window open and let the frontend confirm; the red-button close is handled here, Cmd+Q /
+        // app exit in `on_run_event`.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && quit::intercept(window.app_handle())
+            {
+                api.prevent_close();
+            }
+        })
+        .menu(menu::build)
+        .on_menu_event(|app, event| menu::on_event(app, &event))
+        .setup(|app| {
+            setup(app);
+            if let Some(note) = proxy_note {
+                log::info!("{note}");
+            }
+            #[cfg(feature = "wdio")]
+            wdio_seed(app.handle());
+            Ok(())
+        })
+}
+
+/// Points the app's folders (`config`, before the app is built) and its windows' webview data at
+/// an end-to-end run's `root` (`platform::test_root`): Tauri's `appDirectoriesOverride` puts its
+/// data, config and local data folders in `<root>/app`, with `caches/` and `logs/` in it.
+fn test_root_config(config: &mut tauri::Config, root: &std::path::Path) {
+    config.app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(platform::test_root::app_dir(root)));
+    for window in &mut config.app.windows {
+        window.data_store_identifier = Some(platform::test_root::webview_store_of(root));
+    }
+}
+
+/// The folders of the tools the app places itself, under the data folder of the app
+/// `identifier` (an end-to-end run's, under its `test_root`): the OVF Tool's.
+fn own_tool_dirs(identifier: &str, test_root: Option<&std::path::Path>) -> Vec<PathBuf> {
+    let data = match test_root {
+        Some(root) => Some(platform::test_root::app_dir(root)),
+        None => platform::env_path::app_data_dir(identifier),
+    };
+    data.map(|data| crate::machine::tools::ovftool::managed_dir(&data)).into_iter().collect()
+}
+
+/// Under the `wdio` feature only: `CYBERCTF_WDIO_STORAGE`, a JSON object of strings, written into
+/// the webview's localStorage before the page's own scripts run (a plugin's initialization script,
+/// once per launch: later documents, a reload or another window, find the launch's mark and leave
+/// the storage alone), so an e2e spec opens the app already set up (onboarded, its locale, its
+/// knobs) instead of setting the storage and reloading the page: on Windows that reload ended
+/// the app by fast fail (0xC0000409) in about two specs of five, seconds after it opened.
+#[cfg(feature = "wdio")]
+fn wdio_storage_plugin() -> tauri::plugin::TauriPlugin<crate::AppRuntime> {
+    let builder = tauri::plugin::Builder::new("wdio-storage");
+    match std::env::var("CYBERCTF_WDIO_STORAGE").ok().and_then(|json| wdio_storage_script(&json, std::process::id())) {
+        Some(script) => builder.js_init_script(script).build(),
+        None => builder.build(),
+    }
+}
+
+/// The initialization script that seeds localStorage with `json`'s items (an object of strings;
+/// anything else, or nothing, seeds nothing), keyed by the launch's `mark` so it runs once per
+/// launch. The items reach the page as a JSON literal, never as script.
+#[cfg(any(feature = "wdio", test))]
+fn wdio_storage_script(json: &str, mark: u32) -> Option<String> {
+    let items: serde_json::Map<String, serde_json::Value> = serde_json::from_str(json).ok()?;
+    if items.is_empty() || !items.values().all(serde_json::Value::is_string) {
+        return None;
+    }
+    let literal = serde_json::to_string(&items).ok()?;
+    Some(format!(
+        "(() => {{ try {{ if (localStorage.getItem('__wdio_storage_mark__') === '{mark}') return; \
+         for (const k of Object.keys(localStorage)) if (k.startsWith('__wdio_')) localStorage.removeItem(k); \
+         for (const [k, v] of Object.entries({literal})) localStorage.setItem(k, v); \
+         localStorage.setItem('__wdio_storage_mark__', '{mark}'); }} catch (_) {{}} }})();"
+    ))
+}
+
+#[cfg(test)]
+mod wdio_storage_tests {
+    use super::wdio_storage_script;
+
+    #[test]
+    fn seeds_an_object_of_strings_once_per_launch() {
+        let script = wdio_storage_script(r#"{"cyberctf.onboarded": "1", "cyberctf.locale": "en"}"#, 42).unwrap();
+        assert!(script.contains(r"localStorage.getItem('__wdio_storage_mark__') === '42'"));
+        assert!(script.contains(r#"{"cyberctf.onboarded":"1","cyberctf.locale":"en"}"#));
+        assert!(script.contains("k.startsWith('__wdio_')"));
+    }
+
+    #[test]
+    fn seeds_nothing_from_anything_else() {
+        assert!(wdio_storage_script("", 1).is_none());
+        assert!(wdio_storage_script("{}", 1).is_none());
+        assert!(wdio_storage_script(r#"{"a": 1}"#, 1).is_none());
+        assert!(wdio_storage_script(r#"["a"]"#, 1).is_none());
+        assert!(wdio_storage_script("alert(1)", 1).is_none());
+    }
+
+    #[test]
+    fn a_value_is_a_json_literal_never_script() {
+        let script = wdio_storage_script(r#"{"k": "</script><script>alert(1)</script>"}"#, 1).unwrap();
+        assert!(script.contains(r#""k":"</script><script>alert(1)</script>""#));
+        assert!(!script.contains("</script><script>alert(1)</script>'"));
+    }
+}
+
+/// Under the `wdio` feature only: if `CYBERCTF_WDIO_SEED_LAB` names a lab folder, import and start
+/// it on launch, so a GUI e2e has a running lab without the native import picker or a sign-in.
+#[cfg(feature = "wdio")]
+fn wdio_seed(handle: &crate::AppHandle) {
+    let Some(path) = std::env::var_os("CYBERCTF_WDIO_SEED_LAB") else { return };
+    let handle = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let src = std::path::PathBuf::from(path);
+        let started = match crate::labs::local_id(&src) {
+            Ok(id) => crate::labs::run_local(&platform::AppDirs::from(&handle), &id, &src, |_| {}).await.map(|_| ()),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = started {
+            log::error!("wdio: the seed lab {} didn't start: {e}", src.display());
+        }
+    });
+}
+
+fn setup(app: &mut App) {
+    logging::log_startup(app.handle(), "app");
+    // Before any tool starts: this app's tools are recorded, and those an app killed outright
+    // left running are ended (Vagrant's lock and Terraform's state free again).
+    if let Some(dir) = record_tools(app.handle()) {
+        tauri::async_runtime::spawn(async move {
+            platform::processes::end_left_behind(&dir).await;
+        });
+    }
+    // Once the log is up, so what is wrong with the policy is in it.
+    let policy = platform::policy::current();
+    register_updater(app.handle(), updates::channel(policy));
+    // Before anything reads its settings: what a virtualized Store build saved (never into an
+    // end-to-end run's folders).
+    #[cfg(windows)]
+    if platform::test_root::root().is_none() {
+        let paths = app.path();
+        platform::msix_data::migrate(&app.config().identifier, paths.app_local_data_dir().ok().as_deref(), paths.app_data_dir().ok().as_deref());
+    }
+    // The app's data (deploy jobs, Terraform state, keys) is this user's alone.
+    if let Ok(dir) = app.path().app_data_dir() {
+        narrow_to_this_user(&dir);
+    }
+    // The launcher's store, opened before anything reads it: a store that can't be opened is in
+    // the log at once.
+    if let Err(e) = crate::store::open(&platform::AppDirs::from(app.handle())) {
+        log::error!("the launcher's store can't be opened: {e}");
+    }
+    // Every lab operation's events to the webview, and the operations an earlier run of the app
+    // left running picked up.
+    crate::app::runs::start(app.handle());
+    // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
+    // Not an end-to-end run's app: the user's links stay with the app they chose.
+    #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+    if platform::test_root::root().is_none() {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        if let Err(e) = app.deep_link().register_all() {
+            log::warn!("couldn't register cyberctf:// links with the system (sign-in links won't come back to the app): {e}");
+        }
+    }
+    // Sign-in coming back as a cyberctf://auth/callback link goes to the sign-in waiting for it
+    // (lab links stay the frontend's), and the app comes forward from the browser.
+    {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        let handle = app.handle().clone();
+        app.deep_link().on_open_url(move |event| {
+            if event.urls().iter().any(account::auth::deliver_link) {
+                window::reveal_main(&handle);
+            }
+        });
+    }
+    // Bring your own compute: register this machine and run the player's labs on it, each once
+    // the player approves it here. The agent is domain code; the app shell gives it the data
+    // folder and the two effects it reaches the player through (the launch prompt, a system
+    // notification).
+    let dirs = platform::AppDirs::from(app.handle());
+    let agent = account::agent::Deps::new(dirs.clone(), agent_prompt(app.handle()), agent_notify(app.handle()), agent_end_operations(dirs));
+    tauri::async_runtime::spawn(account::agent::run(agent));
+    spawn_reaper(app.handle().clone());
+}
+
+/// The in-app updater, only when this copy updates itself: a package manager's copy updates
+/// through it, and a policy can turn it off (see `updates`). Without the plugin nothing in the
+/// webview can check for or install an update.
+fn register_updater(handle: &AppHandle, channel: updates::Channel) {
+    if channel != updates::Channel::InApp {
+        log::info!("in-app updates off: {channel:?}");
+        return;
+    }
+    if let Err(e) = handle.plugin(tauri_plugin_updater::Builder::new().build()) {
+        log::error!("couldn't start the updater: {e}");
+    }
+}
+
+/// The background agent's launch prompt: an event the webview renders as a confirmation, with
+/// the main window brought back (it may be hidden or minimized) so the player sees it.
+fn agent_prompt(handle: &AppHandle) -> std::sync::Arc<account::agent::PromptLaunch> {
+    let handle = handle.clone();
+    std::sync::Arc::new(move |request: &account::agent::LaunchRequest| {
+        events::emit(&handle, events::LAUNCH_CONFIRM, request);
+        window::reveal_main(&handle);
+    })
+}
+
+/// The background agent's system notification (a website launch started on this machine).
+fn agent_notify(handle: &AppHandle) -> std::sync::Arc<account::agent::Notify> {
+    let handle = handle.clone();
+    std::sync::Arc::new(move |title: &str, body: &str| notify(&handle, title, body))
+}
+
+/// How the background agent ends what the runner service runs on a lab before it stops the lab.
+fn agent_end_operations(dirs: platform::AppDirs) -> std::sync::Arc<account::agent::EndOperations> {
+    std::sync::Arc::new(move |id: &str| {
+        let (dirs, id) = (dirs.clone(), id.to_owned());
+        Box::pin(async move { crate::runtime::isothrum::end_operations(&dirs, &id).await })
+    })
+}
+
+/// Timed teardown of expired cloud labs: once on startup, then every 5 minutes, so a forgotten
+/// (or app-was-closed) lab stops billing instead of lingering.
+fn spawn_reaper(app: AppHandle) {
+    tauri::async_runtime::spawn(every_pass(REAP_EVERY, move || {
+        let app = app.clone();
+        async move {
+            let dirs = platform::AppDirs::from(&app);
+            let report = move |title: &str, body: &str| notify(&app, title, body);
+            Box::pin(runtime::reap_expired_labs(&dirs, &report)).await;
+        }
+    }));
+}
+
+/// A system notification, when the app has the notification plugin (not in unit tests): what the
+/// agent and the auto-stop reaper, tauri-free, reach the player through. One that can't be shown
+/// is logged, since it may be the only word that a cloud lab was stopped, or failed to stop.
+fn notify(app: &AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if app.try_state::<tauri_plugin_notification::Notification<AppRuntime>>().is_some() {
+        shown(title, app.notification().builder().title(title).body(body).show());
+    }
+}
+
+/// Logs a notification titled `title` that couldn't be shown.
+fn shown<E: std::fmt::Display>(title: &str, result: std::result::Result<(), E>) {
+    if let Err(e) = result {
+        log::warn!("the notification \"{title}\" couldn't be shown: {e}");
+    }
+}
+
+/// Runs `pass` now, then again `every` after each one ends, each pass on a task of its own: a
+/// panic in one pass (the panic hook logs it) ends that pass, not the loop. A bare loop ended
+/// for good on the first panic, and expired cloud labs then kept billing until a restart.
+async fn every_pass<F, Fut>(every: Duration, mut pass: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    loop {
+        if let Err(e) = tauri::async_runtime::spawn(pass()).await {
+            log::error!("a background pass ended early: {e}");
+        }
+        tokio::time::sleep(every).await;
+    }
+}
+
+fn on_run_event(app: &AppHandle, event: &RunEvent) {
+    // Cmd+Q, the Quit menu item and a system shutdown come through here, not the window close
+    // event. Intercept the same way, so a deploy in progress isn't cut off.
+    if let RunEvent::ExitRequested { api, code, .. } = event
+        && code.is_none()
+        && quit::intercept(app)
+    {
+        api.prevent_exit();
+    }
+    if let RunEvent::Exit = event {
+        platform::processes::end_all_now();
+        app.state::<terminal::Terminals>().close_all();
+        crate::screen::close_all();
+    }
+}
+
+/// Makes the app's data folder `dir` this user's alone; one that can't be is said in the log (its
+/// files then keep the folder's own permissions), and the app goes on.
+fn narrow_to_this_user(dir: &std::path::Path) {
+    if let Err(e) = private_fs::create_dir(dir) {
+        log::warn!("the app's data folder {} couldn't be made this user's alone: {e}", dir.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// The app starts with the OVF Tool's own folder on its PATH: the one the setup places it in,
+    /// under the data folder Tauri resolves for this app.
+    #[test]
+    fn the_ovftool_folder_the_setup_places_into_is_on_the_startup_path() {
+        let t = crate::testing::test_app::TestApp::new();
+        let dirs = super::own_tool_dirs(&t.handle().config().identifier, None);
+        assert_eq!(dirs, [crate::machine::tools::ovftool::managed_dir(t.data())]);
+        // An end-to-end run's app: the one under the run's folder, never the user's.
+        let root = std::env::temp_dir().join("cyberctf-e2e-run");
+        let dirs = super::own_tool_dirs(&t.handle().config().identifier, Some(&root));
+        assert_eq!(dirs, [crate::machine::tools::ovftool::managed_dir(&root.join("app"))]);
+    }
+
+    /// An end-to-end run's app keeps every folder Tauri resolves, and its windows' webview data,
+    /// under the run's folder, on every OS.
+    #[test]
+    fn a_runs_app_keeps_every_folder_and_its_webviews_data_under_the_root() {
+        use tauri::Manager;
+        let root = std::env::temp_dir().join(format!("cyberctf-e2e-root-{}", rand::random::<u32>()));
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().identifier = format!("com.cyberctf.unit-test.{}-{}", std::process::id(), rand::random::<u64>());
+        context.config_mut().app.windows.push(tauri::utils::config::WindowConfig::default());
+        super::test_root_config(context.config_mut(), &root);
+        let store = crate::platform::test_root::webview_store_of(&root);
+        assert!(context.config().app.windows.iter().all(|w| w.data_store_identifier == Some(store)));
+        let app = tauri::test::mock_builder().build(context).expect("mock app");
+        let paths = app.path();
+        let app_dir = root.join("app");
+        assert_eq!(paths.app_data_dir().unwrap(), app_dir);
+        assert_eq!(paths.app_config_dir().unwrap(), app_dir);
+        // The webviews' data on Linux and Windows.
+        assert_eq!(paths.app_local_data_dir().unwrap(), app_dir);
+        assert_eq!(paths.app_cache_dir().unwrap(), app_dir.join("caches"));
+        assert_eq!(paths.app_log_dir().unwrap(), app_dir.join("logs"));
+        assert_eq!(crate::platform::AppDirs::from(app.handle()).data().unwrap(), app_dir);
+    }
+
+    #[test]
+    fn a_data_folder_that_cant_be_narrowed_is_said_in_the_log() {
+        // Regression: the failure was dropped.
+        let file = std::env::temp_dir().join(format!("cyberctf-not-a-dir-{}", rand::random::<u32>()));
+        std::fs::write(&file, "").unwrap();
+        crate::testing::logs::take_warnings();
+        super::narrow_to_this_user(&file);
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.contains("couldn't be made this user's alone")), "{logged:?}");
+        std::fs::remove_file(file).unwrap();
+    }
+
+    #[test]
+    fn a_notification_that_cant_be_shown_is_logged() {
+        // Regression: both notification helpers dropped show()'s error, one of them telling the
+        // player a cloud lab was auto-stopped, or failed to stop.
+        crate::testing::logs::take_warnings();
+        super::shown("Lab stopped", Ok::<(), String>(()));
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
+        super::shown("Lab stopped", Err("no notification center"));
+        assert_eq!(crate::testing::logs::take_warnings(), ["the notification \"Lab stopped\" couldn't be shown: no notification center"]);
+        // Without the plugin (unit tests): nothing to show, nothing to fail.
+        super::notify(crate::testing::test_app::TestApp::new().handle(), "Lab stopped", "body");
+    }
+
+    #[tokio::test]
+    async fn a_panicking_pass_never_ends_the_loop() {
+        // Regression: the reaper was a bare loop, so one panic in a pass stopped cloud auto-stop
+        // for the rest of the session.
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let passes = Arc::new(AtomicUsize::new(0));
+        let counted = passes.clone();
+        let looping = tokio::spawn(super::every_pass(std::time::Duration::from_millis(1), move || {
+            let n = counted.fetch_add(1, Ordering::SeqCst);
+            async move { assert!(n > 0, "the first pass panics") }
+        }));
+        let waited = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while passes.load(Ordering::SeqCst) < 3 {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        looping.abort();
+        assert!(waited.is_ok(), "passes ran after the one that panicked");
+    }
+
+    #[test]
+    fn the_webview_loads_images_from_the_app_and_the_account_pictures_host_only() {
+        // `img-src https:` let any page the webview rendered load (and beacon to) any host. The
+        // one remote image is the account's picture: cyber-auth's sign-in is GitHub's, whose
+        // avatars come from avatars.githubusercontent.com (any other shows the initials).
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let img = conf["app"]["security"]["csp"]["img-src"].as_str().unwrap();
+        assert_eq!(img.split_whitespace().collect::<Vec<_>>(), ["'self'", "data:", "https://avatars.githubusercontent.com"]);
+    }
+}

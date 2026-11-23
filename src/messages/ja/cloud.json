@@ -1,0 +1,56 @@
+{
+  "screen": {
+    "title": "クラウド",
+    "lead": "自分のアカウント上の使い捨てインスタンス。料金は自分に請求され、自動で停止します。",
+    "setUp": "クラウドプロバイダーをセットアップ",
+    "overOne": "{name} は月間予算を超えています。予算を引き上げるか翌月になるまで、新しいラボは起動できません。",
+    "overMany": "{count} 件のアカウントが月間予算を超えています。予算を引き上げるか翌月になるまで、新しいラボは起動できません。",
+    "runningNow": "実行中",
+    "billingWhileRunning": "実行中は課金されます",
+    "catalogueUnread": "ラボのカタログを読み込めませんでした（{why}）。そのため、アカウントで実行中のラボが「実行中」に表示されない場合があります。",
+    "autoStops": "{time} に自動停止",
+    "stop": "停止",
+    "loading": "読み込み中…",
+    "accounts": "アカウント",
+    "billedOnly": "ラボの実行中のみ課金",
+    "budgetGuard": "予算ガード · {name}",
+    "ofLimit": "/ {limit}",
+    "overBudget": "予算超過",
+    "autoStopAfter": "{hours} 時間後に自動停止",
+    "noAutoStop": "自動停止なし"
+  },
+  "empty": {
+    "title": "接続されたクラウドアカウントはありません",
+    "description": "自分のクラウドアカウントを接続すると、各ラボを使い捨てのインスタンスで実行し、停止すると破棄されます。"
+  },
+  "account": {
+    "apiToken": "API トークン",
+    "apiKey": "API キー",
+    "cliSignIn": "CLI サインイン",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "CLI 認証情報",
+    "accessKeys": "アクセスキー",
+    "autoStop": "{hours}時間で自動停止",
+    "noAutoStop": "自動停止なし",
+    "budget": "予算 {amount}/月",
+    "spentThisMonth": "今月 {amount}",
+    "status": {
+      "testing": "テスト中…",
+      "notTested": "未テスト",
+      "connected": "接続済み",
+      "needsAttention": "要確認",
+      "failed": "失敗",
+      "overBudget": "予算超過"
+    },
+    "remove": "削除",
+    "test": "テスト",
+    "edit": "編集",
+    "removeTitle": "{name} を削除しますか？",
+    "removeBody": "Cyber CTF はこのアカウントの登録を削除し、保存したキーを削除します。クラウドアカウント自体は何も変わらず、後でもう一度接続できます。",
+    "removeAccount": "アカウントを削除"
+  },
+  "connect": {
+    "title": "クラウドプロバイダーを接続",
+    "provider": "{provider} を接続"
+  }
+}

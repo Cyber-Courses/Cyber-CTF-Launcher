@@ -1,0 +1,2 @@
+system default hello-vm_web.img /var/lib/libvirt/images/hello-vm_web.img
+system default cloud-image-VAGRANTSLASH-debian-12_vagrant_box_image_20260923.2610.0_box.img /var/lib/libvirt/images/cloud-image-VAGRANTSLASH-debian-12_vagrant_box_image_20260923.2610.0_box.img

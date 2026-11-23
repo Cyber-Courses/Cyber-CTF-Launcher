@@ -1,0 +1,181 @@
+"use client";
+
+import { HardDrive } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { LogConsole } from "@/components/ui/log-console";
+import { Requirement } from "@/features/machine/setup-steps/parts";
+import { PROVIDER_NAMES, installDependency, installVagrantPlugin } from "@/lib/tauri";
+import { progressAsLog } from "@/features/machine/install-asks";
+import { Step } from "@/features/servers/host-setup/form";
+import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
+import { OvftoolRequirement } from "@/features/servers/host-setup/ovftool-requirement";
+import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
+import { useT, type T } from "@/lib/i18n";
+import { InstallsOffNote } from "@/components/installs-off-note";
+
+/** The install log's title: the tool it installs, once one is (the log's own title before). */
+const logTitle = (t: T, tool: string | null) => (tool ? t("servers.setup.tools.install", { name: tool }) : undefined);
+
+export function ToolsStep({ s }: { s: HostSetup }) {
+  const t = useT();
+  const { report, onRefresh, onDone, cloudProvider } = s;
+  const { v } = s.form;
+  const { cloud } = s.traits;
+  const { i, next, back } = s.nav;
+  const { pluginLog, toolLabel, toolBusy, cloudHasCli, toolsOk } = s.tools;
+  return (
+    <Step
+      icon={HardDrive}
+      title={cloud ? t("servers.setup.tools.titleCloud") : t("servers.setup.tools.titleServer")}
+      description={
+        cloud
+          ? cloudHasCli
+            ? t("servers.setup.tools.descriptionCli", { cloud: PROVIDER_NAMES[cloudProvider] })
+            : t("servers.setup.tools.descriptionToken", { cloud: PROVIDER_NAMES[cloudProvider] })
+          : t("servers.setup.tools.descriptionServer", { kind: PROVIDER_NAMES[v.provider] })
+      }
+    >
+      <div className="surface-panel overflow-hidden rounded-control">
+        {!report ? (
+          <div className="flex items-center gap-2 px-4 py-3 text-[0.8125rem] text-muted-foreground">
+            <Spinner className="size-4" /> {t("servers.setup.tools.checking")}
+          </div>
+        ) : cloud ? (
+          <CloudTools s={s} />
+        ) : v.provider === "vmware_esxi" ? (
+          <EsxiTools s={s} />
+        ) : (
+          <TerraformRequirement s={s} detail={report.terraform.installed ? null : t("servers.setup.tools.terraformProxmox")} />
+        )}
+      </div>
+      {s.tools.installsOff && !toolsOk && <InstallsOffNote className="mt-2" />}
+      {pluginLog && (
+        <div className="mt-3">
+          <LogConsole lines={pluginLog} running={toolBusy} title={logTitle(t, toolLabel)} />
+        </div>
+      )}
+      {/* First when the provider was chosen before the window opened: Cancel, not Back. */}
+      <BackNav onBack={back} onCancel={i === 0 ? onDone : undefined}>
+        <span className="flex gap-2">
+          {!toolsOk && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                onRefresh();
+              }}
+            >
+              {t("servers.setup.nav.recheck")}
+            </Button>
+          )}
+          <ContinueButton onClick={next} disabled={!toolsOk} />
+        </span>
+      </BackNav>
+    </Step>
+  );
+}
+
+/** A cloud account's tools: its CLI (for the clouds that sign in with one), then Terraform. */
+function CloudTools({ s }: { s: HostSetup }) {
+  const t = useT();
+  const { cloudProvider } = s;
+  const { canInstallTools, installTool, cloudCli, cloudCliTool, cloudCliOk, terraformOk } = s.tools;
+  return (
+    <>
+      {cloudCli && (
+        <Requirement
+          ok={cloudCliOk}
+          title={t("servers.setup.tools.cliTitle", { cloud: PROVIDER_NAMES[cloudProvider] })}
+          detail={cloudCliOk ? (cloudCliTool?.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.cliDetail", { cli: cloudCli.program })}
+          action={
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={!canInstallTools}
+              onClick={() => {
+                installTool(`${cloudCli.program} CLI`, (log) => installDependency(cloudCli.dependency, progressAsLog(log)));
+              }}
+            >
+              {t("servers.setup.tools.install", { name: cloudCli.program })}
+            </Button>
+          }
+        />
+      )}
+      <TerraformRequirement s={s} detail={terraformOk ? null : t("servers.setup.tools.terraformCloud")} />
+    </>
+  );
+}
+
+/** An ESXi host's tools: Vagrant, its ESXi plugin, and VMware's OVF Tool (a download, or inside
+ *  VMware's desktop hypervisor). */
+function EsxiTools({ s }: { s: HostSetup }) {
+  const t = useT();
+  const { report } = s;
+  const { canInstallTools, installTool, vagrantOk, esxiPluginOk, esxiPlugin } = s.tools;
+  const plugin = esxiPlugin ?? "";
+  return (
+    <>
+      <Requirement
+        ok={vagrantOk}
+        title="Vagrant"
+        detail={vagrantOk ? (report?.vagrant.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.vagrant")}
+        action={
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={!canInstallTools}
+            onClick={() => {
+              installTool("Vagrant", (log) => installDependency("vagrant", progressAsLog(log)));
+            }}
+          >
+            {t("servers.setup.tools.install", { name: "Vagrant" })}
+          </Button>
+        }
+      />
+      <Requirement
+        ok={esxiPluginOk}
+        title={t("servers.setup.tools.esxiPlugin")}
+        detail={vagrantOk || esxiPluginOk ? plugin : t("servers.setup.tools.esxiPluginPending", { plugin })}
+        action={
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={!canInstallTools || !vagrantOk || !plugin}
+            onClick={() => {
+              installTool(plugin, (log) => installVagrantPlugin(plugin, log));
+            }}
+          >
+            {t("servers.setup.tools.installPlugin")}
+          </Button>
+        }
+      />
+      <OvftoolRequirement s={s} />
+    </>
+  );
+}
+
+/** Terraform, with its version once installed; `detail` says why it's needed while it isn't. */
+function TerraformRequirement({ s, detail }: { s: HostSetup; detail: string | null }) {
+  const t = useT();
+  const { report } = s;
+  const { terraformOk, canInstallTools, installTool } = s.tools;
+  return (
+    <Requirement
+      ok={terraformOk}
+      title="Terraform"
+      detail={detail === null ? (report?.terraform.version ?? t("servers.setup.tools.installed")) : detail}
+      action={
+        <Button
+          variant="outline"
+          size="xs"
+          disabled={!canInstallTools}
+          onClick={() => {
+            installTool("Terraform", (log) => installDependency("terraform", progressAsLog(log)));
+          }}
+        >
+          {t("servers.setup.tools.install", { name: "Terraform" })}
+        </Button>
+      }
+    />
+  );
+}

@@ -1,0 +1,5 @@
+{
+  "boxArt": "box-art.png",
+  "tile300": "tile-300.png",
+  "notesForCertification": "Restricted capabilities. runFullTrust: Cyber CTF is a desktop launcher that runs the user's own Docker, Vagrant, Terraform and OpenSSH command-line tools to start hands-on security labs. unvirtualizedResources: the app writes configuration files under AppData (Docker Compose files, Vagrantfiles, Terraform state, SSH known_hosts) that those tools, which run outside the package, must read; with file-system write virtualization these files are invisible to them and no lab can start. No registry virtualization is changed. Testing: a free account is not needed to browse labs; starting a lab requires Docker Desktop (container labs) or a hypervisor such as VirtualBox (VM labs)."
+}

@@ -1,0 +1,56 @@
+{
+  "screen": {
+    "title": "Cloud",
+    "lead": "Wegwerf-Instanzen in deinem eigenen Konto, auf deine Rechnung, automatisch gestoppt.",
+    "setUp": "Cloud-Anbieter einrichten",
+    "overOne": "{name} hat das Monatsbudget überschritten. Neue Labs dort sind gesperrt, bis du das Budget erhöhst oder der nächste Monat beginnt.",
+    "overMany": "{count} Konten haben ihr Monatsbudget überschritten. Neue Labs dort sind gesperrt, bis du das Budget erhöhst oder der nächste Monat beginnt.",
+    "runningNow": "Läuft gerade",
+    "billingWhileRunning": "kostenpflichtig, solange sie laufen",
+    "catalogueUnread": "Der Lab-Katalog ließ sich nicht laden ({why}), daher fehlt unter Läuft gerade vielleicht ein Lab, das in einem deiner Konten läuft.",
+    "autoStops": "stoppt automatisch {time}",
+    "stop": "Stoppen",
+    "loading": "Wird geladen…",
+    "accounts": "Konten",
+    "billedOnly": "nur kostenpflichtig, während ein Lab läuft",
+    "budgetGuard": "Budgetschutz · {name}",
+    "ofLimit": "von {limit}",
+    "overBudget": "Budget überschritten",
+    "autoStopAfter": "Auto-Stopp nach {hours} h",
+    "noAutoStop": "kein Auto-Stopp"
+  },
+  "empty": {
+    "title": "Kein Cloud-Konto verbunden",
+    "description": "Verbinde dein eigenes Cloud-Konto, um jedes Lab auf einer Wegwerf-Instanz auszuführen, die beim Stoppen gelöscht wird."
+  },
+  "account": {
+    "apiToken": "API-Token",
+    "apiKey": "API-Schlüssel",
+    "cliSignIn": "CLI-Anmeldung",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "CLI-Anmeldedaten",
+    "accessKeys": "Zugriffsschlüssel",
+    "autoStop": "Auto-Stopp {hours} h",
+    "noAutoStop": "kein Auto-Stopp",
+    "budget": "Budget {amount}/Monat",
+    "spentThisMonth": "{amount} diesen Monat",
+    "status": {
+      "testing": "Wird getestet…",
+      "notTested": "Nicht getestet",
+      "connected": "Verbunden",
+      "needsAttention": "Prüfen nötig",
+      "failed": "Fehlgeschlagen",
+      "overBudget": "Budget überschritten"
+    },
+    "remove": "Entfernen",
+    "test": "Testen",
+    "edit": "Bearbeiten",
+    "removeTitle": "{name} entfernen?",
+    "removeBody": "Cyber CTF vergisst dieses Konto und löscht die dafür gespeicherten Schlüssel. Im Cloud-Konto selbst ändert sich nichts, und du kannst es später wieder verbinden.",
+    "removeAccount": "Konto entfernen"
+  },
+  "connect": {
+    "title": "Cloud-Anbieter verbinden",
+    "provider": "{provider} verbinden"
+  }
+}

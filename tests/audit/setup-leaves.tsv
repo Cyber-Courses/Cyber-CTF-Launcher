@@ -1,0 +1,145 @@
+# What the guided setup leaves on a machine on purpose, by the item it installs, in the leftover
+# audit's own words (docs/contributing/testing/leftovers.md, "What the guided setup leaves"): item (as the headless
+# setup entry's records name it, `*` and `?` allowed)<TAB>os (linux, macos, windows or any)<TAB>
+# kind (kinds.ts)<TAB>glob on the name the report shows (allowlist.tsv's)<TAB>why it stays. The
+# entry (integration_tests::setup) puts each `installed:` record's rows in its `leaves`, so a
+# caller's allowances come from the records, not from a table of its own; the entry's own temp
+# folder is added there with its real path. kinds.test.ts holds the kinds and systems to kinds.ts.
+launcher	linux	os-registration	/usr/share/applications/Cyber CTF.desktop	the launcher's package (its .deb) registers the app's desktop entry
+launcher	linux	os-registration	*/.local/share/applications/cyberctf-desktop-handler.desktop	the installed app registers the cyberctf:// handler when a player first opens it
+launcher	windows	os-registration	HKCU\Software\Classes\cyberctf	the launcher's installer registers the cyberctf:// handler
+launcher	windows	os-registration	*\Start Menu\Programs\Cyber CTF.lnk	the launcher's installer puts its shortcut in the Start menu (not probed by the snapshot yet)
+launcher	windows	os-registration	HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\*Cyber CTF*	the launcher's installer registers its uninstall entry (not probed by the snapshot yet)
+docker	linux	route	172.17.0.0/16 dev docker0	the Docker engine's default bridge, routed as long as the engine runs
+docker	linux	iptables-rule	*DOCKER*	the Docker engine's firewall chains (DOCKER, DOCKER-USER, DOCKER-FORWARD, …) and the rules that jump to them
+docker	linux	iptables-rule	* docker0 *	the Docker engine's masquerade and forwarding rules for its default bridge
+docker	linux	iptables-rule	filter :FORWARD DROP	the Docker engine sets the FORWARD chain's policy to DROP
+docker	linux	iptables-rule	filter :* ACCEPT	the filter table's base chains, which the engine's first rule creates on a machine without any
+docker	linux	iptables-rule	nat :* ACCEPT	the nat table's base chains, which the engine's first rule creates on a machine without any
+docker	linux	iptables-rule	raw :PREROUTING ACCEPT	the raw table's base chains: Docker Engine 29 drops traffic to its containers' addresses from outside their bridge there
+docker	linux	iptables-rule	raw :OUTPUT ACCEPT	the same table's other base chain
+docker	linux	listening-port	tcp 127.0.0.1:* (containerd, *	containerd's CRI streaming server on a random localhost port, where the distribution's containerd keeps the cri plugin on (Kali's; Docker's own containerd.io turns it off), as long as the engine runs
+docker	linux	nft-table	table ip filter	the filter table iptables-nft creates for the Docker engine's rules
+docker	linux	nft-table	table ip nat	the nat table iptables-nft creates for the Docker engine's rules
+docker	linux	nft-table	table ip raw	the raw table iptables-nft creates for Docker Engine 29's rules
+docker	linux	nft-table	table ip6 filter	the same for IPv6
+docker	linux	nft-table	table ip6 nat	the same for IPv6
+docker	linux	nft-table	table * docker*	the Docker engine's own nftables tables (its nftables firewall backend)
+docker	macos	process	* com.docker.*	Docker Desktop's own processes, which run while the engine does
+docker	macos	process	*Docker Desktop*	Docker Desktop's app
+docker	macos	listening-port	*docker*	Docker Desktop's own sockets
+docker	windows	process	* com.docker.*	Docker Desktop's own processes, which run while the engine does
+docker	windows	process	*Docker Desktop*	Docker Desktop's app
+docker	windows	listening-port	*docker*	Docker Desktop's own sockets
+engine:docker-desktop	macos	process	* com.docker.*	Docker Desktop's own processes, started with the engine
+engine:docker-desktop	macos	process	*Docker Desktop*	Docker Desktop's app
+engine:docker-desktop	macos	listening-port	*docker*	Docker Desktop's own sockets
+engine:docker-desktop	windows	process	* com.docker.*	Docker Desktop's own processes, started with the engine
+engine:docker-desktop	windows	process	*Docker Desktop*	Docker Desktop's app
+engine:docker-desktop	windows	listening-port	*docker*	Docker Desktop's own sockets
+wsl	windows	hyperv-switch	WSL*	WSL 2's virtual switch, made when WSL is turned on
+wsl	windows	route	* vEthernet (WSL*	the route of WSL 2's virtual switch
+wsl	windows	firewall-rule	Windows Subsystem for Linux	the Windows Firewall rule WSL 2's install adds for its networking (the Docker path turns WSL on first)
+wsl	windows	hyperv-switch	Default Switch	Hyper-V's Default Switch, made when Hyper-V is turned on (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	route	* vEthernet (Default Switch)	the Default Switch's NAT route (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V (RPC)	Hyper-V's own firewall rules, which turning it on adds (its Virtual Machine Management service's RPC) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V (RPC-EPMAP)	Hyper-V's own firewall rules, which turning it on adds (the RPC endpoint mapper for its management) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V (MIG-TCP-In)	Hyper-V's own firewall rules, which turning it on adds (live migration) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V (REMOTE_DESKTOP_TCP_IN)	Hyper-V's own firewall rules, which turning it on adds (VM connection over vmms's port 2179) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V - WMI (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V - WMI (TCP-Out)	Hyper-V's own firewall rules, which turning it on adds (its WMI management) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V - WMI (DCOM-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V - WMI (Async-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V Management Clients - WMI (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V Management Clients - WMI (TCP-Out)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V Management Clients - WMI (DCOM-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V Management Clients - WMI (Async-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V Replica HTTP Listener (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (Hyper-V Replica) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	Hyper-V Replica HTTPS Listener (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (Hyper-V Replica) (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	HNS Container Networking - ICS DNS (TCP-In) - *	the Host Network Service's DNS rule for the Default Switch's network, named after its id (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	firewall-rule	HNS Container Networking - DNS (UDP-In) - *	the Host Network Service's DNS rule for the Default Switch's network, named after its id (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	listening-port	:::2179 (vmms, *)	Hyper-V's Virtual Machine Management service, which VM connections reach on port 2179 (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	listening-port	0.0.0.0:2179 (vmms, *)	the same on IPv4 (WSL 2's install on Windows 11 turns Hyper-V's platform on too: the same switch, route, rules and port, seen after the Docker path on a bare clone, 2026-11-12)
+wsl	windows	listening-port	*:139 (System, *	NetBIOS on each new vEthernet adapter (the WSL switch's, the Default Switch's), which Windows opens on every adapter
+docker	windows	process	* "*\vmwp.exe" *	Hyper-V's worker process for Docker Desktop's WSL 2 VM, which runs while the engine does
+engine:docker-desktop	windows	process	* "*\vmwp.exe" *	Hyper-V's worker process for Docker Desktop's WSL 2 VM, started with the engine
+docker	windows	hosts-entry	* *.docker.internal	Docker Desktop's hosts entries (host.docker.internal, gateway.docker.internal, kubernetes.docker.internal), written when the engine starts
+engine:docker-desktop	windows	hosts-entry	* *.docker.internal	Docker Desktop's hosts entries, written when the engine starts
+libvirt	linux	route	192.168.122.0/24 dev virbr0	libvirt's default network's bridge, routed as long as the network is up
+libvirt	linux	libvirt-network	default	libvirt's default network, defined by its package
+libvirt	linux	libvirt-pool	default	libvirt's default storage pool, which the VMs' disks go in
+libvirt	linux	iptables-rule	*LIBVIRT*	libvirt's firewall chains (LIBVIRT_INP, _OUT, _FWO, _FWI, _FWX, _PRT) and their rules
+libvirt	linux	iptables-rule	* virbr0 *	libvirt's rules for its default network's bridge
+libvirt	linux	nft-table	table * libvirt*	libvirt's own nftables tables (its nftables firewall backend)
+libvirt	linux	nft-table	table ip mangle	the mangle table iptables-nft creates for libvirt's checksum rules
+libvirt	linux	nft-table	table ip6 mangle	the same for IPv6
+libvirt	linux	nft-table	table ip filter	the filter table iptables-nft creates for libvirt's default network's rules
+libvirt	linux	nft-table	table ip nat	the nat table iptables-nft creates for libvirt's default network's masquerade
+libvirt	linux	nft-table	table ip6 filter	the same for IPv6
+libvirt	linux	nft-table	table ip6 nat	the same for IPv6
+libvirt	linux	iptables-rule	mangle :PREROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :INPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :FORWARD ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :OUTPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :POSTROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	filter :INPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+libvirt	linux	iptables-rule	filter :FORWARD ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+libvirt	linux	iptables-rule	filter :OUTPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+libvirt	linux	iptables-rule	nat :PREROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	iptables-rule	nat :INPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	iptables-rule	nat :OUTPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	iptables-rule	nat :POSTROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	listening-port	udp 192.168.122.1:53 (dnsmasq, *)	the default network's dnsmasq, DNS for its VMs on virbr0's address, up while the network is (Ubuntu starts it at install)
+libvirt	linux	listening-port	tcp 192.168.122.1:53 (dnsmasq, *)	the same DNS over TCP
+libvirt	linux	listening-port	udp 0.0.0.0%virbr0:67 (dnsmasq, *)	the default network's dnsmasq, DHCP for its VMs, bound to virbr0
+qemu	linux	route	192.168.122.0/24 dev virbr0	libvirt comes with QEMU on this distribution: its default network's bridge
+qemu	linux	libvirt-network	default	libvirt's default network, defined by its package
+qemu	linux	libvirt-pool	default	libvirt's default storage pool
+qemu	linux	iptables-rule	*LIBVIRT*	libvirt's firewall chains and their rules
+qemu	linux	iptables-rule	* virbr0 *	libvirt's rules for its default network's bridge
+qemu	linux	nft-table	table * libvirt*	libvirt's own nftables tables
+qemu	linux	nft-table	table ip mangle	the mangle table iptables-nft creates for libvirt's checksum rules
+qemu	linux	nft-table	table ip6 mangle	the same for IPv6
+qemu	linux	nft-table	table ip filter	the filter table iptables-nft creates for libvirt's default network's rules
+qemu	linux	nft-table	table ip nat	the nat table iptables-nft creates for libvirt's default network's masquerade
+qemu	linux	nft-table	table ip6 filter	the same for IPv6
+qemu	linux	nft-table	table ip6 nat	the same for IPv6
+qemu	linux	iptables-rule	mangle :PREROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :INPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :FORWARD ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :OUTPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :POSTROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	filter :INPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+qemu	linux	iptables-rule	filter :FORWARD ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+qemu	linux	iptables-rule	filter :OUTPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+qemu	linux	iptables-rule	nat :PREROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	iptables-rule	nat :INPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	iptables-rule	nat :OUTPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	iptables-rule	nat :POSTROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	listening-port	udp 192.168.122.1:53 (dnsmasq, *)	libvirt's default network's dnsmasq, DNS for its VMs on virbr0's address (Ubuntu starts the network at install)
+qemu	linux	listening-port	tcp 192.168.122.1:53 (dnsmasq, *)	the same DNS over TCP
+qemu	linux	listening-port	udp 0.0.0.0%virbr0:67 (dnsmasq, *)	libvirt's default network's dnsmasq, DHCP for its VMs, bound to virbr0
+hyperv	windows	hyperv-switch	Default Switch	Hyper-V's Default Switch, made when Hyper-V is turned on
+hyperv	windows	route	* vEthernet (Default Switch)	the Default Switch's NAT route
+hyperv	windows	firewall-rule	Hyper-V (RPC)	Hyper-V's own firewall rules, which turning it on adds (its Virtual Machine Management service's RPC)
+hyperv	windows	firewall-rule	Hyper-V (RPC-EPMAP)	Hyper-V's own firewall rules, which turning it on adds (the RPC endpoint mapper for its management)
+hyperv	windows	firewall-rule	Hyper-V (MIG-TCP-In)	Hyper-V's own firewall rules, which turning it on adds (live migration)
+hyperv	windows	firewall-rule	Hyper-V (REMOTE_DESKTOP_TCP_IN)	Hyper-V's own firewall rules, which turning it on adds (VM connection over vmms's port 2179)
+hyperv	windows	firewall-rule	Hyper-V - WMI (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V - WMI (TCP-Out)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V - WMI (DCOM-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V - WMI (Async-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (TCP-Out)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (DCOM-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (Async-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Replica HTTP Listener (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (Hyper-V Replica)
+hyperv	windows	firewall-rule	Hyper-V Replica HTTPS Listener (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (Hyper-V Replica)
+hyperv	windows	firewall-rule	HNS Container Networking - ICS DNS (TCP-In) - *	the Host Network Service's DNS rule for the Default Switch's network, named after its id
+hyperv	windows	firewall-rule	HNS Container Networking - DNS (UDP-In) - *	the Host Network Service's DNS rule for the Default Switch's network, named after its id
+hyperv	windows	listening-port	:::2179 (vmms, *)	Hyper-V's Virtual Machine Management service, which VM connections reach on port 2179
+hyperv	windows	listening-port	0.0.0.0:2179 (vmms, *)	the same on IPv4
+hyperv	windows	listening-port	*:139 (System, *	NetBIOS on each new vEthernet adapter (the Default Switch's), which Windows opens on every adapter
+virtualbox	windows	vbox-hostonly	VirtualBox Host-Only*	the host-only adapter the self-test's private network makes, which Vagrant never removes
+virtualbox	windows	route	* VirtualBox Host-Only*	the host-only adapter's route
+vmware-utility	any	process	*vagrant-vmware-utility*	the Vagrant VMware Utility's service, which runs from its install on

@@ -1,0 +1,389 @@
+# Testing
+
+Each kind of test lives where its tool expects it, and proves what the one below cannot. A change
+is tested at the lowest level that can show it; the higher ones run before a release. The unit
+tests sit beside the code they test; this folder holds the suites that drive the launcher from
+outside, and the feature registry that says which test checks what.
+
+```text
+tests/
+  README.md                       this map: every suite, where it lives, what it needs, how to run it, its knobs
+  features/
+    registry.yml                  the feature registry: every feature the user sees, and the tests that check it per tier
+    FEATURES.md                   made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
+    rig.json                      a test harness's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
+  e2e/
+    web/                          Playwright against the dev mock (`pnpm test:web`)
+      specs/                      one spec an area, `<area>.spec.ts`
+      pages/                      the page objects the specs find the app's parts through, one per screen: the
+                                  window's frame (app-shell.ts), the Labs screen (labs.ts), a lab's page and
+                                  "Where should the lab run?" (lab.ts), the Settings window (settings.ts)
+      fixtures.ts                 what the specs share: the app opened on the mock, its commands forced or held
+    desktop/                      WebdriverIO against the real app (`pnpm test:desktop`)
+      cases.tsv                   the cases, in the runner's order: id, spec, form, knobs, groups
+      specs/                      one spec a file, `<spec>.mjs`, its needs declared on its first lines
+      support/                    what the specs share: the app launched and driven (app.mjs), its page
+                                  (page.mjs), what a run owns (owned.mjs), the machine (host.mjs: the WebDriver
+                                  port, where cargo builds the app; bounded.mjs), a stuck lab put into words
+                                  (diagnose.mjs); each with its tests
+      runner/                     run.mjs (the specs, their needs, caps and groups, the results), its entry points
+                                  run.sh (Linux, macOS) and run.ps1 (Windows), the plan (plan.mjs); each with
+                                  its tests
+  integration/                    the integration runner (`pnpm test:integration`): run.sh runs the opt-in
+                                  scenarios by tier, run.test.ts holds its listing to them
+  audit/                          the leftover audit (`pnpm leftovers`): what a run left on a machine
+    run.sh                        snapshot, diff, inventory, --list (Linux, macOS)
+    snapshot.sh, snapshot.ps1,    a machine's snapshot: Linux and macOS, Windows, a Proxmox or ESXi server
+    snapshot-server.sh
+    allowlist.tsv                 what a run may leave, each with why
+    setup-leaves.tsv              what the guided setup leaves on purpose
+    src/                          the diff and its parsers (main.ts, inventory.ts, diff.ts…), each with its tests
+    fixtures/                     the tools' own outputs, recorded, that the parsers are held to
+```
+
+Elsewhere, where their tool or their code needs them:
+
+- `src-tauri/src/integration_tests/`: the integration scenarios themselves. They drive the
+  launcher's own Rust (the crate's internals, `TestApp`, the runner's records), so they are part of
+  the crate, opt-in (`#[ignore = "needs …"]`); `tests/integration/run.sh` runs them.
+- `src-tauri/tests/`: the backend's public entry points as a user starts them: the command line
+  (`cli.rs`) and the runner service's host (`service_host.rs`).
+- `src/test/`: the frontend unit tests' helpers (the Tauri commands faked, fixtures, the setup).
+- The testing docs, in `docs/contributing/testing/`: the desktop end-to-end
+  ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md)), the integration scenarios
+  ([integration.md](../docs/contributing/testing/integration.md)), `pnpm check`'s steps
+  ([release-check.md](../docs/contributing/testing/release-check.md)), what a player does that
+  breaks a lab and which test holds it ([resilience.md](../docs/contributing/testing/resilience.md)),
+  and what a run may leave on a machine ([leftovers.md](../docs/contributing/testing/leftovers.md)).
+
+The names: `*.test.ts` a unit or harness test (vitest), beside the module it tests and named
+after it; `*.spec.ts` a Playwright spec, `specs/<name>.mjs` a desktop spec; folders and files in
+kebab-case.
+
+## The tiers
+
+| Tier               | What it drives                                                                                               | Where                                                                                                | Needs                                                               | Run                                        | In CI                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
+| Unit               | components, hooks and scripts; the backend, every external tool scripted (`platform/exec/fake.rs`)           | beside the code: `src/**/*.test.ts(x)`, `scripts/**/*.test.ts`, `tests/**/*.test.ts`, `#[cfg(test)]` | Node and Rust                                                       | `pnpm test`                                | `ci.yml`, `gate.yml`                     |
+| Web end-to-end     | the real frontend in Chromium, the commands answered by the dev mock (Playwright)                            | `tests/e2e/web/`                                                                                     | Playwright's Chromium (`pnpm exec playwright install chromium`)     | `pnpm test:web`                            | `gate.yml`; `release.yml` before a build |
+| Desktop end-to-end | the real app binary through its embedded WebDriver, every feature, on a real Docker, hypervisor and server   | `tests/e2e/desktop/` ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md))                 | a desktop session; Docker, a hypervisor and a server for some specs | `pnpm test:desktop` (`run.ps1` on Windows) | no: the test machines; a test harness    |
+| Integration        | real labs through the launcher's Rust on real Docker, VMs, clouds and servers                                | `src-tauri/src/integration_tests/` (opt-in, `#[ignore]`), run by `tests/integration/run.sh`          | Docker, Vagrant and a hypervisor; an AWS account, a server by tier  | `pnpm test:integration`                    | no: the test machines                    |
+| Packaging          | the built bundle installed and launched (the MSI silently, then removed); the Windows installer's edge cases | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`                                              | the platform's installer                                            | see each                                   | `package-smoke.yml`                      |
+
+`pnpm check` runs every check CI runs (CI runs nothing else: `ci.yml` its short list,
+`pnpm check:fast`, and `gate.yml` the rest), one verdict per step; `pnpm release-check` adds the desktop end-to-end
+([release-check.md](../docs/contributing/testing/release-check.md)). [integration.md](../docs/contributing/testing/integration.md)
+lists the integration scenarios and what each guards against, and the settings that name the
+Proxmox and ESXi hosts of their server tier.
+
+### Contract tests between the layers
+
+A unit test fakes the other side of a seam, so a change on that side passes it and breaks a lab
+instead. The contract tests are unit tests that drive both sides of one seam for real, Isothrum's
+fake processes the only fake:
+
+- `runtime/isothrum/tests/contract/service.rs`, the launcher and Isothrum's runner service: each
+  operation goes from the launcher's client path to a real service in the test's process, which
+  journals it as asked; the launch's values reach the tool; the service's refusals (`locked`) and
+  error reports read through the launcher's one mapper (`runtime/isothrum/errors.rs`).
+- `runtime/isothrum/tests/contract/spec_run.rs`, the launcher's join of a spec with its run, which
+  only the launcher may make: Isoloom's own examples, from an Isoloom checkout
+  (`CYBERCTF_TEST_ISOLOOM_DIR`, else `../isoloom`; none fails the test), generated for Compose and
+  for Vagrant with Isoloom's library and run by Isothrum's runner on fake tools that do what the
+  generated files say. The lab page's entry is where the run published the web port, each port is
+  where the tool put it, the message is filled in and names only ports the run published, a VM
+  run's kept ports reach the Vagrantfile under the names it reads (`HOST_PORT_*`), and the page
+  offers the parks the run can do.
+
+`cargo test --manifest-path src-tauri/Cargo.toml --lib isothrum::tests::contract` runs them. The workspace's `./ws tips`
+runs them, with the launcher's other tests, against Isothrum's and Isoloom's `dev`.
+
+## Knobs
+
+Every knob is `CYBERCTF_TEST_<AREA>_<WHAT>`: the area is the scenario, spec or shared resource
+that reads it (`BOX` the attack box, `VM` the local hypervisor, `PVE` a Proxmox host, `DESKTOP` the
+desktop runner…), the what is the setting. A knob is read from the environment; the desktop
+runner also takes them from a `--knobs` file (`KEY=value` lines, read literally). A scenario or
+spec whose knob is missing skips, saying which. `ONLY`, `SKIP` and `STRICT` aren't knobs but the
+suite runners' selection (`scripts/lib/suite.sh`).
+
+| Knob                                                                                            | Read by                                                                                                         | What                                                                                                                                                                                           | Was                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CYBERCTF_TEST_INTEGRATION_TIERS`                                                               | the integration runner                                                                                          | `local`, `aws`, `server` (default `local`)                                                                                                                                                     | `TIERS`\*                                                                                                                                                                         |
+| `CYBERCTF_TEST_INTEGRATION_LOGS`                                                                | the integration runner                                                                                          | where each scenario's log goes (default `tests/integration/.state/logs`)                                                                                                                       | `LOGS`\*                                                                                                                                                                          |
+| `CYBERCTF_TEST_INTEGRATION_TIMEOUT`                                                             | the integration runner                                                                                          | seconds a scenario may take (480; the `attack-box-*` ones 600), past which it is killed                                                                                                        |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_ISOLOOM_DIR`                                                                     | the integration runner, the contract tests                                                                      | an Isoloom checkout, for its example labs (default `../isoloom`)                                                                                                                               | `ISOLOOM`\*                                                                                                                                                                       |
+| `CYBERCTF_TEST_VM_PROVIDER`                                                                     | the VM scenarios, the desktop's VM specs                                                                        | the hypervisor: `qemu` (the runner's default), `libvirt`, `virtualbox`, `hyperv`, `utm`…                                                                                                       | the runner's `VM_PROVIDER`\*                                                                                                                                                      |
+| `CYBERCTF_TEST_VM_INPUTS`                                                                       | `vm-lab`, `per-machine`, `replace-vm`                                                                           | a VM lab's launch values, `NAME=value,…`                                                                                                                                                       |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_AWS_REGION`                                                                      | the AWS tier, the AWS account test                                                                              | the region (default `eu-west-3`)                                                                                                                                                               | the runner's `AWS_REGION`                                                                                                                                                         |
+| `CYBERCTF_TEST_CLOUD_REAL_IP`                                                                   | the AWS tier (the runner sets it)                                                                               | `1`: a cloud lab's firewall opens to this machine's real public address (unit tests use a documentation one)                                                                                   | `CYBERCTF_TEST_REAL_PUBLIC_IP`                                                                                                                                                    |
+| `CYBERCTF_TEST_APP_ROOT`                                                                        | the integration scenarios (the runner sets it)                                                                  | the folder a scenario's app keeps its folders in (`TestApp::scenario`): the scenario's temp folder, a lab's runs and VM disks with it                                                          |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_BOX_LAB`, `_FORM`, `_TARGET`                                                     | `attack-box-*`                                                                                                  | the lab, the form (`docker`, `vm`, `cloud-docker`, `cloud-vm`), the machine the box reaches (default `web`)                                                                                    |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_BOX_SHARED_FOLDER`                                                               | `attack-box-*`                                                                                                  | a folder shared with the box, seen both ways (unset: off)                                                                                                                                      | `CYBERCTF_TEST_SHARED_FOLDER`\*                                                                                                                                                   |
+| `CYBERCTF_TEST_BOX_IMAGE`                                                                       | `docker-lab-*`                                                                                                  | the attack box's image (default Kali's)                                                                                                                                                        | `CYBERCTF_TEST_ATTACK_BOX`                                                                                                                                                        |
+| `CYBERCTF_TEST_HELLO_LAB`, `CYBERCTF_TEST_SEGMENTED_LAB`                                        | `docker-lab-hello-stack`, `docker-lab-segmented`                                                                | Isoloom's `hello-stack` and `segmented` examples                                                                                                                                               |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_INVOICE_LAB`                                                                     | `docker-lab-invoice-portal`, the flag contract                                                                  | the invoice-portal-api lab                                                                                                                                                                     | `CYBERCTF_TEST_LAB`                                                                                                                                                               |
+| `CYBERCTF_TEST_VM_LAB`, `CYBERCTF_TEST_PER_MACHINE_LAB`                                         | `vm-lab`, `per-machine`                                                                                         | each scenario's lab                                                                                                                                                                            |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_REPLACE_LAB`, `_FORM`                                                            | `replace-*`                                                                                                     | the lab and its form (`docker`, `vm`)                                                                                                                                                          |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_RESILIENCE_LAB`, `CYBERCTF_TEST_RESILIENCE_VM_LAB`                               | `resilience-docker-*`, `resilience-vm-*`                                                                        | the container lab and the VM lab a player's disruptions are tried on (the runner: Isoloom's `hello-stack`, `solo-web`)                                                                         |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_RESILIENCE_MACHINE`                                                              | `resilience-*`                                                                                                  | the machine removed, stopped or powered off (default `web`)                                                                                                                                    |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_RESILIENCE_THROWAWAY`                                                            | `resilience-docker-daemon-stopped`, `resilience-vm-killed-provisioning`                                         | `1` on a throwaway test machine: the scenarios that stop more than their own lab skip without it                                                                                               |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_RESILIENCE_DOCKER_STOP`, `_DOCKER_START`                                         | `resilience-docker-daemon-stopped`                                                                              | the commands that stop and start Docker on this OS (`sudo systemctl stop docker`…), run by `sh -c` (PowerShell on Windows)                                                                     |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_RESILIENCE_VM_KILL`                                                              | `resilience-vm-killed-provisioning`                                                                             | the hypervisor's own hard power-off of a VM, `{id}` its id in Vagrant's record (`virsh destroy {id}`, `VBoxManage controlvm {id} poweroff`…)                                                   |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_LOCAL_LAB`                                                                       | `launch-commands`, `cli-lab-docker`, the desktop specs                                                          | a lab folder to import (the desktop's default: the fixture checkout)                                                                                                                           |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_CORPUS_LABS`                                                                     | `corpus-docker`                                                                                                 | your own lab folders, comma-separated                                                                                                                                                          | `CYBERCTF_TEST_DOCKER_LABS`                                                                                                                                                       |
+| `CYBERCTF_TEST_PVE_LAB`, `_ENDPOINT`, `_TOKEN_ID`, `_TOKEN_SECRET`, `_NODE`, `_BRIDGE`, `_JUMP` | `server-lab-proxmox`, `server-lab-vm-test-proxmox`                                                              | the lab, and the Proxmox host and its API token (`_JUMP` when the lab bridge is internal to the node)                                                                                          |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_PVE_RUNNER_HOME`                                                                 | `server-lab-proxmox`, `server-lab-vm-test-proxmox`                                                              | a folder whose `ssh/id_ed25519` the node lets in                                                                                                                                               | `CYBERCTF_TEST_RUNNER_HOME`\*                                                                                                                                                     |
+| `CYBERCTF_TEST_PVE_HOST`, `_PASSWORD`, `_TOKEN_ID`, `_TOKEN_SECRET`, `_STORAGE`, `_FINGERPRINT` | `server-lab-proxmox-connection`, `server-lab-proxmox-setup`, the desktop's server file                          | a Proxmox host by address and account, its API token, and its certificate's SHA-256                                                                                                            |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_PVE_SSH_KEY`                                                                     | `server-lab-proxmox-connection`, `server-lab-proxmox-setup`, `server-lab-proxmox`, `server-lab-vm-test-proxmox` | a private key the node lets in (with the token checks; the lab's snippet upload)                                                                                                               |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_ESXI_LAB`, `_HOST`, `_PASSWORD`, `_DATASTORE`, `_NETWORK`, `_USER`               | `server-lab-esxi`, the desktop's server file                                                                    | the lab, and the ESXi host                                                                                                                                                                     |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_FLAG_BACKEND`, `_WEB`                                                            | the flag contract (`flag_contract`)                                                                             | CyberBackend and cyberctf-web checkouts                                                                                                                                                        | `CYBERCTF_TEST_BACKEND`, `CYBERCTF_TEST_WEB`                                                                                                                                      |
+| `CYBERCTF_TEST_SETUP_PATHS`, `_HYPERVISORS`, `_LOGS`, `_LAB`, `_REPORT`, `_CHECK_ONLY`          | the guided setup (`integration_tests::setup`)                                                                   | its module documentation says each; `_CHECK_ONLY=1` detects and plans only, safe on any machine                                                                                                |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_SCREEN_VNC`                                                                      | the real VNC bridge test (`screen/bridge.rs`)                                                                   | a VNC server with no password, `host:port` on loopback                                                                                                                                         | `CYBERCTF_TEST_VNC`                                                                                                                                                               |
+| `CYBERCTF_TEST_DESKTOP_APP`                                                                     | the desktop runner, the specs                                                                                   | the app (`--app`; default: the runner's copy of the wdio debug build it builds, `<target>/debug/wdio/`)                                                                                        | `APP_BIN`                                                                                                                                                                         |
+| `CYBERCTF_TEST_DESKTOP_TIMEOUT`                                                                 | the desktop runner, the specs                                                                                   | seconds a spec may take (300; `machine` 480), past which it is killed; the specs scale their waits to it ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md#needs-caps-and-groups)) | `CASE_TIMEOUT`                                                                                                                                                                    |
+| `CYBERCTF_TEST_DESKTOP_LOGS`                                                                    | the desktop runner                                                                                              | where each spec's log goes (default `tests/e2e/desktop/.state/logs`)                                                                                                                           | ; each app the specs launch writes its stdout and stderr to `app-output/<spec>-<pid>.txt` there, its exit code appended (a Rust abort or stack overflow says why on stderr alone) |
+| `CYBERCTF_TEST_TEMP_KEEP`                                                                       | `pnpm check:temp-leaks`                                                                                         | keep the unit tests' temp folder at the end, its path printed, to look into what they left                                                                                                     |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_DESKTOP_KEEP`                                                                    | the desktop runner                                                                                              | leave the fixture lab running and the run's folder in place at the end                                                                                                                         | `KEEP`                                                                                                                                                                            |
+| `CYBERCTF_TEST_ACCOUNT_SESSION`                                                                 | the desktop runner                                                                                              | a signed-in session (a `dev-session.json`), placed in the run's folder, where its app reads it whatever the build                                                                              | `CYBERCTF_TEST_SESSION`                                                                                                                                                           |
+| `CYBERCTF_TEST_CATALOGUE_LAB`, `CYBERCTF_TEST_CATALOGUE_VM_LAB`                                 | the signed-in specs, `lab-form-vm` and `screens`                                                                | the catalogue container lab (default `Supplier portal API`), a catalogue VM lab                                                                                                                |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_SERVER_ENV`, `CYBERCTF_TEST_SERVER_LAB`                                          | `server-lab`                                                                                                    | a server's settings file (the `CYBERCTF_TEST_PVE_*` or `CYBERCTF_TEST_ESXI_*` above), the catalogue lab to start there                                                                         |                                                                                                                                                                                   |
+| `CYBERCTF_TEST_LAB_FORM`                                                                        | `lab-form` (the runner sets it)                                                                                 | `container`, `vm`, `per-machine`                                                                                                                                                               | `CYBERCTF_TEST_FORM`                                                                                                                                                              |
+| `CYBERCTF_TEST_BOX_DESKTOP`                                                                     | `screens`                                                                                                       | `1`: also the attack box's desktop and its Screen (about 1 GB more)                                                                                                                            | `CYBERCTF_TEST_ATTACK_DESKTOP`                                                                                                                                                    |
+| `CYBERCTF_TEST_CLEANUP_TOOL`                                                                    | `cleanup`                                                                                                       | a tool Settings lists as installed by Cyber CTF, to remove                                                                                                                                     | `CYBERCTF_TEST_REMOVE_TOOL`                                                                                                                                                       |
+| `CYBERCTF_TEST_WEB_PORT`                                                                        | Playwright                                                                                                      | the port of the browser preview (`pnpm dev:web`) it starts or reuses (default 3210)                                                                                                            | `E2E_PORT`                                                                                                                                                                        |
+
+\* The old name is still read, as a harness outside the repository may still set it: remove it
+once none does. `TAURI_WEBDRIVER_PORT` (the embedded WebDriver's port, 4445), `CYBERBACKEND_URL`
+(the backend `offline-start`'s relay forwards to), `CYBERCTF_WDIO_ROOT` (the run's folder,
+[below](#a-desktop-runs-own-folder)) and `CYBERCTF_WDIO_STORAGE` (a JSON object of strings the
+`wdio` build writes into the webview's localStorage before the page's scripts run, once per launch:
+the specs' `onboarded`, `locale` and `__wdio_` hooks, so a spec opens the app set up without
+reloading the page, which ended the app on Windows) are the app's own settings, which the desktop
+runner and specs pass on.
+
+## A desktop run's own folder
+
+The desktop end-to-end runs safely on a machine someone uses, a developer's or a player's: it
+never reads or changes their labs, settings, session or secrets, and it removes only what it made.
+
+- **Its folders.** Each run makes a fresh folder (`cyberctf-e2e.*` under `TMPDIR`; on Windows
+  `cyberctf-e2e-*` under `%TEMP%`) and starts the app with it as `CYBERCTF_WDIO_ROOT`. A `wdio`
+  build (never a release) then keeps all of its own there (`src-tauri/src/platform/test_root.rs`),
+  the same on every OS: `app/` holds what Tauri resolves as the app's data, config and local data
+  folders, with `caches/` and `logs/` (Tauri's `appDirectoriesOverride`, so neither `HOME`, the
+  XDG folders nor `APPDATA` are touched), and on Linux and Windows the webviews' data; `home/`
+  holds what the app keeps in the home folder, the session, the server secrets and the default
+  shared folder, in files whatever the build (a release build's keychain is never used). On
+  macOS the webviews' storage is WebKit's to place: they use a data store of their own, the test
+  runs', never the user's. The run's app registers no `cyberctf://` handler with the system.
+  `fail-signedout` gets a folder of its own (`signed-out/`, no session in it). The tools' own
+  homes (Docker's contexts, Vagrant's boxes, SSH keys) stay the user's: the labs run on them.
+- **Only a wdio build.** Any other build ignores `CYBERCTF_WDIO_ROOT` and would use the user's
+  own folders, so the runner reads the app's file for the `wdio` build's mark before it ever
+  starts it (and before each spec when the file changed) and refuses another build, saying how to
+  rebuild; it drives its own copy of the build it made (`<target>/debug/wdio/`), which a `cargo
+test` never relinks; and a build without `wdio` started with the variable set refuses to start
+  ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md#only-a-wdio-build-is-started)).
+- **What it removes.** Every clean-up acts on what the run's records say it made
+  (`tests/e2e/desktop/support/owned.mjs`, held by `tests/e2e/desktop/support/owned.test.ts`), never on a name: a
+  player's own copy of the fixture or catalogue lab has the same Compose project name
+  (`cyberctf-<id>`). A Compose project is the run's when its lab is installed in the run's folder
+  and every Compose file it was started from lies there; the runners take down only those, with
+  their volumes, and then drop the app's record of each run taken down (`app/runs/<project>`, a
+  Compose run on this machine only), which still says the lab runs and would refuse the next
+  spec's seed as the import of a running lab; a case that imports the fixture lab skips while a
+  copy of it the run didn't start runs. A spec
+  that finds its lab already running stops it only when the run started it (`stopLeftover`). An
+  image or a box is the run's when it wasn't on the machine when the run started (`records/`,
+  written first): `cleanup` confirms Clean up only when every download it would remove is the
+  run's, and otherwise names the others and leaves them all. The apps stopped between specs are
+  the ones the run launched (`records/apps/<pid>`), everything left in the spec's process group,
+  and their runner services (`serve --home <run's folder>…`), never another copy of the same binary.
+- **Afterwards.** The apps' logs (the app's own `cyberctf.log` and its runner service's `service.log`, every `*.log` under
+  `app/`, the signed-out run's too; never `home/`, and a line naming a password, a token or a key
+  left out) are copied beside the specs' logs (`tests/e2e/desktop/.state/logs/app/`), whatever the
+  verdicts. Then the folder is removed when the run ends, interrupted or not (the run's labs
+  taken down first), unless `CYBERCTF_TEST_DESKTOP_KEEP` is set: then the fixture lab stays up
+  and the folder stays, its path in the summary. On macOS the webviews' data store is the run's
+  own (its identifier made from the run's folder), so nothing a run's pages stored shows in the
+  next run.
+
+## Results
+
+A caller that drives these tiers (a test harness outside the repository) reads their results, not their
+screen. Each entry point appends **one JSON line per check** to a file it is given, and lists its
+cases with the knobs each reads, so a renamed case or knob fails the caller's own check, not a
+night's run:
+
+| Entry point                                                   | Results                                                                                                   | Listing                                                        |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                                     | `--list`                                                       |
+| `tests/e2e/desktop/runner/run.sh`, `run.ps1` (`run.mjs`)      | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`)                      | `--list` (`-List`), from `e2e/desktop/cases.tsv` and the specs |
+| the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                                            | in the integration runner's `--list` (tier `bare-machine`)     |
+| the leftover audit (`tests/audit/run.sh diff`)                | `--results <file>`, a line a kind of resource ([leftovers.md](../docs/contributing/testing/leftovers.md)) | `--list`                                                       |
+
+```json
+{ "suite": "integration", "case": "vm-lab", "provider": "qemu", "form": "vm", "result": "pass", "reason": "", "seconds": 612, "log": "…/vm-lab.log" }
+```
+
+- `suite`: `integration`, `desktop`, `setup` or `audit`; `case`: the scenario, spec, item or kind of
+  resource, as `--list` names it (a desktop check: `<spec>/<check>`, not counted again in its spec's verdict).
+- `provider`: the hypervisor, cloud (`aws`) or server (`proxmox`, `esxi`) it ran on; `form`: the
+  form its lab ran in (`docker`, `vm`, `per-machine`, `cloud-docker`, `cloud-vm`, or
+  the desktop's `container`); each empty where none applies.
+- `result`: `pass`, `fail` or `skip`; `reason`: why it failed or was skipped (a setup item's:
+  `<status>: <note>`, its status `installed`, `present`, `failed`, `skipped` or `again`, the last
+  a pass that ends for a `reboot` or a `relogin`); `seconds`; `log`: its log.
+- `leaves`, on a setup item's `installed:` record only: what the install leaves on the machine on
+  purpose, a list of `{"kind", "name"}` in the leftover audit's words (a kind of
+  [leftovers.md](../docs/contributing/testing/leftovers.md), a glob on the name its report shows:
+  `[{"kind":"route","name":"172.17.0.0/16 dev docker0"}, {"kind":"temp-folder","name":"/tmp/cyberctf-guided-setup"}]`),
+  for a caller's audit to allow ([leftovers.md](../docs/contributing/testing/leftovers.md#what-the-guided-setup-leaves)).
+
+The file is appended to, never truncated, so one file can gather a whole run. A listing line:
+
+```json
+{"suite":"integration","case":"vm-lab","tier":"local","form":"vm","test":"integration_tests::vm_lab::a_vm_lab_runs_end_to_end_through_the_runner","knobs":["CYBERCTF_TEST_VM_LAB","CYBERCTF_TEST_VM_PROVIDER","CYBERCTF_TEST_VM_INPUTS"]}
+{"suite":"desktop","case":"lab-form-vm","spec":"lab-form","form":"vm","knobs":["CYBERCTF_TEST_LAB_FORM","CYBERCTF_TEST_CATALOGUE_LAB","CYBERCTF_TEST_CATALOGUE_VM_LAB","CYBERCTF_TEST_VM_PROVIDER"],"groups":["vm"],"needs":["vm-start"],"provides":[]}
+```
+
+A desktop case's `groups` are the shards a caller may run as parallel jobs (`--group <name>`),
+its `needs` what the runner meets before it runs, and `provides` what its pass proves for the
+others ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md#needs-caps-and-groups)). A case skipped
+for a need not met carries the need's failure as its `reason`.
+
+Unit tests hold both to the code: `tests/integration/run.test.ts` (each listed test exists, every
+knob a scenario reads is listed), `tests/e2e/desktop/runner/run.test.ts` (`cases.tsv` against the specs, the
+plan, and the runner on fake specs and a fake app), `scripts/lib/suite.test.ts` and
+`integration_tests/support/results.rs` (the records).
+
+## Platforms
+
+Every platform the launcher ships for is tested in CI, on the runners `release.yml` builds it on.
+
+| Platform             | Runner             | Unit (Rust) | Installer smoke | Integration (Docker labs, attack box) |
+| -------------------- | ------------------ | ----------- | --------------- | ------------------------------------- |
+| Linux x64            | `ubuntu-22.04`     | yes         | yes (`.deb`)    | yes (`ubuntu-latest`)                 |
+| Linux Arm            | `ubuntu-22.04-arm` | yes         | yes (`.deb`)    | yes (`ubuntu-24.04-arm`, native box)  |
+| macOS, Apple Silicon | `macos-latest`     | yes         | yes (`.app`)    | here (`pnpm test:integration`)        |
+| macOS, Intel         | `macos-15-intel`   | yes         | yes (`.app`)    | no runner with Docker or a hypervisor |
+| Windows x64          | `windows-latest`   | yes         | yes (NSIS, MSI) | no Linux containers on the runner     |
+| Windows Arm          | `windows-11-arm`   | yes         | yes (NSIS)      | no Linux containers on the runner     |
+
+What differs by platform is decided in code a unit test covers on every platform (the box's CPU:
+`attack_box/place.rs`; the tools' paths and shells: `platform/`). A real lab on an Intel Mac
+or on Windows (Docker Desktop, Hyper-V, VirtualBox) still needs a machine of that kind: run
+`pnpm test:integration` there before a release that changes how labs run, and
+`packaging/windows/smoke-test.ps1` for the installer's edge cases.
+
+## Where a new test goes
+
+A failure found in the field goes to the lowest level that can reproduce it:
+
+1. A unit test: Rust with the tool scripted (`platform/exec/fake.rs`), or a component test.
+2. A dev-mock flag plus a Playwright spec (`src/lib/dev-mock/scenario.ts` lists the flags), for
+   what the UI does with an answer.
+3. A desktop end-to-end spec, when the real app and engine are the point.
+4. An integration test, when only a real tool, hypervisor, cloud or server shows it: an opt-in
+   test (`#[ignore = "needs …"]`) in `integration_tests/`, a `scenario` line in
+   `tests/integration/run.sh`, and a row in [integration.md](../docs/contributing/testing/integration.md) saying what
+   it guards against.
+
+A unit test removes what it writes in the temp folder: a Rust test takes its folder from
+`testing::temp_dir` (removed when it drops, a failed test's too), a TypeScript one removes its own
+in `afterEach` or `onTestFinished`. `pnpm check:temp-leaks` runs the unit tests with a temp folder
+of their own and fails on anything left in it; CI and `pnpm check` run them through it. An
+integration scenario (`tests/integration/run.sh`) runs with a temp folder of its own
+(`cyberctf-it.XXXXXX` in TMPDIR, or in /tmp on macOS and when TMPDIR isn't set; its log names it)
+that goes when it ends, killed past its cap too, with any process still running from it (a
+daemonized VM or QEMU hub) and, past its cap, the VirtualBox VMs its labs' Vagrant state names: a
+lab's copy, the runner's home, a test thread's folder and the scenario's app's folders
+(`TestApp::scenario`, rooted there by `CYBERCTF_TEST_APP_ROOT`; a lab's runs and its VMs' disks
+with them) never pile up on the machine. The folder holds VM disks: on a Linux whose /tmp is a
+tmpfs (Debian 13's), set TMPDIR to a folder on disk. The guided setup's scenario keeps the
+system's, where its folder lasts from pass to pass.
+
+## The feature registry
+
+[`features/registry.yml`](features/registry.yml) lists what the launcher does for its user, area by area, and the
+tests that check each feature, tier by tier; [`features/FEATURES.md`](features/FEATURES.md) is made from it and says
+how well each feature is checked (Strong, Partial, Unchecked) and where the biggest gaps are.
+`pnpm check:features` (in `pnpm check` and CI) keeps it honest: every test it names exists, every
+command (`src-tauri/src/commands.rs`), screen, window and Settings section belongs to a feature, so
+does every integration scenario and desktop case, and FEATURES.md is up to date. The tooling is
+`scripts/features/`.
+
+A feature:
+
+```yaml
+- id: lab-run.vm # <area>.<kebab-case name>
+  what: Start and stop a VM lab on this machine's hypervisor.
+  platforms: [linux, macos, windows] # omitted: all three
+  providers: [libvirt, qemu, virtualbox, hyperv, utm]
+  host: true # it depends on the real machine: only a real-host tier (desktop, integration, setup, package) proves it
+  commands: [lab_launch] # the Tauri commands it is the home of (each command has one)
+  pages: [tab:labs] # route:/<path>, tab:<screen>, settings:<section>
+  tests:
+    unit:
+      - src-tauri/src/runtime/lab.rs > a_vm_lab_starts # a Rust test by its name
+      - src/features/labs/lab-store.test.ts # a whole test file
+    web:
+      - "vm-labs.spec.ts > on this machine: up, pause" # words of its title; quoted when they hold ": "
+    desktop: [lab-form-vm, lab-form-vm/running]
+    integration: [vm-lab]
+    setup: [selftest:vm]
+  rig: [vm, vm@qemu] # rig/MATRIX.md cells that run it: a column, `@<setup>` for the rows readied that way
+  gaps: # per tier, what its tests leave out: the tier shows ◐ with this note
+    integration: never run on Windows
+```
+
+A reference names a test exactly, and the check finds it:
+
+| Tier          | A reference                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `unit`        | a test file (`src/…/x.test.tsx`, a Rust file with tests), or `<file> > <Rust fn or title words>`         |
+| `web`         | `<spec>.spec.ts > <words of the test's title>`                                                           |
+| `desktop`     | a case of `tests/e2e/desktop/runner/run.sh --list`, or `<case>/<check>` (a spec's `r.check`/`r.step` id) |
+| `integration` | a scenario of `tests/integration/run.sh --list`, or `<Rust file> > <fn>` for an opt-in test              |
+| `package`     | the packaging check's file (`.github/workflows/package-smoke.yml`, `packaging/windows/smoke-test.ps1`)   |
+| `setup`       | an item of `integration_tests::setup` (`docker`, `selftest:vm`, `plugin:<name>`…)                        |
+
+**Registering a new test.** Add it to the feature it checks, in its tier, then `pnpm features`
+and commit both files. A new integration scenario or desktop case fails the check until a feature
+claims it, as a new command or screen does until a feature is its home. A test that checks only
+part of a feature (it renders the page, it runs on Docker only) gets a `gaps` note for its tier:
+read the test, not its name. A feature that depends on the machine (`host: true`) is Strong only
+with a real-host tier that covers it and, when it names rig cells, one of them passed. A new
+feature, or a gap the registry should track, goes in the same file (`known_gaps` holds the ones
+being built or planned). After a harness's run, `pnpm features --matrix <its matrix file>` refreshes the
+rig columns.
+
+## Conventions
+
+- A test's name says what it proves (`a_change_on_aws_waits_for_a_signed_in_account`), and its
+  checks say what they saw.
+- A test that starts something stops it, whatever happened, and checks nothing is left (no
+  container, VM, cloud instance or network), so a failed run never costs a later one.
+- A test waits on a condition or an event (a channel, a child's exit, `findBy*`/`waitFor`, vi's
+  fake timers, Tokio's paused clock), never a wall-clock sleep; a poll has a generous deadline,
+  there only to stop a hang, never to time what it waits for. A sleep that is no wait (a stand-in
+  slow on purpose, the poll inside a bounded wait) is listed with its reason in
+  `src-tauri/src/testing/guardrails.rs` (the scenarios': `integration_tests::waits`), so a new one
+  fails `cargo test`.
+- A free port is held from the moment it is picked until it is used: bind to port 0 and hand the
+  listener (or its port, while the listener is held) to what uses it. A port read off a listener
+  and let go is anyone's, and a test beside it takes it first under load; the same guardrails
+  fail it.
+- A stand-in program (a fake tool, a fake app) is written once per run and linked or pointed to
+  by each test that runs it, not written fresh by every test: macOS checks every new program the
+  first time it runs, which takes seconds on a loaded machine and turns a test's timeout into a
+  flake.
+- Each test owns its temp folders and its environment: its folder from `testing::temp_dir` (a
+  TypeScript test's removed in `afterEach`), the variables it needs given to what it spawns
+  (`Command::env`, `vi.stubEnv` undone after), never this process's environment changed for
+  everyone (`std::env::set_var` is `unsafe` in Rust 2024).
+- Integration tests read their knobs (`CYBERCTF_TEST_<AREA>_<WHAT>`, [above](#knobs)) and return
+  early without them; `cargo test` never runs them. The suite runners (`scripts/lib/suite.sh`)
+  give one verdict per step, keep going after a failure, and take `ONLY`, `SKIP` and `STRICT`.
+- Logs: `tests/integration/.state/logs/`, `tests/e2e/desktop/.state/logs/`, and Playwright's report.

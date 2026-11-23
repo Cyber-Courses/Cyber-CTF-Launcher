@@ -1,0 +1,159 @@
+use super::*;
+
+/// A lab with both forms: a container per machine, and a VM recipe for it.
+const DUAL: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, app: { steps: [{ run: web.sh }] }, networks: { lab: 10 } }\n";
+
+/// A VM lab: a Windows machine.
+const VMS: &str = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\n";
+
+/// The lab's run options on an x86-64 machine (the machines below are built for it).
+fn options(spec: &str, runtime: Runtime) -> RunOptions {
+    options_on(spec, runtime, Arch::Amd64)
+}
+
+/// The lab's run options on a `host` CPU.
+fn options_on(spec: &str, runtime: Runtime, host: Arch) -> RunOptions {
+    run_options_on(&Lab::new(isoloom_spec::parse(spec).unwrap()).with_host_access(crate::runtime::lab::granted()), runtime, host)
+}
+
+/// The providers of `paths`, in order.
+fn providers(paths: &[RunPath]) -> Vec<Provider> {
+    paths.iter().filter_map(|p| p.provider).collect()
+}
+
+/// Each path's `(provider, target, variant)`.
+fn paths_of(paths: &[RunPath]) -> Vec<(Option<Provider>, &str, Option<&str>)> {
+    paths.iter().map(|p| (p.provider, p.target.as_str(), p.variant.as_deref())).collect()
+}
+
+#[test]
+fn a_container_lab_runs_where_isoloom_generates_each_form() {
+    // Regression: the picker kept its own tables: "no per-machine VMs on UTM", "one VM per
+    // machine on any cloud"; none of them asked the lab.
+    let o = options(DUAL, Runtime::Docker);
+    assert_eq!(o.docker.as_ref().map(|p| p.target.as_str()), Some("docker"));
+    // One VM per machine: on UTM too (Debian 12 has a UTM box, each network a vmnet network).
+    let per_machine = providers(&o.vms);
+    assert!(per_machine.contains(&Provider::Hyperv) && per_machine.contains(&Provider::Utm), "{per_machine:?}");
+    assert!(!o.refused.iter().any(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant"), "{:?}", o.refused);
+    // A container lab runs as true containers or true VMs: no server offers it.
+    assert_eq!(o.servers, [] as [RunPath; 0]);
+    assert_eq!(providers(&o.cloud_docker), Provider::CLOUDS);
+    assert_eq!(providers(&o.cloud_vm), Provider::CLOUDS);
+    assert_eq!(o.cloud_services, [] as [RunPath; 0]);
+}
+
+#[test]
+fn a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow() {
+    let o = options(VMS, Runtime::Vm);
+    assert!(o.docker.is_none() && o.cloud_docker.is_empty());
+    // Not on UTM: no UTM box of Windows Server is known, which Isoloom says with the way out.
+    assert!(!providers(&o.vms).contains(&Provider::Utm));
+    let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant").expect("UTM's refusal");
+    assert!(matches!(&utm.cause, RefusalCause::Isoloom { reason } if reason.contains("boxes.utm")), "{:?}", utm.cause);
+    // Proxmox's own target has one form: no provider in its evidence.
+    assert_eq!(paths_of(&o.servers), [(Some(Provider::VmwareEsxi), "vagrant", Some("vmware_esxi")), (Some(Provider::Proxmox), "proxmox", None)]);
+    // Windows runs on the clouds whose cloud-vm module takes it, and each other says why not.
+    assert_eq!(providers(&o.cloud_vm), [Provider::Aws, Provider::Azure]);
+    let gcp = o.refused.iter().find(|r| r.provider == Some(Provider::Gcp)).expect("GCP's refusal");
+    assert_eq!(gcp.target, "cloud-vm");
+    // Its targets leave Proxmox out: ESXi only.
+    let o = options(&format!("{VMS}targets: [vagrant]\n"), Runtime::Vm);
+    assert_eq!(providers(&o.servers), [Provider::VmwareEsxi]);
+    assert_eq!(o.cloud_vm, [] as [RunPath; 0]);
+}
+
+/// A Windows machine in the cloud gets no secrets (a lab's inputs, its flags among them): Isoloom
+/// sets it up during Terraform's apply, before the runner delivers them. The picker offers it on
+/// no cloud, and says why on AWS and Azure, which otherwise take it.
+#[test]
+fn a_windows_vm_given_a_labs_input_runs_on_no_cloud_and_says_why() {
+    let given = VMS.replace("networks: { lan: 10 } }", "networks: { lan: 10 }, files: [{ path: 'C:\\ctf\\flag.txt', input: FLAG }] }");
+    let o = options(&format!("{given}inputs: [FLAG]\n"), Runtime::Vm);
+    assert_eq!(o.cloud_vm, [] as [RunPath; 0]);
+    for cloud in [Provider::Aws, Provider::Azure] {
+        let refused = o.refused.iter().find(|r| r.provider == Some(cloud)).unwrap_or_else(|| panic!("{cloud:?}'s refusal"));
+        assert_eq!(refused.target, "cloud-vm");
+        assert!(matches!(&refused.cause, RefusalCause::Isoloom { reason } if reason.contains("gets `secrets`")), "{:?}", refused.cause);
+    }
+    // Its VMs still run here, and on ESXi (Vagrant delivers its secrets there).
+    assert!(providers(&o.vms).contains(&Provider::Hyperv));
+    assert!(providers(&o.servers).contains(&Provider::VmwareEsxi));
+}
+
+#[test]
+fn a_refused_container_form_says_why() {
+    // Regression: Isoloom's reason for refusing the lab on this machine's Docker was dropped (a
+    // refusal named a provider, and Docker has none): the picker could only say "not supported".
+    let broken = DUAL.replace("networks: { lab: 10 }", "networks: { nowhere: 10 }");
+    let o = options(&broken, Runtime::Docker);
+    assert!(o.docker.is_none());
+    let docker = o.refused.iter().find(|r| r.provider.is_none()).expect("Docker's refusal");
+    assert_eq!(docker.target, "docker");
+    assert!(matches!(&docker.cause, RefusalCause::Isoloom { reason } if !reason.is_empty()), "{:?}", docker.cause);
+}
+
+#[test]
+fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
+    // Regression: the policy refused a start only after the click; the picker offered it.
+    use crate::platform::policy::{Key, Override};
+    let open = options(DUAL, Runtime::Docker);
+    assert!(!open.cloud_vm.is_empty() && !open.cloud_docker.is_empty());
+    let isoloom_refused = |o: &RunOptions| -> Vec<Refusal> { o.refused.iter().filter(|r| matches!(r.cause, RefusalCause::Isoloom { .. })).cloned().collect() };
+    let windows = isoloom_refused(&options(VMS, Runtime::Vm));
+    assert!(windows.iter().any(|r| r.provider == Some(Provider::Utm)), "UTM has no Windows Server box: {windows:?}");
+    {
+        let _policy = Override::with(&[Key::DisableCloudLaunches]);
+        let o = options(DUAL, Runtime::Docker);
+        assert!(o.cloud_vm.is_empty() && o.cloud_docker.is_empty(), "no cloud account offered");
+        assert_eq!(o.docker, open.docker, "this machine still is");
+        assert_eq!(o.vms, open.vms);
+        let clouds = o.refused.iter().filter(|r| r.cause == by_policy("DisableCloudLaunches")).count();
+        assert_eq!(clouds, open.cloud_vm.len() + open.cloud_docker.len(), "each cloud's row says why");
+        assert_eq!(isoloom_refused(&options(VMS, Runtime::Vm)), windows, "Isoloom's own refusals stay its own");
+        let _privileged = Override::with(&[Key::RefusePrivilegedLabs]);
+        assert_eq!(options(DUAL, Runtime::Docker).docker, open.docker, "a lab without privileged machines runs");
+    }
+    let privileged = DUAL.replace("networks: { lab: 10 } }", "networks: { lab: 10 }, privileged: true }");
+    let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
+    let o = options(&privileged, Runtime::Docker);
+    assert!(o.docker.is_none() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_vm.is_empty(), "nowhere");
+    assert!(o.refused.iter().any(|r| r.provider.is_none() && r.cause == by_policy("RefusePrivilegedLabs")), "this machine's Docker says why: {:?}", o.refused);
+}
+
+/// A refusal by this computer's policy `setting`.
+fn by_policy(setting: &str) -> RefusalCause {
+    RefusalCause::Policy { setting: setting.into() }
+}
+
+/// Regression: the webview decided again which hypervisors run a lab built for another CPU, from
+/// the catalogue's architectures rather than the spec's machines, and the two could disagree. The
+/// run options say it, by the backend's rule: those VMs run here only on an emulator.
+#[test]
+fn vms_built_for_another_cpu_are_offered_only_on_an_emulator() {
+    let native = options_on(VMS, Runtime::Vm, Arch::Amd64);
+    assert!(!native.emulated);
+    assert!(providers(&native.vms).len() > 1 && providers(&native.vms).contains(&Provider::Virtualbox), "{:?}", providers(&native.vms));
+    let emulated = options_on(VMS, Runtime::Vm, Arch::Arm64);
+    assert!(emulated.emulated);
+    assert_eq!(providers(&emulated.vms), [Provider::Qemu]);
+    // A container lab's machines as VMs are its VMs: emulated there too, its containers on Docker
+    // as before.
+    let dual = options_on(DUAL, Runtime::Docker, Arch::Arm64);
+    assert!(dual.emulated && providers(&dual.vms) == [Provider::Qemu], "its machines as VMs: {:?}", providers(&dual.vms));
+    assert_eq!(dual.docker, options_on(DUAL, Runtime::Docker, Arch::Amd64).docker);
+}
+
+#[test]
+fn the_ports_question_is_left_out_when_every_published_port_is_fixed() {
+    let web = |publish: &str| {
+        format!(
+            "version: 1\nname: w\nnetworks: {{ lab: {{ cidr: 10.70.0.0/24 }} }}\nmachines:\n  web:\n    networks: {{ lab: 10 }}\n    ports: {{ site: {{ port: 80, protocol: http{publish} }}, api: {{ port: 8000, protocol: http, publish: {{ host: 8000, fixed: true }} }} }}\n    app: {{ image: nginx:1.27 }}\n"
+        )
+    };
+    // One published port the start picks (or keeps as the lab's own): the question decides it.
+    assert!(!options(&web(", publish: 8080"), Runtime::Docker).ports_fixed);
+    // Every published port fixed (one not published at all): nothing to decide.
+    assert!(options(&web(""), Runtime::Docker).ports_fixed);
+    assert!(options(&web(", publish: { host: 8080, fixed: true }"), Runtime::Docker).ports_fixed);
+}

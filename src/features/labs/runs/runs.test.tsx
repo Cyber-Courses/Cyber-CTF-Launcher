@@ -1,0 +1,338 @@
+// @vitest-environment jsdom
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
+import {
+  appendDeployLog,
+  appendDeployStep,
+  beginDeploy,
+  endDeploy,
+  failDeploy,
+  getDeploySnapshot,
+  restoreDeploy,
+  subscribeDeploy,
+  type DeployRun,
+} from "@/features/labs/runs/deploy-runs";
+import { forgetLastRun, getLastPlace, getLastRun, setLastRun } from "@/features/labs/runs/last-run";
+import { deployingOf, keepsRunningPhase, operationLabel, operationStatus, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
+import { useOperationLog } from "@/features/labs/runs/operation-log";
+import { takeIn } from "@/lib/tauri/run-events";
+import { setLocalePreference } from "@/lib/i18n";
+import type { ActiveOperation } from "@/lib/tauri";
+import { commands, installTauri } from "@/test/tauri";
+import { flush } from "@/test/ui";
+
+afterEach(() => {
+  act(() => {
+    setLocalePreference("en");
+  });
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+/** `id`'s run now; fails the test when it has none. */
+function runOf(id: string): DeployRun {
+  const run = getDeploySnapshot().runs[id];
+  if (!run) throw new Error(`no run for ${id}`);
+  return run;
+}
+
+describe("deploy runs", () => {
+  it("keeps each lab's logs separate when two deploys run at once", () => {
+    // Regression: a single global slot let a second deploy's lines (e.g. an ESXi VM lab) show on
+    // the first lab's (e.g. a Docker lab) page. Keyed per lab, each stream stays its own.
+    beginDeploy("docker-lab");
+    beginDeploy("esxi-lab");
+    appendDeployLog("docker-lab", "Container web-1 Started");
+    appendDeployLog("esxi-lab", "vagrant up --provider vmware_esxi failed");
+    appendDeployLog("docker-lab", "Container web-1 Healthy");
+    expect(runOf("docker-lab").logs).toEqual(["Container web-1 Started", "Container web-1 Healthy"]);
+    expect(runOf("esxi-lab").logs).toEqual(["vagrant up --provider vmware_esxi failed"]);
+  });
+
+  it("marks both labs busy while both deploy, and ends them independently", () => {
+    beginDeploy("a");
+    beginDeploy("b");
+    expect([runOf("a").busy, runOf("b").busy]).toEqual([true, true]);
+    endDeploy("a");
+    // Ending one lab leaves the other running, and keeps the ended lab's logs for the console.
+    expect([runOf("a").busy, runOf("b").busy]).toEqual([false, true]);
+  });
+
+  it("clears only that lab's previous logs when it begins again", () => {
+    beginDeploy("a");
+    appendDeployLog("a", "first run line");
+    appendDeployLog("b", "b stays");
+    beginDeploy("a");
+    expect(runOf("a")).toMatchObject({ logs: [], busy: true });
+    expect(runOf("b").logs).toEqual(["b stays"]);
+  });
+
+  it("records a timestamp parallel to every log line", () => {
+    beginDeploy("a");
+    appendDeployLog("a", "one");
+    appendDeployLog("a", "two");
+    expect(runOf("a").times).toHaveLength(2);
+    expect(runOf("a").times.every((t) => typeof t === "number")).toBe(true);
+  });
+
+  it("places each step the runner said after the lines in before it, flushed or not", () => {
+    beginDeploy("a");
+    appendDeployLog("a", "one");
+    getDeploySnapshot();
+    appendDeployLog("a", "two");
+    appendDeployStep("a", { step: "images", state: "started", label: null, count: null });
+    appendDeployLog("a", "three");
+    expect(runOf("a").marks?.map((m) => [m.step.step, m.line])).toEqual([["images", 2]]);
+    beginDeploy("a");
+    expect(runOf("a").marks).toEqual([]);
+  });
+
+  it("ends no run for a lab that never started", () => {
+    endDeploy("never-started");
+    expect(getDeploySnapshot().runs["never-started"]).toBeUndefined();
+  });
+
+  it("notifies subscribers on every change, until they unsubscribe", () => {
+    const cb = vi.fn();
+    const unsub = subscribeDeploy(cb);
+    beginDeploy("a");
+    appendDeployLog("a", "x");
+    endDeploy("a");
+    expect(cb).toHaveBeenCalledTimes(3);
+    unsub();
+    appendDeployLog("a", "y");
+    getDeploySnapshot();
+    expect(cb).toHaveBeenCalledTimes(3);
+  });
+
+  it("adds streamed lines in batches, one update for many lines", () => {
+    vi.useFakeTimers();
+    beginDeploy("a");
+    const cb = vi.fn();
+    subscribeDeploy(cb);
+    for (let i = 0; i < 50; i++) appendDeployLog("a", `line ${String(i)}`);
+    appendDeployLog("b", "other lab");
+    expect(cb).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    // 51 lines, two labs, one notification.
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(runOf("a").logs).toHaveLength(50);
+    expect(runOf("a").times).toHaveLength(50);
+    expect(runOf("b").logs).toEqual(["other lab"]);
+    // Reading outside React, or ending the run, takes in the lines still waiting.
+    appendDeployLog("a", "last");
+    expect(runOf("a").logs.at(-1)).toBe("last");
+    appendDeployLog("a", "✓ done");
+    endDeploy("a");
+    expect(runOf("a")).toMatchObject({ busy: false });
+    expect(runOf("a").logs.at(-1)).toBe("✓ done");
+  });
+
+  it("puts a run back exactly as it was, and forgets one that had no past", () => {
+    beginDeploy("a", "launch");
+    appendDeployLog("a", "line");
+    endDeploy("a");
+    const before = runOf("a");
+    beginDeploy("a", "resume");
+    expect(runOf("a").logs).toEqual([]);
+    restoreDeploy("a", before);
+    expect(runOf("a")).toBe(before);
+    beginDeploy("c");
+    restoreDeploy("c", undefined);
+    expect("c" in getDeploySnapshot().runs).toBe(false);
+    // Nothing to put back and nothing to remove: no change, so nobody is told.
+    const notified = vi.fn();
+    subscribeDeploy(notified);
+    restoreDeploy("never", undefined);
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("leaves the lab idle when a log line arrives after the run ended", () => {
+    // A channel's last message can arrive after the command's promise settled: `busy` stays
+    // begin/end's to set.
+    beginDeploy("a");
+    endDeploy("a");
+    appendDeployLog("a", "late line");
+    expect(runOf("a").busy).toBe(false);
+  });
+
+  it("never reads a signed-out from a log line: a lab's own output can say anything", () => {
+    const fired = vi.fn();
+    window.addEventListener(SIGNED_OUT_EVENT, fired);
+    appendDeployLog("a", "user bob signed out of the domain controller");
+    appendDeployLog("a", "✗ You're SIGNED OUT: sign in again");
+    expect(runOf("a").logs).toHaveLength(2);
+    expect(fired).not.toHaveBeenCalled();
+    window.removeEventListener(SIGNED_OUT_EVENT, fired);
+  });
+
+  it("keeps the code of the error a run failed with, beside its ✗ line", () => {
+    beginDeploy("a", "launch");
+    failDeploy("a", { code: "portInUse", args: { port: 8080 }, message: "Host port 8080 is already in use" });
+    expect(runOf("a").failureCode).toBe("portInUse");
+    expect(runOf("a").logs.at(-1)).toMatch(/^✗ Host port 8080/);
+  });
+
+  it("doesn't call a listener another one removed during a change", () => {
+    // useSyncExternalStore unsubscribes during emits; a Set iteration skips entries deleted
+    // before it reaches them.
+    let offB = () => {};
+    const b = vi.fn();
+    subscribeDeploy(() => {
+      offB();
+    });
+    offB = subscribeDeploy(b);
+    beginDeploy("a");
+    expect(b).not.toHaveBeenCalled();
+  });
+});
+
+describe("operations", () => {
+  const op = (o: ActiveOperation["op"], machine: string | null = null): ActiveOperation => ({ labId: "l", op: o, machine, deploying: false, step: null });
+
+  it("names every operation", () => {
+    expect((["launch", "resume", "pause", "shutdown", "provision", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
+      "Starting…",
+      "Resuming…",
+      "Pausing…",
+      "Shutting down…",
+      "Provisioning…",
+      "Stopping…",
+    ]);
+  });
+
+  it("names a provisioning target without its isoloom- prefix, stripped once", () => {
+    const label = operationLabel(op("provision", "isoloom-isoloom-dc01"));
+    expect(label).toContain("isoloom-dc01");
+    expect(label).not.toContain("isoloom-isoloom-");
+    expect(operationLabel(op("provision"))).not.toContain("{");
+  });
+
+  it("names the status shown while every operation runs, in the current language", () => {
+    const ops: ActiveOperation["op"][] = ["launch", "resume", "pause", "shutdown", "provision", "stop", "attach", "detach"];
+    expect(ops.map((o) => operationStatus(o))).toEqual([
+      "Starting",
+      "Resuming",
+      "Pausing",
+      "Shutting down",
+      "Provisioning",
+      "Stopping",
+      "Adding the attack box",
+      "Removing the attack box",
+    ]);
+    // Only a provisioning run leaves the lab in its running phase.
+    expect(ops.filter(keepsRunningPhase)).toEqual(["provision"]);
+    const en = operationStatus("launch");
+    setLocalePreference("de");
+    expect(operationStatus("launch")).not.toBe(en);
+  });
+
+  it("counts as deploying the operations the backend says deploy, whatever their name", () => {
+    // Regression: the webview told them by their name and runtime, so a resume or a provisioning
+    // run in the app (no runtime, not a launch) dropped out of the set the backend counts.
+    const op = (labId: string, o: ActiveOperation["op"], deploying: boolean): [string, ActiveOperation] => [
+      labId,
+      { labId, op: o, machine: null, deploying, step: null },
+    ];
+    const inFlight = new Map([
+      op("here-resume", "resume", true),
+      op("here-provision", "provision", true),
+      op("service-pause", "pause", true),
+      op("here-stop", "stop", false),
+      op("here-pause", "pause", false),
+    ]);
+    expect([...deployingOf(inFlight)].sort()).toEqual(["here-provision", "here-resume", "service-pause"]);
+  });
+
+  it("reads the labs deploying from the run events, not a poll of their own", async () => {
+    const calls = installTauri({
+      active_operations: () => [
+        { labId: "lab-w", op: "resume", machine: null, deploying: true, step: null, runtime: "VM" },
+        { labId: "lab-s", op: "stop", machine: null, deploying: false, step: null },
+      ],
+    });
+    const deploying = renderHook(() => useDeployingLabs());
+    await flush();
+    expect([...deploying.result.current]).toEqual(["lab-w"]);
+    expect(commands(calls)).not.toContain("busy_labs");
+  });
+
+  it("reads the labs deploying and the operations in flight from the events a window replays", async () => {
+    installTauri();
+    const deploying = renderHook(() => useDeployingLabs());
+    const ops = renderHook(() => useActiveOperations());
+    await flush();
+    expect([...deploying.result.current]).toEqual(["lab-goad"]);
+    expect(ops.result.current.get("lab-goad")?.step).toContain("SRV02");
+  });
+});
+
+describe("operation log", () => {
+  const started = { kind: "started", operation: "op-1", labId: "lab-goad", op: "launch", machine: null, runtime: null, deploying: true, at: 5 } as const;
+
+  it("follows the lab's operation from the run events, with no command of its own", async () => {
+    const calls = installTauri({ active_operations: () => [] });
+    const { result } = renderHook(({ active }) => useOperationLog("lab-goad", active), { initialProps: { active: true } });
+    await flush();
+    expect(result.current.lines).toEqual([]);
+    act(() => {
+      takeIn([
+        { cursor: 101, event: started },
+        { cursor: 102, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 1" } },
+        { cursor: 103, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 2" } },
+      ]);
+    });
+    expect(result.current.lines).toEqual(["line 1", "line 2"]);
+    expect(result.current.times).toHaveLength(2);
+    expect(commands(calls).filter((c) => c !== "run_events" && !c.startsWith("plugin:event"))).toEqual([]);
+  });
+
+  it("ends a failed operation's log on its ✗ line and reads its error's code", async () => {
+    installTauri({ active_operations: () => [] });
+    const { result } = renderHook(() => useOperationLog("lab-goad", true));
+    await flush();
+    act(() => {
+      takeIn([
+        { cursor: 101, event: started },
+        { cursor: 102, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "==> pulling" } },
+        {
+          cursor: 103,
+          event: { kind: "ended", operation: "op-1", labId: "lab-goad", op: "launch", error: { code: "dockerNotRunning", message: "Docker isn't running." } },
+        },
+      ]);
+    });
+    expect(result.current.lines[0]).toBe("==> pulling");
+    expect(result.current.lines[1]).toMatch(/^✗ /);
+    expect(result.current.failureCode).toBe("dockerNotRunning");
+  });
+});
+
+describe("last run", () => {
+  it("stores when each lab was last launched", () => {
+    expect(getLastRun("a")).toBeNull();
+    vi.spyOn(Date, "now").mockReturnValueOnce(5).mockReturnValueOnce(9);
+    setLastRun("a");
+    setLastRun("b");
+    expect([getLastRun("a"), getLastRun("b")]).toEqual([5, 9]);
+  });
+
+  it("forgets a removed lab's time, and keeps a time the core couldn't save for this window", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    setLastRun("x");
+    expect(getLastRun("x")).not.toBeNull();
+    forgetLastRun("x");
+    expect(getLastRun("x")).toBeNull();
+  });
+
+  it("keeps where each lab was last started: a resume leaves it, a removal forgets it", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    setLastRun("p", { kind: "server", host: "pve" });
+    setLastRun("p");
+    expect(getLastPlace("p")).toEqual({ kind: "server", host: "pve" });
+    setLastRun("p", { kind: "docker", engine: null, defaultPorts: false });
+    expect(getLastPlace("p")).toEqual({ kind: "docker", engine: null, defaultPorts: false });
+    forgetLastRun("p");
+    expect(getLastPlace("p")).toBeNull();
+  });
+});

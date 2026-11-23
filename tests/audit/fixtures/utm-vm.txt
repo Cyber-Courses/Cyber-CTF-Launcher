@@ -1,0 +1,3 @@
+UUID                                 Status   Name
+6C7E3B58-2D4F-4C1A-9F65-1B2D3C4E5F60 started  hello-stack - isoloom-docker-host
+A1B2C3D4-0000-4000-8000-000000000002 stopped  Owner Windows 11

@@ -1,0 +1,205 @@
+# What the stack leaves on a machine
+
+The contract of the leftover audit: everything the launcher, Isothrum and the projects Isoloom
+generates can make on a machine, kind by kind, with what of each is kept by design. After a run
+that started and stopped labs, nothing else may be left. `tests/audit/` checks it: a snapshot
+before, one after, and their diff, one verdict a kind.
+
+```sh
+tests/audit/run.sh snapshot --out before.json [--root <the run's folder>]   # Linux, macOS
+pwsh tests/audit/snapshot.ps1 -Out before.json [-Root <folder>]            # Windows
+ssh root@<server> sh -s < tests/audit/snapshot-server.sh > before.json     # Proxmox VE, ESXi
+# ... the run ...
+tests/audit/run.sh diff before.json after.json --mode clone --results results.jsonl
+tests/audit/run.sh --list                                                   # the kinds, as JSON lines
+```
+
+A snapshot is read-only and takes a few seconds: each tool is asked once, within a time limit,
+and a tool that is missing, refuses (`--sudo`: what needs root, through `sudo -n`) or doesn't
+answer makes that kind a `skip` saying which, never an error. It records each tool's own output;
+`tests/audit/src/inventory.ts` reads them (`inventory.test.ts` holds each parser to a recorded output
+in `tests/audit/fixtures/`).
+
+## Whose a new thing is
+
+- **A throwaway clone** (`--mode clone`, the default): everything new is the run's.
+- **A machine someone uses** (`--mode shared`, the macOS lane on the owner's Mac): the owner's own
+  labs, VMs, containers and files exist and change while the run runs, and are never reported or
+  touched. A new thing is the run's only when the run proves it made it:
+  - it lies under one of the run's folders (`--root`: `CYBERCTF_WDIO_ROOT`, a runner's work
+    folder; a container's Compose files, a Vagrant machine's folder, a process's arguments);
+  - or the run used its name (`--name`, or the run's logs name it, `--named-in`) and it was made
+    while the run ran (`--window <start>:<end>`, epoch seconds, a minute's grace after). A window
+    given its own logs (`--window <s>:<e>=<log>,…`, a pass's) needs them to name it: a Compose
+    project's name is a lab's, and another process can make one of the same name meanwhile. With
+    no window, or no date for the thing, the name decides;
+  - a listening socket is the run's when its process is.
+
+  With none of these, nothing is the run's: never a blanket diff of the machine.
+
+What the run may leave is `tests/audit/allowlist.tsv`, each entry with its reason (a caller adds
+its own with `--allow`). Everything new that is neither allowed nor the run's is listed as "not the
+run's" in the report and left alone.
+
+## Results
+
+`--results <file>` appends one record a kind, as the other entry points ([README.md](../../../tests/README.md),
+"Results"), suite `audit`, the kind its case:
+
+```json
+{
+  "suite": "audit",
+  "case": "docker-network",
+  "provider": "",
+  "form": "",
+  "result": "fail",
+  "reason": "left 1: cyberctf-hello_lab",
+  "seconds": 0,
+  "log": "…/audit-report.txt"
+}
+```
+
+`fail` names what was left (twenty names, then how many more); `skip` says which tool couldn't
+answer and when (before or after the run); `pass` says what it allowed and what wasn't the run's.
+The exit status is 1 when a kind failed, 2 when the audit couldn't run.
+
+## The inventory
+
+Names: `<id>` a lab's id; `<run>` Isothrum's run, `cyberctf-<id>` for the launcher; `<env>` the
+lab's Isoloom environment (its `isoloom.yml` name, `-<n>` for an instance); `<slot>` a server
+slot (1 to 99); `<data>` the launcher's data folder (`org.cyberctf.desktop` under
+`~/.local/share`, `~/Library/Application Support` or `%APPDATA%`), its cache folder alike.
+
+### Docker
+
+| Kind               | What the stack makes                                                                                                                                                                                                                                                                                                                                                 | Kept by design                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `docker-container` | a lab's Compose project `cyberctf-<id>` (label `com.docker.compose.project`), containers `cyberctf-<id>-<service>-<n>`, Isoloom's helpers (`isoloom-router`, `-probe-<arch>`, `-check`, `-init-…`, `-access`), the attack box (service `attackbox`); the guided setup's self-test project `cyberctf-selftest`; labels `isoloom.managed`, `isoloom.environment=<env>` | none                                                                                               |
+| `docker-network`   | `cyberctf-<id>_<network>`, `_isoloom-mgmt`, `_isoloom-trunk-<lan>-<machine>` (Linux bridges `br-<id>`, with Docker's iptables rules)                                                                                                                                                                                                                                 | none                                                                                               |
+| `docker-volume`    | `cyberctf-<id>_<volume>`, `_<disk>`, `_isoloom-probe-<arch>`; anonymous volumes                                                                                                                                                                                                                                                                                      | a volume labelled `isoloom.persistent=true` outlives a stop                                        |
+| `docker-image`     | pulled: a lab's images, Isoloom's helpers (`curlimages/curl`, `busybox`, `alpine`, `nicolaka/netshoot`, `hashicorp/terraform`), the attack box `cyberctf/attack-box`; built: `localhost/isoloom/<env>-<machine>`, `<run>-<service>`                                                                                                                                  | all: the launcher's cache, recorded by the Isothrum runner, removed by the Machine page's Clean up |
+
+A container lab 1.9 ran inside a helper VM (Isoloom's former `docker-vm`, no longer generated) ran
+Compose inside the VM (project `<env>`): on the machine it left only the VM and its port forwards.
+The launcher no longer reaches them; the audit still names them.
+
+### Vagrant and the hypervisors
+
+| Kind                | What the stack makes                                                                                                                                                                                                                                                                                  | Kept by design                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `vagrant-machine`   | an entry of Vagrant's machine index (`global-status`) a machine, its Vagrantfile in `<data>/labs/<id>/.isoloom[-n]/vagrant/` (or an earlier version's helper VM's `docker-vm/`), its state in `<data>/runs/cyberctf-<id>/vagrant` (`VAGRANT_DOTFILE_PATH`); the self-test's in `<cache>/selftest/vm/` | none                                                                                                    |
+| `vagrant-box`       | the boxes a lab or the self-test uses (`bento/*`, `generic/*`, `cloud-image/debian-12`, `utm/bookworm`)                                                                                                                                                                                               | all: the cache                                                                                          |
+| `vagrant-dotfolder` | a `.vagrant` folder under `<data>`, `<cache>` or the run's folders: the self-test's, and Isoloom's QEMU hub's (`.isoloom/vagrant/.vagrant/isoloom-qemu-hubs/<net>.pid`, `.log`)                                                                                                                       | none                                                                                                    |
+| `libvirt-domain`    | `<env>_<machine>`, `<env>_default` (an earlier version's helper VM), the self-test's `cyberctf-…` (`qemu:///system`, or `LIBVIRT_DEFAULT_URI`)                                                                                                                                                        | none                                                                                                    |
+| `libvirt-network`   | `isoloom-<env>-<net>` a lab network; vagrant-libvirt's `vagrant-libvirt` management network                                                                                                                                                                                                           | none                                                                                                    |
+| `libvirt-pool`      | none (the `default` pool is used)                                                                                                                                                                                                                                                                     | none                                                                                                    |
+| `libvirt-volume`    | a domain's disk and data disks                                                                                                                                                                                                                                                                        | a box's image (`*_vagrant_box_image_*`): the cache                                                      |
+| `vbox-vm`           | `<env> - <machine>`, `<env> - isoloom-docker-host` (an earlier version's helper VM), the self-test's `CyberCTF test VM`                                                                                                                                                                               | the linked-clone master Vagrant imports from a box (`<box>_<ms>_<n>`): the cache                        |
+| `vbox-hostonly`     | the self-test's private network (192.168.56.0/24) makes `vboxnet<n>` (VirtualBox 7 on a Mac: `vagrantnet-*`; Windows: `VirtualBox Host-Only Ethernet Adapter`) and its route; a lab's networks are internal (`intnet`) and make none                                                                  | Windows only (removing it asks for elevation); on Linux and macOS the self-test removes the one it made |
+| `vbox-dhcp`         | the host-only adapter's `HostInterfaceNetworking-vboxnet<n>`                                                                                                                                                                                                                                          | the same: Windows only                                                                                  |
+| `vbox-natnet`       | none                                                                                                                                                                                                                                                                                                  | none                                                                                                    |
+| `utm-vm`            | `<env> - isoloom-docker-host` (an earlier version's helper VM: UTM runs no lab now)                                                                                                                                                                                                                   | none                                                                                                    |
+| `parallels-vm`      | `<env> - <machine>` (linked clones)                                                                                                                                                                                                                                                                   | the linked-clone master                                                                                 |
+| `vmware-network`    | the Vagrant VMware Utility's host-only network `vmnet<n>` for a lab's private network (`VNET_<n>` in VMware's `networking` file; the M4 Max: `vmnet2 10.80.0.0/24`)                                                                                                                                   | none                                                                                                    |
+| `hyperv-vm`         | `<env>-<machine>`, the self-test's `CyberCTF test VM`                                                                                                                                                                                                                                                 | none                                                                                                    |
+| `hyperv-switch`     | a private switch `isoloom-<env>-<net>` a lab network, removed with the environment's last VM                                                                                                                                                                                                          | the Default Switch (or `ISOLOOM_HYPERV_SWITCH`) is used, not made                                       |
+| `hyperv-nat`        | none                                                                                                                                                                                                                                                                                                  | none                                                                                                    |
+| `hyperv-vhd`        | a VM's differencing disk (in its `.vagrant` folder)                                                                                                                                                                                                                                                   | a box's parent disk                                                                                     |
+
+VMware Desktop's and Parallels' host-only networks for a lab's private networks are their plugins'
+defaults, with no clean-up in either repository: a run on them is the first to say.
+
+### Processes, ports and files
+
+| Kind              | What the stack makes                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Kept by design                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `process`         | the app; the runner service (`<app> serve --home <home> --detach`, started by the app or `cyberctf` on first use, outliving them until it has idled five minutes with no client nor operation) and its `vagrant`, `docker compose`, `terraform`; the console's SSH tunnel (`ssh -N -L 127.0.0.1:…`); the VM processes (`qemu-system-*`, `VBoxHeadless`, `vmwp`); Isoloom's QEMU hub (`qemu-system-* -machine none -daemonize`); an RDP client given `<data>/screen/<window>.rdp` | none once the labs are stopped                                                                                                         |
+| `listening-port`  | a lab's published ports (`127.0.0.1:<port>`, `docker-proxy` on Linux), the Screen's VNC bridge (`127.0.0.1:<random>`), the sign-in callback (`127.0.0.1:47290`–`47292`), the QEMU hub's (20000–39999), Vagrant's forwarded ports, the wdio build's WebDriver (`TAURI_WEBDRIVER_PORT`)                                                                                                                                                                                            | none                                                                                                                                   |
+| `temp-folder`     | the desktop runs' folders (`cyberctf-e2e.*`), the tests' (`cyberctf-lab-*`, `cyberctf-box-*-home`, `isoloom-cli-*`), Windows' `cyberctf-vagrant-<hex>` and `cyberctf-shell-*.cmd`, Isoloom's `isoloom-project*.tgz`, the single-instance socket `org_cyberctf_desktop_si.sock` (macOS)                                                                                                                                                                                           | none                                                                                                                                   |
+| `run-file`        | under `<data>`, `<cache>`, `~/.isothrum` and the run's folders: Isothrum's `runs/<run>/lock`, the QEMU hub's pid files                                                                                                                                                                                                                                                                                                                                                           | the app's own locks (`storage.lock`, `installed-tools.lock`, `slots.lock`, `labs/.instances.lock`) and a run's `lock`, with its record |
+| `os-registration` | the `cyberctf://` handler: Linux `~/.local/share/applications/<exe>-handler.desktop` (every build but a wdio one), a package's desktop entry; Windows `HKCU\Software\Classes\cyberctf`, a `RunOnce` `CyberCTF` for a WSL restart                                                                                                                                                                                                                                                 | an installed package's own entries (until it's removed)                                                                                |
+| `keychain-item`   | service `org.cyberctf.desktop`, accounts `session`, `session.<n>`, `server:<host id>`, `attack-box:<lab id>`, `launch-values:cyberctf-<lab id>` (a release build; a debug or wdio build keeps them in files under its home)                                                                                                                                                                                                                                                      | the player's sign-in and servers                                                                                                       |
+
+The launcher's data folder holds by design its labs (`labs/<id>/`), Isothrum's run records
+(`runs/cyberctf-<id>/record.json`, `events.jsonl`), the Terraform plugin cache
+(`terraform-plugins/`), its SSH key (`ssh/id_ed25519`), its store (`launcher.sqlite3`: the servers, the settings, the install id),
+`installed-tools.json`, the app's log (`cyberctf.log`) and `~/CyberCTF/shared`; a desktop run
+keeps them all in its own folder (`CYBERCTF_WDIO_ROOT`), removed at its end. On macOS the test
+runs' webviews share one WebKit data store, `cyberctf-e2e-run`, by design.
+
+### The network
+
+| Kind            | What the stack makes                                                                                                                                      | Kept by design                                                                |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `hosts-entry`   | none                                                                                                                                                      | none                                                                          |
+| `route`         | Docker's and libvirt's bridges' routes, going with their networks; the VirtualBox host-only adapter's (`* vboxnet<n>`, Windows `* VirtualBox Host-Only*`) | the host-only adapter's on Windows, kept with it                              |
+| `nft-table`     | Docker's and libvirt's tables (Linux)                                                                                                                     | Docker 28+'s `table ip raw`, made on its first published port                 |
+| `iptables-rule` | Docker's chains and rules for a lab network (`br-<id>`), going with it                                                                                    | that raw table's base chains (`raw :PREROUTING ACCEPT`, `raw :OUTPUT ACCEPT`) |
+| `pf-anchor`     | none (macOS)                                                                                                                                              | none                                                                          |
+| `firewall-rule` | none of the launcher's; Windows asks to allow the app on its first listening socket (a rule named after it)                                               | none                                                                          |
+| `portproxy`     | a Hyper-V lab's published ports, `127.0.0.1:<port>` (`netsh interface portproxy`), deleted with its VM                                                    | none                                                                          |
+
+Neither the launcher nor Isothrum edits the hosts file, routes, pf, nftables, iptables or sysctl
+on the machine: what segments a lab and blocks its egress runs inside it. These kinds catch a
+change that would.
+
+### Servers
+
+| Kind               | What the stack makes on a Proxmox VE node or an ESXi host                                                                                               | Kept by design                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `proxmox-vm`       | `iso<slot>-<machine>`, `iso<slot>-isoloom-router`, `-isoloom-controller`, `iso<slot>-<env>` (an earlier version's helper VM), tagged `isoloom`, `<env>` | none                                                      |
+| `proxmox-ct`       | a lab's containers, tagged the same                                                                                                                     | none                                                      |
+| `proxmox-sdn-zone` | a simple zone `iso<slot>`                                                                                                                               | none                                                      |
+| `proxmox-sdn-vnet` | `i<slot>n<i>` a network, `i<slot>l<j>` a VLAN-carrying LAN                                                                                              | none                                                      |
+| `proxmox-network`  | none (the bridge, `vmbr0` by default, is used)                                                                                                          | none                                                      |
+| `proxmox-pool`     | `iso<slot>` (comment `Isoloom: <env>`)                                                                                                                  | none                                                      |
+| `proxmox-user`     | `isoloom`                                                                                                                                               | none                                                      |
+| `proxmox-token`    | the launcher's `<user>!cyberctf-<8 hex>`, made when the node is set up                                                                                  | that token, for the node's next lab                       |
+| `proxmox-ipset`    | the firewall's `iso<slot>n<i>`                                                                                                                          | none                                                      |
+| `proxmox-mapping`  | directory mappings `iso<slot>-<volume>`                                                                                                                 | none (the folder they map is the player's)                |
+| `proxmox-volume`   | disks, cloud images `iso<slot>-<os>[-arm64].img`, snippets `iso<slot>-<file>.yaml`, container templates `iso<slot>-<name>.tar`                          | none                                                      |
+| `esxi-vm`          | `iso<slot>-<machine>` (Terraform), `<env>-<machine>` (Vagrant), the server self-test's `cyberctf-server-selftest-probe`                                 | none                                                      |
+| `esxi-vswitch`     | `iso<slot>-<net>` (no uplink), `iso<slot>-<nic>` (an outside network's)                                                                                 | none                                                      |
+| `esxi-portgroup`   | `iso<slot>-<net>`                                                                                                                                       | none (Vagrant's use `ESXI_VIRTUAL_NETWORK`, the player's) |
+| `esxi-file`        | a guest's folder on its datastore, `iso<slot>-<name>-disks`                                                                                             | none                                                      |
+
+The launcher also appends its public key to the node's `~/.ssh/authorized_keys` when the node is
+set up, kept for its next lab. In a cloud, every resource is tagged `isoloom-expires-at`, and the
+launcher's reaper destroys an expired run; the audit doesn't reach clouds.
+
+## What the guided setup leaves
+
+A machine the guided setup readied keeps what it installed: that is the point, not a leftover.
+[`tests/audit/setup-leaves.tsv`](../../../tests/audit/setup-leaves.tsv) says what each item the setup installs
+leaves, in the audit's own words (the item as the setup's records name it, the system, the kind,
+a glob on the name the report shows, why it stays): the launcher's package its desktop entry
+(`os-registration`), a Docker engine its bridge's route, its firewall chains and tables, libvirt
+(and QEMU, which brings it) its default network and pool, its bridge's route and chains, Hyper-V
+its Default Switch and the switch's NAT route, VirtualBox on Windows the host-only adapter its
+self-test makes (on Linux and macOS the self-test removes the networks it made, VirtualBox's and
+vagrant-libvirt's, when they weren't there before it and no VM uses them), WSL 2 its switch and
+its firewall rule, Docker Desktop its processes and sockets. The headless setup entry (`integration_tests::setup`,
+`CYBERCTF_TEST_RESULTS`) puts those rows, and its own temp folder (`temp-folder`,
+`<temp>/cyberctf-guided-setup`, its real path), in each `installed:` record's `leaves`, so a
+caller's allowances (`tests/audit/run.sh diff --allow`) come from the records of the passes that
+ran, never from a table of the caller's own; an item it finds `present`, or a self-test and a lab
+that leave nothing beyond the allowlist, carry none. `kinds.test.ts` holds the table's kinds and
+systems to the listing; the entry's own tests hold what each path leaves.
+
+## Known gaps, from the code
+
+What the code says will be left, until a run says otherwise:
+
+- Isoloom's QEMU hub writes its pid and log files next to the Vagrantfile
+  (`.isoloom/vagrant/.vagrant/isoloom-qemu-hubs/`), outside Isothrum's run folder; the log and the
+  folder are never removed (`vagrant-dotfolder`), and a hub whose VM never got an id is never
+  stopped (`process`).
+- Isothrum's `project.tgz` in a run's folder has no removal.
+- An integration test run outside `tests/integration/run.sh` (`cargo test -- --ignored …`) and
+  killed midway leaves its lab's copy (`cyberctf-<id>`) and runner home (`cyberctf-<id>-home`) in
+  the temp folder: the runner gives each scenario a temp folder of its own and removes it, but a
+  test removes its folders itself only when it ends.
+- Clean-up of leftover VMs covers VirtualBox and Parallels only: a libvirt domain or network, a
+  VMware VM or a Hyper-V switch left by an interrupted `vagrant destroy` stays.
+- `tests/e2e/desktop/support/owned.mjs` looks for a run's Vagrant machines under `app/labs`, while the
+  runner keeps their state in `app/runs/cyberctf-<id>/vagrant`.

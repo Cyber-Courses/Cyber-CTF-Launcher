@@ -1,0 +1,1 @@
+/home/player/.local/share/applications/cyber-ctf-desktop-handler.desktop

@@ -1,0 +1,55 @@
+name: CI
+
+# Pull requests into dev, and pushes to it: the check's short list (`pnpm check:fast`,
+# scripts/release/release-check.sh with FAST=1) on Linux, macOS and Windows, the command a
+# contributor runs. Everything else waits for main (gate.yml).
+#
+# A job here only installs what its steps need and runs the check: the two can't drift
+# (scripts/check/workflows.test.ts holds this file to it).
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: startsWith(matrix.os, 'ubuntu')
+        uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: rustfmt, clippy
+          # other-platforms lints the core for the systems the runner isn't.
+          targets: x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-nextest
+      # The Rust contract tests run Isoloom's own example labs (spec_run.rs), from its dev: cloned
+      # beside the checkout, not inside it, where the format and lint steps would read it.
+      - run: git clone --quiet --depth 1 --branch dev https://github.com/isoloom/isoloom.git "$RUNNER_TEMP/isoloom"
+      - run: scripts/release/release-check.sh
+        env:
+          FAST: "1"
+          STRICT: "1"
+          CYBERCTF_TEST_ISOLOOM_DIR: ${{ runner.temp }}/isoloom

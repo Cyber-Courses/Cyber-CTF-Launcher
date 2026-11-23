@@ -1,0 +1,287 @@
+{
+  "$schema": "https://raw.githubusercontent.com/isoloom/isoloom/main/schemas/run-manifest-v1.schema.json",
+  "manifest_version": 1,
+  "generator": {
+    "name": "isoloom",
+    "version": "1.0.9"
+  },
+  "environment": {
+    "name": "cloud-bucket",
+    "instance": null,
+    "message": null
+  },
+  "target": "cloud-services",
+  "cloud": "aws",
+  "driver": "terraform",
+  "hosts": [
+    "linux",
+    "macos",
+    "windows"
+  ],
+  "tools": [
+    {
+      "name": "terraform",
+      "probe": [
+        "terraform",
+        "version"
+      ]
+    }
+  ],
+  "identity": {
+    "terraform": {
+      "module": ".",
+      "state": "runner",
+      "var_files": [
+        "terraform.tfvars.json"
+      ]
+    }
+  },
+  "params": [
+    {
+      "name": "AWS_PROFILE",
+      "description": "The AWS CLI profile the provider signs in with (its credentials and settings), when no keys are given.",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_PROFILE",
+          "steps": [
+            "init",
+            "apply",
+            "destroy"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AWS_REGION",
+      "description": "The AWS region the provider works in, when the module's provider names none.",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_REGION",
+          "steps": [
+            "init",
+            "apply",
+            "destroy"
+          ]
+        }
+      ]
+    }
+  ],
+  "secrets": [
+    {
+      "name": "AWS_ACCESS_KEY_ID",
+      "kind": "connection",
+      "required": false,
+      "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "AWS_ACCESS_KEY_ID"
+      },
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_ACCESS_KEY_ID",
+          "steps": [
+            "init",
+            "apply",
+            "destroy"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AWS_SECRET_ACCESS_KEY",
+      "kind": "connection",
+      "required": false,
+      "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "AWS_SECRET_ACCESS_KEY"
+      },
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_SECRET_ACCESS_KEY",
+          "steps": [
+            "init",
+            "apply",
+            "destroy"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AWS_SESSION_TOKEN",
+      "kind": "connection",
+      "required": false,
+      "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "AWS_SESSION_TOKEN"
+      },
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_SESSION_TOKEN",
+          "steps": [
+            "init",
+            "apply",
+            "destroy"
+          ]
+        }
+      ]
+    }
+  ],
+  "networks": [],
+  "machines": [],
+  "lifecycle": {
+    "up": [
+      {
+        "id": "clear-lock",
+        "action": "terraform.clear_lock"
+      },
+      {
+        "id": "copy-module",
+        "note": "Copying the lab's Terraform module…",
+        "action": "terraform.copy_module",
+        "with": {
+          "from": "../../terraform"
+        }
+      },
+      {
+        "id": "init",
+        "note": "Preparing Terraform and its providers…",
+        "argv": [
+          "terraform",
+          "-chdir=${run.state_dir}/module",
+          "init",
+          "-input=false",
+          "-no-color"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_isoloom_instance": "${run.name}"
+        },
+        "timeout_s": 3600
+      },
+      {
+        "id": "apply",
+        "note": "Creating the lab's services…",
+        "argv": [
+          "terraform",
+          "-chdir=${run.state_dir}/module",
+          "apply",
+          "-auto-approve",
+          "-input=false",
+          "-no-color",
+          "-state=${run.state_dir}/terraform.tfstate",
+          "-var-file=${run.dir}/terraform.tfvars.json"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_isoloom_instance": "${run.name}"
+        },
+        "timeout_s": 3600
+      }
+    ],
+    "down": [
+      {
+        "id": "clear-lock",
+        "action": "terraform.clear_lock"
+      },
+      {
+        "id": "copy-module",
+        "note": "Copying the lab's Terraform module…",
+        "action": "terraform.copy_module",
+        "with": {
+          "from": "../../terraform",
+          "when": "missing"
+        }
+      },
+      {
+        "id": "init",
+        "note": "Preparing Terraform and its providers…",
+        "argv": [
+          "terraform",
+          "-chdir=${run.state_dir}/module",
+          "init",
+          "-input=false",
+          "-no-color"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_isoloom_instance": "${run.name}"
+        },
+        "timeout_s": 3600
+      },
+      {
+        "id": "destroy",
+        "note": "Removing the lab's services…",
+        "argv": [
+          "terraform",
+          "-chdir=${run.state_dir}/module",
+          "destroy",
+          "-auto-approve",
+          "-input=false",
+          "-no-color",
+          "-state=${run.state_dir}/terraform.tfstate",
+          "-var-file=${run.dir}/terraform.tfvars.json"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_isoloom_instance": "${run.name}"
+        },
+        "timeout_s": 3600
+      }
+    ],
+    "status": {
+      "id": "state",
+      "action": "terraform.read_state"
+    }
+  },
+  "ready": [
+    {
+      "kind": "step_ok",
+      "step": "apply",
+      "means": "the module's services exist"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "site",
+      "description": "The module's `website_url` (the spec's `cloud.outputs.site`).",
+      "role": "info",
+      "sensitive": false,
+      "from": {
+        "kind": "terraform_output",
+        "name": "website_url"
+      }
+    }
+  ],
+  "checks": {
+    "protocol": "isoloom-check/1",
+    "setup": [],
+    "runners": [],
+    "teardown": []
+  },
+  "recovery": {
+    "retries": 0,
+    "apply_retries": 0
+  },
+  "expiry": {
+    "tf_var": "expires_at",
+    "unit": "unix_seconds",
+    "default_minutes": 240
+  }
+}

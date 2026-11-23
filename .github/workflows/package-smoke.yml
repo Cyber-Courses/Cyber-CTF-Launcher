@@ -1,0 +1,214 @@
+name: Package smoke test
+
+# Builds the real app bundle (unsigned, no updater artifacts) on Linux, macOS and Windows, installs
+# or opens it, launches it and checks it is still running 15 s later: what CI's `cargo test`
+# can't see (the frontend embedded in the binary, the bundle layout, the .deb's dependencies,
+# the NSIS installer and the MSI with their silent switches, a crash at startup). Logs are uploaded
+# when a launch fails.
+
+on:
+  # Before main: pull requests into dev run the short check only (ci.yml).
+  pull_request:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      # The installer's own files: its NSIS hooks and the scripts they carry (the hook's path fix
+      # of 2026-11-13 merged without this smoke, which the filter hadn't run).
+      - "packaging/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "next.config.ts"
+      - ".github/workflows/package-smoke.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: package-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # How long the app must stay up.
+  SMOKE_SECONDS: 15
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }}, ${{ matrix.bundles }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ubuntu-22.04 to build the .deb on the glibc floor the shipped installers target.
+          - os: ubuntu-22.04
+            bundles: deb
+          - os: ubuntu-22.04-arm
+            bundles: deb
+          - os: macos-latest
+            bundles: app
+          # The universal app's Intel half, launched on an Intel Mac.
+          - os: macos-15-intel
+            bundles: app
+          - os: windows-latest
+            bundles: nsis
+          # The MSI for managed deployment (x64 only, as release.yml builds it).
+          - os: windows-latest
+            bundles: msi
+          - os: windows-11-arm
+            bundles: nsis
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Linux build and test dependencies
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/apt-deps
+        with:
+          # xvfb + dbus-x11 to launch the .deb headlessly in the smoke test.
+          extra-packages: xvfb dbus-x11
+
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-shared-key: package-smoke
+          # package-smoke builds the real frontend via `tauri build`, so no placeholder.
+          placeholder-frontend: "false"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**') }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      # Unsigned: no signing secrets, and no updater artifacts (they need the release's private
+      # key; release.yml passes TAURI_SIGNING_PRIVATE_KEY, this build has none).
+      - name: Build the bundle
+        run: |
+          set -euo pipefail
+          echo '{"bundle":{"createUpdaterArtifacts":false}}' > "$RUNNER_TEMP/smoke.conf.json"
+          pnpm tauri build --ci --bundles ${{ matrix.bundles }} --config "$RUNNER_TEMP/smoke.conf.json"
+          mkdir -p smoke-logs
+          find src-tauri/target/release/bundle -maxdepth 2 | tee smoke-logs/bundle.txt
+
+      - name: Install and launch (Linux, .deb under Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          deb=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -1)
+          dpkg-deb --info "$deb" | tee smoke-logs/deb-info.txt
+          # Installing resolves the package's Depends on a clean system's terms.
+          sudo apt-get install -y "./$deb"
+          pkg=$(dpkg-deb -f "$deb" Package)
+          # The app, not the command line beside it (/usr/bin/cyberctf), which runs with no display.
+          bin=$(dpkg -L "$pkg" | grep '^/usr/bin/' | grep -v '^/usr/bin/cyberctf$' | head -1)
+          env -u DISPLAY -u WAYLAND_DISPLAY /usr/bin/cyberctf version --json | tee smoke-logs/cli.txt
+          echo "Launching $bin"
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1 RUST_BACKTRACE=1
+          xvfb-run -a dbus-run-session -- "$bin" > smoke-logs/app.log 2>&1 &
+          pid=$!
+          sleep "$SMOKE_SECONDS"
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" && code=0 || code=$?
+            echo "::error::The app exited within ${SMOKE_SECONDS}s (code $code)"
+            cat smoke-logs/app.log
+            exit 1
+          fi
+          echo "Still running after ${SMOKE_SECONDS}s."
+          pkill -f "$bin" || true
+          kill "$pid" 2>/dev/null || true
+          ! grep -q "panicked" smoke-logs/app.log
+
+      - name: Launch (macOS, the .app)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app=$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
+          # The app's executable, not the command line beside it (cyberctf).
+          exe=$(find "$app/Contents/MacOS" -type f -perm -u+x ! -name cyberctf | head -1)
+          "$app/Contents/MacOS/cyberctf" version --json | tee smoke-logs/cli.txt
+          plutil -lint "$app/Contents/Info.plist"
+          echo "Launching $exe"
+          RUST_BACKTRACE=1 "$exe" > smoke-logs/app.log 2>&1 &
+          pid=$!
+          sleep "$SMOKE_SECONDS"
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" && code=0 || code=$?
+            echo "::error::The app exited within ${SMOKE_SECONDS}s (code $code)"
+            cat smoke-logs/app.log
+            exit 1
+          fi
+          echo "Still running after ${SMOKE_SECONDS}s."
+          kill "$pid"
+          ! grep -q "panicked" smoke-logs/app.log
+
+      - name: Install and launch (Windows, the NSIS installer)
+        if: runner.os == 'Windows' && matrix.bundles == 'nsis'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP 'CyberCTF'
+          # Silent install into a known folder (/D must come last, unquoted).
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$dir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "The installer failed (exit $($setup.ExitCode))" }
+          Get-ChildItem $dir | Out-File smoke-logs/installed.txt
+          # The app, not the command line beside it (cyberctf.exe) nor the uninstaller.
+          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notmatch 'unins' -and $_.Name -ne 'cyberctf.exe' } | Select-Object -First 1
+          & (Join-Path $dir 'cyberctf.exe') version --json | Tee-Object smoke-logs/cli.txt
+          if ($LASTEXITCODE -ne 0) { throw "cyberctf version failed (exit $LASTEXITCODE)" }
+          Write-Host "Launching $($exe.FullName)"
+          $env:RUST_BACKTRACE = '1'
+          $app = Start-Process -FilePath $exe.FullName -PassThru -WindowStyle Minimized `
+            -RedirectStandardOutput smoke-logs/app.log -RedirectStandardError smoke-logs/app.err.log
+          Start-Sleep -Seconds $env:SMOKE_SECONDS
+          if ($app.HasExited) {
+            Write-Host "::error::The app exited within $($env:SMOKE_SECONDS)s (code $($app.ExitCode))"
+            exit 1
+          }
+          Write-Host "Still running after $($env:SMOKE_SECONDS)s."
+          Stop-Process -Id $app.Id -Force
+
+      # The silent install and removal docs/admins/admin-guide.md gives administrators: msiexec /qn.
+      - name: Install, launch and remove (Windows, the MSI)
+        if: runner.os == 'Windows' && matrix.bundles == 'msi'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP 'CyberCTF'
+          $log = Join-Path (Resolve-Path smoke-logs) 'msiexec-install.log'
+          $setup = Start-Process -FilePath msiexec.exe -ArgumentList '/i', "`"$($msi.FullName)`"", '/qn', '/norestart', "INSTALLDIR=`"$dir`"", '/l*v', "`"$log`"" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "msiexec /i failed (exit $($setup.ExitCode)); see msiexec-install.log" }
+          Get-ChildItem $dir | Out-File smoke-logs/installed.txt
+          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -ne 'cyberctf.exe' } | Select-Object -First 1
+          & (Join-Path $dir 'cyberctf.exe') version --json | Tee-Object smoke-logs/cli.txt
+          if ($LASTEXITCODE -ne 0) { throw "cyberctf version failed (exit $LASTEXITCODE)" }
+          Write-Host "Launching $($exe.FullName)"
+          $env:RUST_BACKTRACE = '1'
+          $app = Start-Process -FilePath $exe.FullName -PassThru -WindowStyle Minimized `
+            -RedirectStandardOutput smoke-logs/app.log -RedirectStandardError smoke-logs/app.err.log
+          Start-Sleep -Seconds $env:SMOKE_SECONDS
+          if ($app.HasExited) {
+            Write-Host "::error::The app exited within $($env:SMOKE_SECONDS)s (code $($app.ExitCode))"
+            exit 1
+          }
+          Write-Host "Still running after $($env:SMOKE_SECONDS)s."
+          Stop-Process -Id $app.Id -Force
+          $log = Join-Path (Resolve-Path smoke-logs) 'msiexec-remove.log'
+          $remove = Start-Process -FilePath msiexec.exe -ArgumentList '/x', "`"$($msi.FullName)`"", '/qn', '/norestart', '/l*v', "`"$log`"" -Wait -PassThru
+          if ($remove.ExitCode -ne 0) { throw "msiexec /x failed (exit $($remove.ExitCode)); see msiexec-remove.log" }
+          if (Test-Path (Join-Path $dir $exe.Name)) { throw "msiexec /x left $($exe.Name) behind" }
+          Write-Host "Removed."
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-smoke-logs-${{ matrix.os }}-${{ matrix.bundles }}
+          path: smoke-logs/
+          if-no-files-found: ignore

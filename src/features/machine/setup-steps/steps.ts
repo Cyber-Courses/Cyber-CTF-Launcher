@@ -1,0 +1,207 @@
+import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
+import { type SystemReport, type WslState } from "@/lib/tauri";
+import { translate, type MessageKey, type Vars } from "@/lib/i18n";
+import { localHypervisors } from "@/features/machine/hypervisors";
+import { ENGINES, Engine, enginesFor } from "@/features/machine/setup-steps/engines";
+import { engineActions, vagrantActions } from "@/features/machine/setup-steps/plan";
+import { MachineSetupState, type SetupInstalls } from "@/features/machine/setup-steps/use-machine-setup";
+
+export type MachineStep = "pkgmgr" | "virtualization" | "docker" | "docker-test" | "attack" | "vm" | "vagrant" | "vm-test";
+
+/** One lab type's path through the guided setup, for the providers this machine can have: a
+ *  container engine, or a hypervisor for VM labs. Each lists only what that type needs. Cloud
+ *  accounts and servers are added from their own pages. */
+export type SetupPath = "docker" | "vm";
+export const PATHS: SetupPath[] = ["docker", "vm"];
+
+/** Translates a message: `useT()`'s `t` in a component (re-renders on a language change),
+ *  `translate` (the current language) elsewhere. */
+type Tr = (key: MessageKey, vars?: Vars) => string;
+
+/** The steps every path begins with: the package manager installs the rest. */
+const SHARED: MachineStep[] = ["pkgmgr"];
+
+/** Each path's own steps on any OS, after the shared ones: the container path's WSL step
+ *  (`virtualization`) is Windows' alone. */
+const OWN_STEPS: Record<SetupPath, MachineStep[]> = {
+  docker: ["virtualization", "docker", "docker-test", "attack"],
+  vm: ["vm", "vagrant", "vm-test"],
+};
+
+/** A path's own steps on this machine (`report`'s OS): Windows gets the WSL step before Docker. */
+const ownSteps = (path: SetupPath, report: SystemReport | null): MachineStep[] =>
+  OWN_STEPS[path].filter((s) => s !== "virtualization" || report?.os === "windows");
+
+/** The steps of one path, in order: the shared ones, then its own. */
+export const pathSteps = (path: SetupPath, report: SystemReport | null): MachineStep[] => [...SHARED, ...ownSteps(path, report)];
+
+/** Every path's steps, each once, in path order: what the onboarding walks. */
+export function machineSteps(report: SystemReport | null): MachineStep[] {
+  return [...SHARED, ...PATHS.flatMap((p) => ownSteps(p, report))];
+}
+
+/** The path a step belongs to (a shared step counts with the first path); none for an unknown step. */
+export function pathOf(step: string): SetupPath | null {
+  if (SHARED.includes(step as MachineStep)) return PATHS[0];
+  return PATHS.find((p) => OWN_STEPS[p].includes(step as MachineStep)) ?? null;
+}
+
+export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.installed && r.dockerRunning;
+
+/** Where WSL 2 stands (Windows): ready once the core's plan has nothing left for it (a running
+ *  Docker engine is proof enough whatever the check could tell, #224: the plan says so, and
+ *  onboarding and the Machine checklist both read it from here, so they never disagree), else the
+ *  machine check's answer, and a restart pending once "Turn on WSL 2" finished in this flow. */
+export function wslState(report: SystemReport | null, setup?: { installs: Pick<SetupInstalls, "wslTurnedOn"> }): WslState {
+  const state = report?.wsl?.state ?? "unknown";
+  if (report?.os === "windows" && report.setup.wsl.length === 0) return "ready";
+  return state !== "ready" && setup?.installs.wslTurnedOn ? "needsReboot" : state;
+}
+export const hasHypervisor = (r: SystemReport | null) => !!r && localHypervisors(r).some((p) => p.hypervisor === true);
+
+/** macOS asks for a few things along the way; say so before the step that triggers each prompt. */
+function onMac(report: SystemReport | null, t: Tr) {
+  return (text: string, headsUp: MessageKey) => (report?.os === "macos" ? `${text} ${t(headsUp)}` : text);
+}
+
+export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr = translate): { icon: LucideIcon; title: string; description: string } {
+  const pm = report?.pkgManager.name ?? t("machine.steps.aPackageManager");
+  const withMac = onMac(report, t);
+  switch (step) {
+    case "pkgmgr":
+      return {
+        icon: Package,
+        title: t("machine.steps.pkgmgr.title"),
+        description: t("machine.steps.pkgmgr.description", { pm }),
+      };
+    case "virtualization":
+      return {
+        icon: Cpu,
+        title: t("machine.steps.virtualization.title"),
+        description: t("machine.steps.virtualization.description"),
+      };
+    case "docker":
+      return {
+        icon: Container,
+        title: t("machine.steps.docker.title"),
+        description: report?.os === "windows" ? t("machine.steps.docker.descriptionWindows") : t("machine.steps.docker.description"),
+      };
+    case "attack":
+      return {
+        icon: Crosshair,
+        title: t("machine.steps.attack.title"),
+        description: withMac(t("machine.steps.attack.description"), "machine.steps.macTerminal"),
+      };
+    case "vm":
+      return {
+        icon: Server,
+        title: t("machine.steps.vm.title"),
+        description: withMac(t("machine.steps.vm.description"), "machine.steps.macInstallerVm"),
+      };
+    case "vagrant":
+      return {
+        icon: Package,
+        title: t("machine.steps.vagrant.title"),
+        description: withMac(t("machine.steps.vagrant.description"), "machine.steps.macInstaller"),
+      };
+    case "docker-test":
+      return {
+        icon: FlaskConical,
+        title: t("machine.steps.dockerTest.title"),
+        description: withMac(t("machine.steps.dockerTest.description"), "machine.steps.macLocalNetwork"),
+      };
+    case "vm-test":
+      return {
+        icon: FlaskConical,
+        title: t("machine.steps.vmTest.title"),
+        description: withMac(t("machine.steps.vmTest.description"), "machine.steps.macLocalNetwork"),
+      };
+  }
+}
+
+/** Install + test state for the setup steps. One per flow, passed to every step body.
+ *  Starts each test's download in the background as soon as the machine can run it. */
+
+/** What the flow's forward button does on this step: continue, or move on without it done. */
+type NextKind = "continue" | "restartLater" | "skip" | "done";
+
+function nextKind(step: MachineStep, report: SystemReport | null, setup?: { installs: Pick<SetupInstalls, "wslTurnedOn"> }): NextKind {
+  if (step === "virtualization") {
+    // Found on: nothing to confirm. Waiting for a restart: the step's own button restarts, this
+    // one moves on without. Missing: skip. Only when the check can't tell does the player say.
+    const state = wslState(report, setup);
+    if (state === "ready") return "continue";
+    if (state === "needsReboot") return "restartLater";
+    if (state === "missing") return "skip";
+    return "done";
+  }
+  // A hypervisor is optional (VM labs can run on a server): with none set up, the VM steps
+  // can be passed by.
+  if ((step === "vm" || step === "vagrant" || step === "vm-test") && !hasHypervisor(report)) return "skip";
+  return "continue";
+}
+
+/** Label for the flow's forward button on this step. */
+export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr = translate, setup?: { installs: Pick<SetupInstalls, "wslTurnedOn"> }): string {
+  return t(`machine.steps.next.${nextKind(step, report, setup)}`);
+}
+
+/**
+ * The forward button's look: the jewel only for a Continue once the step is set up. Skip for
+ * now, I've done this and I'll restart later are ways past a step, not what we nudge players
+ * to, and while the step's own action (Install, Turn on WSL 2) is the thing to do, that action
+ * is the view's one jewel (docs/contributing/design-system.md).
+ */
+export function nextVariant(step: MachineStep, report: SystemReport | null, setup: MachineSetupState): "primary" | "secondary" {
+  if (nextKind(step, report, setup) !== "continue" || !canContinue(step, report, setup)) return "secondary";
+  // The Vagrant step can be passed with the hypervisor not ready yet, but while its installs
+  // show (Vagrant, the plugin), the first of them is the jewel.
+  return step === "vagrant" && report && !vagrantReady(report, setup) ? "secondary" : "primary";
+}
+
+/** The engine the player picked, else the core's (the one in use, else the recommended one):
+ *  one the core offers on this machine, else its first. */
+export function chosenEngine(report: SystemReport, setup: MachineSetupState): Engine {
+  const engines = enginesFor(report);
+  return engines.find((e) => e.id === (setup.engine ?? report.setup.engine)) ?? engines[0];
+}
+
+/** The hypervisor the setup works on: `picked` (this flow's pick, null before one) when it is
+ *  offered here, else the core's (an installed one that can run labs, else an installed one, else
+ *  the first it installs), else the first offered. The steps' "done" and their bodies read this one. */
+export function setupHypervisor(report: SystemReport, picked: string | null) {
+  const hypervisors = localHypervisors(report);
+  return hypervisors.find((p) => p.provider === picked) ?? hypervisors.find((p) => p.provider === report.setup.hypervisor) ?? hypervisors.at(0);
+}
+
+/** The hypervisor this flow works on (`setupHypervisor` of the player's pick). */
+export const chosenHypervisor = (report: SystemReport, setup: MachineSetupState) => setupHypervisor(report, setup.hypervisor);
+
+/** Everything Vagrant needs to drive the chosen hypervisor is in (Vagrant, its plugin, VMware's
+ *  utility): the core's plan has nothing left for it, or just Vagrant when there is none to drive. */
+function vagrantReady(report: SystemReport, setup: MachineSetupState): boolean {
+  const choice = chosenHypervisor(report, setup);
+  return choice ? vagrantActions(report, choice.provider).length === 0 : report.vagrant.installed;
+}
+
+/** The flow moves on only once the option picked on this step is actually set up. */
+export function canContinue(step: MachineStep, report: SystemReport | null, setup: MachineSetupState): boolean {
+  if (!report) return false;
+  if (step === "pkgmgr") return report.pkgManager.installed;
+  if (step === "docker") {
+    if (!isDockerReady(report)) return false;
+    // A working engine this step has no tile for (Podman) is fine unless another was picked.
+    const known = ENGINES.some((e) => e.id === report.dockerEngine);
+    return engineActions(report, chosenEngine(report, setup).id).length === 0 || (!known && !setup.engine);
+  }
+  // A hypervisor is optional, as the step says (VM labs can go to a Server, and one can be added
+  // later from the Machine page): the flow never waits on one.
+  if (step === "vm") return true;
+  if (step === "vagrant") {
+    const choice = chosenHypervisor(report, setup);
+    // No local hypervisor set up (VM labs go to a Server): nothing for Vagrant to drive here.
+    if (!choice || choice.hypervisor !== true) return true;
+    return vagrantReady(report, setup);
+  }
+  return true;
+}

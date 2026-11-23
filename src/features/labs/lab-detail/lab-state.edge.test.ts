@@ -1,0 +1,127 @@
+import { describe, expect, it } from "vitest";
+
+import { bindHost, cloudView, deployPlacement, headerMode, networkView, restartTarget } from "@/features/labs/lab-detail/lab-state";
+import type { LabRuntimeInfo } from "@/features/labs/use-labs";
+import type { LabControl, Provider } from "@/lib/tauri";
+import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
+
+const vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] as Provider[] };
+const cloud: LabRuntimeInfo = { runtime: "CLOUD", architectures: [], providers: ["aws"] as Provider[] };
+
+// Inputs that contradict each other (a status that is both running and parked, a failed deploy
+// on a running lab) and a cloud lab, which has no machines to read from.
+describe("deriveLabState: contradictory inputs", () => {
+  it("a status both running and parked reads as running, with no park", () => {
+    const s = derive({ status: status({ running: true, parked: "pause", machines: [machine("web")] }) });
+    expect(s.parked).toBeNull();
+    expect(s.phase).toBe("running");
+    expect(headerMode(s, { loggedIn: true, canLogin: true, canResume: true })).toBe("running");
+  });
+
+  it("a running lab whose last deploy failed keeps its deployment panel, under the diagram", () => {
+    const running = derive({ status: status({ running: true }) });
+    expect(deployPlacement(running, { busy: false, failed: true })).toBe("bottom");
+    const stopped = derive({ status: status({}) });
+    expect(deployPlacement(stopped, { busy: false, failed: true })).toBe("top");
+    expect(deployPlacement(stopped, { busy: false, failed: false })).toBeNull();
+  });
+
+  it("a cloud lab is interrupted by an account left recorded, never by machines, and offers no pause, shut down or provisioning", () => {
+    const idle = derive({ runtime: cloud, status: status({ machines: [machine("x", "exited")] }) });
+    expect(idle.interrupted).toBe(false);
+    expect(idle.phase).toBe("notStarted");
+    expect(cloudView(idle, { busy: false })).toBe("cloudIdle");
+    const left = derive({ runtime: cloud, status: status({ provider: "aws" }) });
+    expect(left.interrupted).toBe(true);
+    expect(cloudView(left, { busy: false })).toBe("cloudLeftover");
+    expect([left.canShutdown, left.canProvision]).toEqual([false, false]);
+    expect(cloudView(derive({ runtime: cloud, busy: true }), { busy: true })).toBe("none");
+  });
+
+  it("a running cloud lab offers no Pause, which the backend would refuse", () => {
+    // Regression: a running cloud-services lab took the VM branch of canPause, so its header offered
+    // Pause, which fails (a cloud lab can't be paused).
+    const s = derive({ runtime: cloud, status: status({ running: true, provider: "aws" }) });
+    expect(s.canPause).toBe(false);
+  });
+
+  it("a parked lab that is busy is being stopped, unless the page says it resumes", () => {
+    const stopping = derive({ busy: true, status: status({ parked: "pause" }) });
+    expect(stopping.operation).toBe("stop");
+    expect(stopping.tearingDown).toBe(true);
+    expect(stopping.parked).toBeNull();
+    const resuming = derive({ busy: true, acting: "resume", status: status({ parked: "pause" }) });
+    expect(resuming.operation).toBe("resume");
+    expect(resuming.phase).toBe("operation");
+  });
+
+  it("with no host CPU known yet, a lab built for another CPU is native, and QEMU ready still means it emulates", () => {
+    const foreign: LabRuntimeInfo = { ...vm, architectures: ["aarch64"] };
+    const s = derive({ runtime: foreign, hostArch: "", readyVms: ["qemu"] });
+    expect(s.native).toBe(true);
+    expect(s.emulates).toBe(true);
+    expect(derive({ runtime: foreign, hostArch: "x86_64", readyVms: ["virtualbox"] }).native).toBe(false);
+  });
+
+  it("a lab on a server is remote, and offers what the backend says of it there", () => {
+    const provisionOnly: LabControl[] = ["provision"];
+    const esxi = derive({ runtime: vm, status: status({ running: true, host: "esxi-1", provider: "vmware_esxi", controls: provisionOnly }) });
+    expect([esxi.remote, esxi.canPause, esxi.canShutdown, esxi.canProvision]).toEqual([true, false, false, true]);
+  });
+
+  it("a machine another process is setting up is busy, not down", () => {
+    // Regression: the attack box's start held `attackbox` in Vagrant; the runner now says it is
+    // busy, which must not read as a machine that went down (and offer to start it).
+    const up = derive({ status: status({ running: true, machines: [machine("web", "running"), machine("attackbox", "busy")] }) });
+    expect(up.down).toEqual([]);
+  });
+
+  it("a parked lab lists none of its machines as down", () => {
+    // Regression: `down` (machines that went down while the lab runs) also listed a paused or
+    // shut-down lab's machines.
+    const paused = derive({ status: status({ parked: "pause", machines: [machine("web", "paused"), machine("db", "paused")] }) });
+    expect(paused.phase).toBe("paused");
+    expect(paused.down).toEqual([]);
+  });
+});
+
+describe("headerMode and networkView: edges", () => {
+  it("a parked lab without a Resume handler offers Start, or sign-in; an interrupted run comes before sign-in", () => {
+    const parked = derive({ status: status({ parked: "shutdown" }) });
+    expect(headerMode(parked, { loggedIn: false, canLogin: true, canResume: false })).toBe("signIn");
+    expect(headerMode(parked, { loggedIn: true, canLogin: true, canResume: false })).toBe("start");
+    const interrupted = derive({ status: status({ machines: [machine("web", "exited")] }) });
+    expect(headerMode(interrupted, { loggedIn: false, canLogin: true, canResume: true })).toBe("interrupted");
+  });
+
+  it("a parked lab with no machines reported shows the parked note, a remote running lab without them is being read", () => {
+    const shut = derive({ status: status({ parked: "shutdown" }) });
+    expect(networkView(shut, { busy: false, acting: null, hasMachines: false })).toBe("shutDownNote");
+    expect(networkView(shut, { busy: false, acting: null, hasMachines: true })).toBe("diagram");
+    const remote = derive({ runtime: vm, status: status({ running: true, host: "esxi-1" }) });
+    expect(networkView(remote, { busy: false, acting: null, hasMachines: false })).toBe("readingRemote");
+  });
+
+  it("an interrupted VM lab offers provisioning, an interrupted container lab a clean-up", () => {
+    const controls: LabControl[] = ["pause", "shutdown", "provision", "repair"];
+    const vmLab = derive({ runtime: vm, status: status({ machines: [machine("dc01", "poweroff")], controls }) });
+    expect(networkView(vmLab, { busy: false, acting: null, hasMachines: true })).toBe("interruptedProvision");
+    const dockerLab = derive({ status: status({ machines: [machine("web", "exited")] }) });
+    expect(networkView(dockerLab, { busy: false, acting: null, hasMachines: true })).toBe("interruptedClean");
+  });
+});
+
+describe("bindHost, restartTarget: edges", () => {
+  it("reads an IPv6 literal and a host behind credentials, and falls back to loopback for anything unparsable", () => {
+    expect(bindHost("http://[::1]:8080/")).toBe("[::1]");
+    expect(bindHost("http://user:pw@10.0.0.5:81/x")).toBe("10.0.0.5");
+    expect(bindHost("")).toBe("127.0.0.1");
+    expect(bindHost("::nope")).toBe("127.0.0.1");
+  });
+
+  it("matches the saved host by id, not by its name's spelling", () => {
+    const hosts = [{ id: "h", name: "esxi-1" } as never];
+    expect(restartTarget(status({ host: "ESXI-1", hostId: "h", place: "server" }), hosts, "VM", { kind: "local" }, null)).toEqual({ kind: "host", id: "h" });
+    expect(restartTarget(status({ host: "esxi-1", hostId: "other", place: "server" }), hosts, "VM", { kind: "local" }, "qemu")).toEqual({ kind: "local" });
+  });
+});

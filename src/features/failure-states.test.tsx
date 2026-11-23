@@ -1,0 +1,358 @@
+// @vitest-environment jsdom
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { HomeScreen } from "@/features/home/home-screen";
+import { LabDetail } from "@/features/labs/lab-detail";
+import { MachineSetup } from "@/features/machine/machine-setup";
+import { Labs } from "@/features/labs/labs-screen";
+import type { Lab } from "@/features/labs/use-labs";
+import { useLabActions } from "@/features/labs/use-lab-actions";
+import { must } from "@/components/test-support";
+import { Toaster } from "@/components/ui/toaster";
+import { getDeploySnapshot, runFailure, startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
+import { operationSeenAt } from "@/features/labs/runs/operations";
+import { takeIn } from "@/lib/tauri/run-events";
+import type { AuthStatus, LabStatus } from "@/lib/tauri";
+import { readyReport } from "@/test/fixtures";
+import { commands, installTauri, rejectWith } from "@/test/tauri";
+import { answer } from "@/lib/dev-mock";
+import { button, flush, preloadLabScreens } from "@/test/ui";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
+
+// The failure states of the UX audit: each one says what happened and offers the way out,
+// instead of a state that never resolves or reads as nothing happened.
+
+const signedIn: AuthStatus = { loggedIn: true, name: "Ada Lovelace", email: "ada@example.org" };
+const API_DOWN = "error sending request for url (https://api.cyberctf.com/graphql): connection refused";
+const PORT_CLASH = "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again.";
+
+const blind: Lab = {
+  id: "lab-sqli",
+  slug: "sqli-blind-orders",
+  title: "Blind orders",
+  description: "Pull a customer's email through blind SQL injection.",
+  question: null,
+  difficulty: 2,
+  category: "Web",
+  runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: [] },
+  skills: [],
+};
+const goad: Lab = {
+  ...blind,
+  id: "lab-goad",
+  slug: "goad-light",
+  title: "GOAD Light",
+  runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["proxmox"] },
+};
+
+const stopped: LabStatus = {
+  running: false,
+  parked: null,
+  machines: [],
+  networks: [],
+  url: null,
+  host: null,
+  hostId: null,
+  expiresAt: null,
+  place: null,
+  provider: null,
+  perMachine: false,
+  outputs: [],
+  message: null,
+  reapError: null,
+  controls: [],
+};
+const up: LabStatus = {
+  ...stopped,
+  running: true,
+  place: "container",
+  provider: "docker",
+  machines: [
+    {
+      name: "api",
+      state: "running",
+      ip: "10.42.0.3",
+      ports: [],
+      interfaces: [{ network: "default", ip: "10.42.0.3" }],
+      services: [],
+      infra: false,
+      console: null,
+    },
+  ],
+  networks: [{ name: "default", subnet: "10.42.0.0/24", internal: false }],
+};
+
+const idle = { busy_labs: () => [], active_operations: () => [] };
+
+function renderDetail(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
+  const handlers = { onBack: vi.fn(), onStart: vi.fn(), onStop: vi.fn(), onPark: vi.fn(), onResume: vi.fn(), onProvision: vi.fn() };
+  render(<LabDetail lab={blind} loggedIn hostArch="x86_64" readyVms={[]} dockerRunning {...handlers} {...props} />);
+  return handlers;
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+/** The Overview rendered and settled, with one lab running here, shown under `title`. */
+async function overviewRunningOne(title: string) {
+  render(<HomeScreen report={readyReport()} auth={signedIn} onNavigate={vi.fn()} />);
+  await flush(80);
+  expect(document.body.textContent).toContain("1 lab running on this machine.");
+  expect(screen.getByText(title)).toBeTruthy();
+}
+
+describe("the catalogue can't be reached while labs run", () => {
+  it("keeps the running lab on the Overview by its id, and offers Retry instead of loading forever", async () => {
+    let down = true;
+    const calls = installTauri({
+      ...idle,
+      api_query: (a) => {
+        if (down) throw new Error(API_DOWN);
+        return answer("api_query", a);
+      },
+    });
+    const user = userEvent.setup();
+    // The scan (running_labs) sees lab-invoice; no catalogue says what it is.
+    await overviewRunningOne("Invoice");
+    expect(document.body.textContent).toContain("no details while the catalogue can’t be reached");
+    expect(document.body.textContent).not.toContain("Nothing running");
+    expect(document.body.textContent).not.toContain("Loading labs…");
+    expect(document.body.textContent).toContain("Can’t reach the lab catalogue");
+
+    // Retry reads the catalogue again, and its labs show.
+    down = false;
+    await user.click(button(/^\s*Retry$/));
+    await flush(80);
+    expect(document.body.textContent).not.toContain("Can’t reach the lab catalogue");
+    expect(document.body.textContent).toContain("Invoice portal API");
+    expect(commands(calls).filter((c) => c === "api_query").length).toBeGreaterThan(2);
+  });
+
+  it("lists the running lab above the Labs screen's error too", async () => {
+    installTauri({
+      ...idle,
+      api_query: () => {
+        throw new Error(API_DOWN);
+      },
+    });
+    render(<Labs loggedIn hostArch="x86_64" report={readyReport()} openLab={{ slug: null, tick: 0 }} />);
+    await flush(80);
+    expect(document.body.textContent).toContain("Can’t reach the lab catalogue");
+    expect(document.body.textContent).toContain("Running now");
+    expect(document.body.textContent).toContain("lab-invoice");
+  });
+});
+
+describe("a start that failed", () => {
+  it("reads Failed to start, offers Retry and, for a port clash, Retry on random ports with a hint", async () => {
+    installTauri({ ...idle, lab_status: () => stopped });
+    const user = userEvent.setup();
+    const h = renderDetail({ deploy: { busy: false, logs: [`✗ ${PORT_CLASH}`], times: [2000], op: "launch", startedAt: 500, failureCode: "portInUse" } });
+    await flush();
+    expect(document.body.textContent).toContain("Failed to start");
+    expect(document.body.textContent).not.toContain("Not started");
+    expect(screen.getByRole("button", { name: /^\s*Retry$/ })).toBeTruthy();
+    // Under the header: what failed, the error and what to do about it.
+    const notice = must(
+      screen.getAllByRole("alert").find((a) => a.textContent.includes("Couldn’t start Blind orders")),
+      "Couldn’t start Blind orders",
+    );
+    expect(notice.textContent).toContain(PORT_CLASH);
+    expect(notice.textContent).toContain("start it with random ports if the lab doesn't need that exact port.");
+    // Timed from when it began, not from its one line: 1.5s, not 0.0s.
+    expect(document.body.textContent).toContain("1.5s");
+    expect(document.body.textContent).not.toContain("0.0s");
+
+    await user.click(screen.getByRole("button", { name: /Retry with random ports/ }));
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "random" });
+
+    // Dismissed, the notice goes; the header still says so.
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryAllByRole("alert").some((a) => a.textContent.includes("Couldn’t start"))).toBe(false);
+    expect(document.body.textContent).toContain("Failed to start");
+  });
+
+  it("offers no random-ports retry when the clash was a VM here (its forwarded ports are fixed)", async () => {
+    // A dual-form lab (DOCKER-kind, but run as a VM on this machine): its Vagrantfile forwards the
+    // lab's fixed host ports, so "random ports" can't help and would silently switch the run to a
+    // plain container. Only plain Retry (after the port is freed) is offered.
+    installTauri({ ...idle, lab_status: () => ({ ...stopped, place: "local_vm" }) });
+    renderDetail({
+      status: { ...stopped, place: "local_vm" },
+      deploy: { busy: false, logs: [`✗ ${PORT_CLASH}`], times: [10], op: "launch", failureCode: "portInUse", failureHolder: "nginx (pid 4123)" },
+    });
+    await flush();
+    expect(document.body.textContent).toContain("Failed to start");
+    expect(screen.getByRole("button", { name: /^\s*Retry$/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /random ports/ })).toBeNull();
+    const notice = must(
+      screen.getAllByRole("alert").find((a) => a.textContent.includes("Couldn’t start")),
+      "the failure notice",
+    );
+    // It names what holds the port, and the fix is to free it (not random ports, which a VM can't use).
+    expect(notice.textContent).toContain("nginx (pid 4123)");
+    expect(notice.textContent).toContain("Free it");
+    expect(notice.textContent).not.toContain("random ports");
+  });
+
+  it("offers no port retry for another cause, and a failed stop is not a failed start", async () => {
+    installTauri({ ...idle, lab_status: () => stopped });
+    renderDetail({
+      deploy: { busy: false, logs: ["✗ Docker isn't running. Start your container engine."], times: [10], op: "launch", failureCode: "dockerNotRunning" },
+    });
+    await flush();
+    expect(document.body.textContent).toContain("Failed to start");
+    expect(document.body.textContent).toContain("Start your container engine, then retry.");
+    expect(screen.queryByRole("button", { name: /random ports/ })).toBeNull();
+  });
+
+  it("marks the row, from the run in the store", async () => {
+    installTauri({ ...idle, lab_launch: () => rejectWith(PORT_CLASH) });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    let actions: ReturnType<typeof useLabActions> | null = null;
+    function Probe() {
+      actions = useLabActions(() => {});
+      return null;
+    }
+    render(
+      <>
+        <Probe />
+        <Toaster />
+      </>,
+    );
+    await act(async () => {
+      await must(actions, "the lab actions").launch(blind, null, undefined, { ports: "default" });
+    });
+    const run = getDeploySnapshot().runs[blind.id];
+    expect(startFailed(run)).toBe(true);
+    expect(runFailure(run)).toBe(PORT_CLASH);
+    // Said wherever the player is: a toast.
+    expect(document.body.textContent).toContain("Couldn’t start Blind orders");
+  });
+});
+
+describe("a Stop & remove that failed", () => {
+  it("says so under the header and keeps the lab's panels through the stop", async () => {
+    installTauri({ ...idle, lab_status: () => up });
+    const page = (deploy: DeployRun) => (
+      <LabDetail
+        lab={blind}
+        status={up}
+        deploy={deploy}
+        loggedIn
+        hostArch="x86_64"
+        readyVms={[]}
+        dockerRunning
+        onBack={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+      />
+    );
+    const { rerender } = render(page({ busy: true, logs: [], times: [], op: "stop" }));
+    await flush();
+    // While it stops: the header says so, the panels stay (dimmed, out of reach).
+    expect(document.body.textContent).toContain("Stopping");
+    const inert = document.querySelectorAll("[inert]");
+    expect(inert.length).toBeGreaterThan(0);
+    expect(document.body.textContent).toContain("Attack box");
+
+    const failed = "✗ Couldn't remove network lab-invoice_default: has active endpoints";
+    rerender(page({ busy: false, logs: [failed], times: [Date.now()], op: "stop", startedAt: Date.now() - 2000 }));
+    await flush();
+    const notice = must(
+      screen.getAllByRole("alert").find((a) => a.textContent.includes("Couldn’t stop and remove Blind orders")),
+      "Couldn’t stop and remove Blind orders",
+    );
+    expect(notice.textContent).toContain("has active endpoints");
+    expect(notice.textContent).toContain("Part of the lab is still up.");
+    // Back to running, not dimmed; still not a failed start.
+    expect(document.querySelectorAll("[inert]").length).toBe(0);
+    expect(document.body.textContent).not.toContain("Failed to start");
+  });
+});
+
+describe("a deploy with no log here", () => {
+  it("shows the backend's step and counts from when the operation was first seen", async () => {
+    const step = "Configure SRV02 (ansible 41/88)";
+    installTauri({ busy_labs: () => [goad.id], active_operations: () => [], lab_status: () => stopped });
+    // Begun a minute ago, as the core says, before the page opened.
+    takeIn([
+      {
+        cursor: 1,
+        event: { kind: "started", operation: "op-1", labId: goad.id, op: "launch", machine: "SRV02", runtime: null, deploying: true, at: Date.now() - 61_000 },
+      },
+      { cursor: 2, event: { kind: "log", operation: "op-1", labId: goad.id, line: step } },
+    ]);
+    render(<LabDetail lab={goad} loggedIn hostArch="x86_64" readyVms={[]} onBack={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} />);
+    await flush(2200);
+    expect(document.body.textContent).toContain(step);
+    expect(document.body.textContent).not.toContain("Preparing…");
+    // One word for it: Starting (not Building, not Deploying).
+    expect(document.body.textContent).toContain("Starting…");
+    expect(document.body.textContent).not.toMatch(/Building|Deploying/);
+    expect(document.body.textContent).toMatch(/Starting… 1:0\d/);
+  });
+
+  it("counts an operation from when the core began it, until it ends", () => {
+    takeIn([
+      { cursor: 1, event: { kind: "started", operation: "op-1", labId: "lab-x", op: "launch", machine: null, runtime: null, deploying: true, at: 1000 } },
+    ]);
+    expect(operationSeenAt("lab-x", "launch")).toBe(1000);
+    takeIn([{ cursor: 2, event: { kind: "ended", operation: "op-1", labId: "lab-x", op: "launch", error: null } }]);
+    expect(operationSeenAt("lab-x", "launch")).toBeUndefined();
+  });
+});
+
+describe("the machine check failed", () => {
+  it("says so on the Overview with Try again, not Checking this machine… forever", async () => {
+    installTauri({ ...idle, machine_metrics: () => Promise.reject(new Error("metrics unavailable")) });
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    render(<HomeScreen report={null} checkError="failed to run `docker info`: permission denied" onRetryCheck={retry} auth={signedIn} onNavigate={vi.fn()} />);
+    await flush(80);
+    expect(document.body.textContent).toContain("Couldn’t check this machine.");
+    expect(document.body.textContent).toContain("permission denied");
+    expect(document.body.textContent).not.toContain("Checking this machine…");
+    // The usage it couldn't read: unavailable, not placeholders.
+    expect(screen.getAllByText("unavailable").length).toBe(3);
+    await user.click(screen.getByRole("button", { name: /Try again/ }));
+    await flush();
+    expect(retry).toHaveBeenCalled();
+  });
+
+  it("says so in the machine-setup window, with Try again", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    let fail = true;
+    const retry = vi.fn(() => (fail ? Promise.reject(new Error("still failing")) : Promise.resolve()));
+    render(<MachineSetup report={null} checkError="brew: command not found" onRefresh={retry} onClose={vi.fn()} />);
+    expect(document.body.textContent).toContain("Couldn’t check this machine");
+    expect(document.body.textContent).toContain("brew: command not found");
+    expect(document.body.textContent).not.toContain("Checking this machine…");
+    await user.click(screen.getByRole("button", { name: /Try again/ }));
+    await flush();
+    fail = false;
+    await user.click(screen.getByRole("button", { name: /Try again/ }));
+    await flush();
+    expect(retry).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a lab imported from a folder, with the catalogue loaded", () => {
+  it("is listed on the Overview as imported, not as a catalogue outage", async () => {
+    const LOCAL = "local-invoice-portal-api";
+    installTauri({
+      ...idle,
+      // The scan sees the imported lab, the only one running; the catalogue (up) doesn't list it.
+      running_labs: () => [LOCAL],
+      lab_status: (a) => answer("lab_status", { ...(a ?? {}), id: a?.id === LOCAL ? "lab-invoice" : "none" }),
+    });
+    await overviewRunningOne("Local Invoice Portal Api");
+    expect(document.body.textContent).toContain("imported from a folder");
+    expect(document.body.textContent).not.toContain("no details while the catalogue can’t be reached");
+    expect(document.body.textContent).not.toContain("Can’t reach the lab catalogue");
+  });
+});

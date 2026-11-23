@@ -1,0 +1,120 @@
+{
+  "rules": {
+    "dup/clone": {
+      "rs:integration_tests": 1,
+      "rs:labs": 1,
+      "rs:screen": 1,
+      "ts:components": 1
+    }
+  },
+  "clippy": {
+    "darwin": {},
+    "linux": {},
+    "win32": {}
+  },
+  "exceptions": {
+    "src-tauri/src/account/auth/writes.rs": {
+      "#[allow(clippy::unused_self, reason = \"the guard is the proof the write lock is held: its writes take it\")]": 1
+    },
+    "src-tauri/src/app.rs": {
+      "#[allow(clippy::needless_pass_by_value, reason = \"taking the token ends the start's claim to be the only thread\")]": 1,
+      "#[allow(unsafe_code, reason = \"the start's claim to be the only thread, which only `run` can make\")]": 1
+    },
+    "src-tauri/src/cli.rs": {
+      "#[allow(unsafe_code, reason = \"the start's claim to be the only thread, as the app's own start makes it\")]": 1
+    },
+    "src-tauri/src/commands.rs": {
+      "#![allow(clippy::needless_pass_by_value, reason = \"Tauri hands a command its arguments by value\")]": 1,
+      "#[allow(clippy::too_many_lines, reason = \"one line per command: a list, not logic\")]": 1
+    },
+    "src-tauri/src/commands/labs.rs": {
+      "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the request's fields as an argument\")]": 1
+    },
+    "src-tauri/src/commands/terminal.rs": {
+      "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the shell's fields as an argument\")]": 1
+    },
+    "src-tauri/src/lib.rs": {
+      "#![cfg_attr(test, allow(clippy::disallowed_methods, reason = \"tests start their stand-in tools directly\"))]": 1,
+      "#[allow(clippy::must_use_candidate, reason = \"ExitCode is must_use itself: clippy 1.100 refuses a second one, which 1.99 still asks for\")]": 1
+    },
+    "src-tauri/src/machine/system.rs": {
+      "#[expect(dead_code, reason = \"a type only: never built, its variants are the webview's names\")]": 2
+    },
+    "src-tauri/src/machine/system/wsl.rs": {
+      "#![cfg_attr(not(windows), allow(dead_code, reason = \"off Windows only the UI's types and the tests use most of this\"))]": 1,
+      "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
+    },
+    "src-tauri/src/platform/env_path.rs": {
+      "#[allow(unsafe_code, reason = \"this test runs alone, so it is the only thread\")]": 1
+    },
+    "src-tauri/src/platform/proxy.rs": {
+      "#[allow(clippy::disallowed_methods, reason = \"a synchronous read of macOS's proxy settings at start, before the async runtime\")]": 1
+    },
+    "src-tauri/src/platform/sys.rs": {
+      "#![expect(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
+    },
+    "src-tauri/src/runtime.rs": {
+      "#[cfg_attr(feature = \"cloud-services\", allow(dead_code, reason = \"said only without the feature\"))]": 1
+    },
+    "src-tauri/src/runtime/attack_box/tests.rs": {
+      "#[allow(clippy::disallowed_methods, reason = \"the test runs the script's own shell on stand-ins\")]": 1
+    },
+    "src-tauri/src/runtime/deploy_log.rs": {
+      "#[cfg_attr(not(test), allow(dead_code, reason = \"the webview's DeployLog.ts carries it, written by ts_bindings\"))]": 3
+    },
+    "src-tauri/src/screen.rs": {
+      "#[allow(clippy::disallowed_methods, reason = \"the remote-desktop client opens as the player's own app, left running past the call\")]": 1
+    },
+    "src-tauri/src/screen/native.rs": {
+      "#[allow(clippy::disallowed_methods, reason = \"the hypervisor's own console client, waited for a moment then left to the player\")]": 1
+    },
+    "src-tauri/src/testing/tools.rs": {
+      "#[expect(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2
+    },
+    "src/app/layout.tsx": {
+      "eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode": 1
+    },
+    "src/components/command-palette.tsx": {
+      "eslint-disable-next-line @typescript-eslint/no-deprecated -- WebKit (the macOS webview) sends the Enter that ends a composition with isComposing false; keyCode 229 is its only mark": 1
+    },
+    "src/components/shell/use-shell-setup.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- read once on mount: the window marker and localStorage don't exist during the static render": 1
+    },
+    "src/components/ui/logo-tile.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/account/account.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, a remote picture": 1
+    },
+    "src/features/cloud/account-row.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/labs/network-diagram/fit-width.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- read once on mount: localStorage doesn't exist during the static render": 1
+    },
+    "src/features/labs/network-diagram/index.tsx": {
+      "eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures everything drawn": 1
+    },
+    "src/features/labs/run-on-options.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/host-setup/form.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/host-setup/provider-step.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/host-setup/use-cloud-accounts.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its \"checking\" state at once": 1
+    },
+    "src/features/servers/provider-glyph.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/server-self-test.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- the start lives in the module's run, which only this effect starts or finds": 1
+    },
+    "src/lib/appearance.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage isn't readable during a server render, so the saved choice can only arrive after mount": 1
+    }
+  }
+}

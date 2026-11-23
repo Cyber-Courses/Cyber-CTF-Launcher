@@ -1,0 +1,38 @@
+# Configuration
+
+What the launcher reads from its environment. Users set everything else in the app (Settings);
+an administrator's machine-wide settings are in the [policy reference](policy.md).
+
+## Environment variables
+
+Read when the app starts. A variable set to an empty value counts as unset.
+
+| Variable                                             | Default                                                       | What it does                                                                                                                                                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CYBERCTF_AGENT_NAME`                                | `<user>'s Mac`, `'s PC` or `'s Linux`                         | the machine name the launcher registers with Cyber CTF (see [Privacy](admin-guide.md#privacy-and-what-is-sent)); set it to keep the OS user name out of it                                              |
+| `CYBERCTF_LOG`                                       | `info`                                                        | the log level: `error`, `warn`, `info`, `debug` or `trace` ([Logs](admin-guide.md#logs-and-diagnostics))                                                                                                |
+| `ISOLOOM_HYPERV_SWITCH` (a lab)                      | Hyper-V's "Default Switch"                                    | the Hyper-V virtual switch a VM lab's first network adapter uses (Windows); without a Default Switch (Windows Server), set it, or every Hyper-V lab stops with "no virtual switch named Default Switch" |
+| `ISOLOOM_HYPERV_SWITCH` (the VM self-test)           | "Default Switch", else an external switch, else the first one | the switch the Machine page's VM test attaches its VM to (Windows)                                                                                                                                      |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` | the system proxy settings (macOS, Windows)                    | the proxy for the launcher's own connections ([Proxy](admin-guide.md#proxy-and-custom-certificate-authorities))                                                                                         |
+
+A released build reads no variable that changes where it signs in or which services it talks to:
+those exist for development builds only ([how sign-in works](../contributing/sign-in.md#development-settings)).
+
+The tools the launcher runs (Docker, Vagrant, Terraform, the cloud CLIs) also read their own
+variables from the environment the app was started with.
+
+## Command line
+
+The app's executable takes:
+
+| Argument              | What it does                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| none                  | starts the app; when it already runs, brings its window forward instead             |
+| a `cyberctf://` link  | opens the link in the running app (the browser passes the website's links this way) |
+| `serve --home <home>` | internal: the runner service of a home, started by the app or the command line      |
+
+## Ports
+
+The sign-in redirect listens on `127.0.0.1`, on the first free port of 47290, 47291 and 47292,
+while a sign-in waits. Each must be registered on the OAuth client as
+`http://127.0.0.1:<port>/callback` ([how sign-in works](../contributing/sign-in.md#the-oauth-client)).

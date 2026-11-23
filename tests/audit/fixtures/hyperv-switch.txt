@@ -1,0 +1,2 @@
+{"Id":"c08cb7b8-9b3c-408e-8e30-5e16a3aeb444","Name":"Default Switch","SwitchType":"Internal"}
+{"Id":"0f0f0f0f-1111-2222-3333-444444444444","Name":"isoloom-hello-stack-lab","SwitchType":"Private"}

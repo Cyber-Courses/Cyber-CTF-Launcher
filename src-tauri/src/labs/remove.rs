@@ -1,0 +1,156 @@
+//! Removing a lab from this computer: the app's copy of it (the folder an import copied, or a
+//! release unpacked) and every record the app keeps for it under its data folder: an update's or
+//! an import's leftover copies, a catalogue lab's source kept for an offline start, and the password
+//! kept for its attack box (the OS keychain's `attack-box:<lab id>`) and the values its run was
+//! launched with (`launch-values:cyberctf-<lab id>`). The generated project
+//! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it. Its run is the
+//! runner's: the runner forgets it (its own home is the runner's to keep).
+//!
+//! Nothing outside the app's data folder is touched. An imported lab's own folder, the one it was
+//! imported from, is the player's: the copy keeps no link out of itself (`TreeLinks`), and a
+//! removal deletes a link, never what it points at. The images and boxes a start downloaded stay:
+//! Storage removes them once no lab uses them.
+//!
+//! Refused while anything of the lab is up, anywhere ([`runtime::status::still_up`]), parked
+//! included, and while an operation runs on it: the run's manifest and what it bind-mounts are in
+//! the copy, and its record is how the runner takes it down.
+
+use std::path::{Path, PathBuf};
+
+use super::{blocking, rename_retrying};
+use crate::error::{Error, Result};
+use crate::platform::AppDirs;
+use crate::platform::fs::{remove_dir_if_present, remove_if_present};
+use crate::runtime::{self, paths};
+
+/// What a removal left behind: each path it couldn't delete, and why. Empty when every trace went.
+#[derive(Debug, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabRemoval")]
+pub struct Removal {
+    /// The paths that are still there.
+    pub left: Vec<Leftover>,
+}
+
+/// A path a removal couldn't delete.
+#[derive(Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabLeftover")]
+pub struct Leftover {
+    /// Where it is.
+    pub path: String,
+    /// Why it stayed, as the system says it.
+    pub error: String,
+}
+
+/// Removes lab `id` from this computer (see the module's documentation). The lab's copy is moved aside first, all or nothing: a copy that
+/// won't move (a file in it held open on Windows) refuses the removal with nothing deleted. What
+/// can't be deleted after that is in the answer, the lab gone from the app all the same: its
+/// attack box's password too, which a keychain that refuses leaves behind.
+///
+/// # Errors
+///
+/// An invalid id, a lab that isn't installed, one still up somewhere or busy, a copy that won't
+/// move aside.
+pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
+    runtime::validate_id(id)?;
+    // Refused while an operation of this process acts on the lab (the runner service's are
+    // asked by the command, `commands::labs::remove_in`); held to the end: a start is refused.
+    let _held = crate::run_service::LocalRunService::of(dirs)?.claim(id)?;
+    let dir = paths::lab_dir(dirs, id)?;
+    runtime::forget_gone(dirs, id, &mut |l| log::info!("{id}: {l}")).await?;
+    if let Some(up) = runtime::status::still_up(dirs, id).await? {
+        return Err(runtime::status::still_running(&up));
+    }
+    let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
+    let mut removal = blocking(move || remove_files(&base, &owned, rename_retrying, delete)).await?;
+    // The runner's record of its run, through the runner's store: its files went above.
+    if let Err(e) = runtime::isothrum::forget_run(&runtime::paths::runner_home(dirs)?, id).await {
+        log::warn!("removing lab {id}: the runner keeps its run's record: {e}");
+    }
+    // Its attack box's password, once the lab is gone (a removal refused above keeps it with the
+    // lab). A keychain that refuses (locked) leaves it, listed for the player to delete: never a
+    // reason to keep the lab, which a computer with a broken keychain could then never remove.
+    // No keychain at all, or no password kept, is nothing to delete.
+    if let Err(e) = runtime::attack_box::forget_password(&dir) {
+        log::warn!("removing lab {id}: its attack box's password stayed in the keychain: {e}");
+        let entry = runtime::attack_box::password_entry(&dir);
+        removal.left.push(Leftover { path: format!("the attack box's password is still in the keychain ({entry})"), error: e.to_string() });
+    }
+    // The values its run was launched with, which a run taken down outside the app may have left
+    // (`runtime::launch_values`); a keychain that refuses leaves them, listed as the password is.
+    if let Err(e) = runtime::launch_values::forget_lab(id) {
+        log::warn!("removing lab {id}: the values its run was launched with stayed in the keychain: {e}");
+        removal.left.push(Leftover {
+            path: format!("the values its run was launched with are still in the keychain (launch-values:{})", runtime::docker::project(id)),
+            error: e.to_string(),
+        });
+    }
+    Ok(removal)
+}
+
+/// The folder lab `id`'s copy is moved to under `labs` while it is deleted: hidden from every
+/// listing of installed labs (a dot, which no lab id has).
+fn aside(labs: &Path, id: &str) -> PathBuf {
+    labs.join(format!(".{id}.removing"))
+}
+
+/// What the app keeps for lab `id` under its data folder `base`, beside its copy: an earlier
+/// removal's, update's or import's leftover copy and the kept offline source. The run is the
+/// runner's: its record is forgotten through the runner.
+fn traces(base: &Path, id: &str) -> Vec<PathBuf> {
+    let labs = paths::labs_root_in(base);
+    vec![labs.join(format!(".{id}.staging")), labs.join(format!(".{id}.old")), super::offline::kept_path(base, id)]
+}
+
+/// Moves lab `id`'s copy under `base` aside with `rename`, then deletes it and every trace of the
+/// lab with `remove`: what stays is in the answer. Nothing is deleted when the copy
+/// doesn't move (a file in it held open): the lab stays whole.
+fn remove_files(base: &Path, id: &str, rename: impl Fn(&Path, &Path) -> std::io::Result<()>, remove: impl Fn(&Path) -> std::io::Result<()>) -> Result<Removal> {
+    let labs = paths::labs_root_in(base);
+    let (dir, aside) = (labs.join(id), aside(&labs, id));
+    // An earlier removal that left its copy: gone first, or the move below can't land.
+    if let Err(e) = remove(&aside) {
+        log::warn!("removing lab {id}: an earlier removal's {} stays: {e}", aside.display());
+    }
+    rename(&dir, &aside).map_err(|e| held(e, &dir))?;
+    let mut left = Vec::new();
+    for path in std::iter::once(aside).chain(traces(base, id)) {
+        if let Err(e) = remove(&path) {
+            log::warn!("removing lab {id}: {} stayed: {e}", path.display());
+            left.push(leftover(&path, &e));
+        }
+    }
+    Ok(Removal { left })
+}
+
+/// Deletes `path`, a folder with what is in it or a file; a link is deleted, never followed. One
+/// already gone is fine.
+fn delete(path: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => remove_dir_if_present(path),
+        Ok(_) => remove_if_present(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// `path`, which stayed for `e`.
+fn leftover(path: &Path, e: &std::io::Error) -> Leftover {
+    Leftover { path: path.display().to_string(), error: e.to_string() }
+}
+
+/// The copy in `dir` that didn't move aside, said as what to do: nothing was deleted.
+fn held(e: std::io::Error, dir: &Path) -> Error {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        Error::Refused(format!(
+            "Couldn't remove the lab: a file in {} is open in another program (an editor, a terminal, or a VM). Close it and try again; nothing was deleted.",
+            dir.display()
+        ))
+    } else {
+        Error::Io(e)
+    }
+}
+
+#[cfg(test)]
+mod tests;

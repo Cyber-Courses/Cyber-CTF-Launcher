@@ -1,0 +1,11 @@
+# Who reviews what. A pull request asks these owners for a review; with branch protection's
+# "Require review from Code Owners", it needs their approval to merge.
+*                   @florianamette
+
+# The release pipeline and its secrets, and the dependency policy, need the owner's eye whoever
+# else joins.
+/.github/           @florianamette
+/src-tauri/deny.toml @florianamette
+/packaging/         @florianamette
+/LICENSE            @florianamette
+/NOTICE             @florianamette

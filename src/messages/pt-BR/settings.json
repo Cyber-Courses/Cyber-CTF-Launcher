@@ -1,0 +1,214 @@
+{
+  "appearance": {
+    "title": "Aparência",
+    "description": "A aparência do launcher e o idioma dele. Salvo neste computador.",
+    "theme": "Tema",
+    "themes": {
+      "dark": "Escuro",
+      "black": "Preto",
+      "light": "Claro"
+    },
+    "themeDescriptions": {
+      "dark": "Escuro usa cinzas neutros profundos, que descansam a vista.",
+      "black": "Preto usa preto puro, para telas OLED.",
+      "light": "Claro usa tons quentes de papel, para ambientes iluminados."
+    },
+    "language": "Idioma",
+    "languageDescription": "O idioma do launcher. Sistema segue o do seu computador.",
+    "languageSystem": "Sistema"
+  },
+  "tabs": {
+    "label": "Seções das configurações",
+    "account": "Conta",
+    "appearance": "Aparência",
+    "labs": "Labs",
+    "maintenance": "Manutenção",
+    "about": "Sobre"
+  },
+  "saved": "Salvo",
+  "account": {
+    "title": "Conta",
+    "description": "Entrar registra esta máquina, para que os labs que você inicia pelo site rodem aqui.",
+    "checking": "Verificando…",
+    "signedIn": "Conectado",
+    "signOut": "Sair",
+    "thisMachine": "Esta máquina",
+    "online": "Online",
+    "offline": "Offline",
+    "runs": "roda {list}",
+    "registering": "Registrando…",
+    "notSignedIn": "Não conectado",
+    "signInHint": "Entre com sua conta Cyber para sincronizar labs e rodá-los de qualquer dispositivo.",
+    "signIn": "Entrar",
+    "offByPolicy": "Sua organização desativou a inicialização de labs pelo site neste computador.",
+    "agentFailed": "Não foi possível ler como o site vê esta máquina: {error}"
+  },
+  "labs": {
+    "title": "Labs",
+    "description": "Como os labs iniciam nesta máquina. Salvo só neste computador."
+  },
+  "labPorts": {
+    "title": "Portas dos labs",
+    "default": "Cada serviço na sua própria porta, como o CTFd na 8000. A inicialização para quando outro lab ou app já está usando uma delas.",
+    "random": "Cada serviço numa porta livre aleatória. Nunca entra em conflito com outro lab ou app.",
+    "ask": "Pergunta antes de cada lab de contêiner iniciar nesta máquina: portas livres aleatórias ou as do próprio lab.",
+    "options": {
+      "ask": "Perguntar",
+      "random": "Aleatórias",
+      "default": "Padrão"
+    }
+  },
+  "attackBox": {
+    "title": "Imagem da attack box",
+    "description": "Roda na rede de cada lab como sua caixa de ferramentas. A primeira inicialização de uma imagem a baixa, o que pode demorar.",
+    "default": "Padrão",
+    "largeDownload": "Download grande",
+    "pinned": "fixada",
+    "presets": {
+      "cyberctf": "Kali com o conjunto de ferramentas padrão, pronto para usar",
+      "kali": "Base oficial do Kali, adicione ferramentas conforme precisar",
+      "parrot": "Conjunto de ferramentas do Parrot Security",
+      "exegolFree": "Exegol Community: kit completo, atualizado depois do Full; para aprendizado e uso pessoal",
+      "exegolFull": "O kit Exegol mais recente; requer um plano Exegol Pro, Team ou Enterprise"
+    },
+    "terms": {
+      "nonCommercial": "Uso não comercial",
+      "paidPlan": "Plano pago"
+    },
+    "customImage": "Imagem personalizada",
+    "customImageNote": "Qualquer imagem Docker ou tag de registry.",
+    "save": "Salvar",
+    "autoStart": "Iniciar a attack box com o lab",
+    "autoStartDescription": "Inicia-a assim que um lab sobe nesta máquina: o contêiner num lab de contêiner, a VM ao lado de um lab de VM. Você ainda pode iniciá-la ou pará-la pelo lab.",
+    "invalidImage": "Use um nome de imagem simples como registry/name:tag: só letras, números e . _ - / : @, sem hífen no início.",
+    "desktop": {
+      "title": "Área de trabalho da VM de ataque",
+      "description": "Uma máquina de ataque em VM roda sem interface, ou com a área de trabalho XFCE do Kali, que a Tela dela mostra, com a sessão do jogador aberta. Uma máquina em contêiner roda sempre sem interface.",
+      "headless": "Sem interface",
+      "headlessNote": "Apenas ferramentas e um shell: a instalação mais leve.",
+      "desktop": "Área de trabalho",
+      "desktopNote": "A área de trabalho XFCE do Kali: cerca de 1 GB a mais para baixar, 3 GB a mais no disco, e 4 GB de memória e 2 CPUs para a VM."
+    }
+  },
+  "hypervisor": {
+    "title": "Hypervisor para labs de VM",
+    "checking": "Verificando hypervisors…",
+    "setupLink": "Configure um na página Máquina",
+    "noneInstalled": "Nenhum hypervisor está instalado nesta máquina ainda.",
+    "current": "Os labs de VM e o teste de VM rodam em {name}.",
+    "noneReady": "Nenhum dos hypervisors instalados consegue rodar labs de VM ainda. Instale o complemento Vagrant dele abaixo.",
+    "automatic": "Automático",
+    "automaticNote": "Usa {name}, o primeiro hypervisor pronto.",
+    "readyPlugin": "Pronto · complemento Vagrant {plugin}",
+    "readyBuiltIn": "Pronto · integrado ao Vagrant",
+    "needsPlugin": "Instalado · requer o complemento Vagrant {plugin}",
+    "notReady": "Instalado · não está pronto para labs de VM",
+    "installing": "Instalando…",
+    "installAddon": "Instalar complemento",
+    "logInstalling": "Instalando o complemento Vagrant {plugin}…",
+    "logInstalled": "✓ Instalado",
+    "logTitle": "Complemento Vagrant",
+    "allowHyperv": "Permitir minha conta",
+    "allowingHyperv": "Permitindo…",
+    "logAllowingHyperv": "Adicionando sua conta aos Administradores do Hyper-V (o Windows pede permissão)…",
+    "logHypervAllowed": "✓ Pronto. Saia do Windows e entre novamente; depois, verifique de novo.",
+    "checkFailed": "Não foi possível verificar os hipervisores desta máquina: {error}",
+    "checkAgain": "Verificar de novo"
+  },
+  "cleanup": {
+    "title": "Limpeza",
+    "description": "Derrube tudo o que ainda está rodando nesta máquina (um lab que sobrou ou travou), recupere espaço em disco de imagens e boxes de VM baixadas e remova ferramentas que o Cyber CTF instalou."
+  },
+  "installedTools": {
+    "title": "Ferramentas que o Cyber CTF instalou",
+    "count": {
+      "one": "{count} instalada",
+      "other": "{count} instaladas"
+    },
+    "intro": "Instaladas durante a configuração. Remova as que você não usa mais; ferramentas que você já tinha não aparecem aqui.",
+    "installedAgo": "instalada {ago}",
+    "remove": "Remover",
+    "removing": "Removendo…",
+    "logRemoving": "Removendo {name}…",
+    "confirmTitle": "Remover {name}?",
+    "confirmBody": "Labs que precisam de {name} não vão iniciar até que ele seja instalado de novo (a configuração pode reinstalá-lo). Seus labs e configurações são mantidos."
+  },
+  "about": {
+    "title": "Sobre",
+    "description": "Versão, atualizações e o que nos enviar quando algo quebrar.",
+    "version": "Versão",
+    "system": "Sistema",
+    "installId": "ID da instalação",
+    "updates": "Atualizações",
+    "updateAvailable": "Atualização disponível",
+    "status": {
+      "checking": "Procurando atualizações…",
+      "latest": "Você está na versão mais recente.",
+      "latestAt": "Você está na versão mais recente, verificado às {time}.",
+      "error": "Não foi possível acessar o servidor de atualizações. Verifique sua conexão e tente de novo.",
+      "available": "A versão {version} está disponível.",
+      "installing": "Baixando e instalando a {version}…",
+      "installed": "A versão {version} está instalada. Reiniciando o Cyber CTF…",
+      "idle": "As atualizações são instaladas automaticamente quando você as aceita pelo banner."
+    },
+    "installing": "Instalando…",
+    "installUpdate": "Instalar atualização",
+    "restartNow": "Reiniciar agora",
+    "checking": "Verificando…",
+    "checkUpdates": "Procurar atualizações",
+    "replayFailed": "Não foi possível refazer a configuração",
+    "diagnostics": "Diagnóstico",
+    "diagnosticsDescription": "Copia sua versão, sistema operacional e status da configuração, para um relato de bug ou pedido de suporte.",
+    "copied": "Copiado",
+    "copy": "Copiar",
+    "saveDiagnostics": "Salvar diagnóstico",
+    "saveHint": "Salvar diagnóstico cria um único arquivo: anexe-o ao seu relato de bug.",
+    "saveFailed": "Não foi possível salvar o diagnóstico",
+    "bundleFilter": "Pacote de diagnóstico",
+    "savedTo": "Salvo em {path}. Anexe este arquivo ao seu relato de bug.",
+    "sendToSupport": "Enviar ao suporte",
+    "sendFailed": "Não foi possível preparar o e-mail ao suporte",
+    "mailSubject": "Cyber CTF {version}: relato de bug",
+    "mailBody": "Olá,\n\nO que eu fiz:\n\nO que eu esperava:\n\nO que aconteceu:\n\nO pacote de diagnóstico está anexado (salvo em {path}).\n",
+    "logs": "Arquivos de log",
+    "logsDescription": "O que o Cyber CTF registrou enquanto rodava. Envie-os com um relatório de bug ou um pedido de suporte.",
+    "openLogs": "Abrir pasta",
+    "logsFailed": "Não foi possível abrir a pasta de logs",
+    "firstRun": "Configuração inicial",
+    "firstRunDescription": "Percorra a introdução de novo. Suas configurações e labs são mantidos.",
+    "replay": "Refazer",
+    "channel": {
+      "policy": "Sua organização gerencia as atualizações neste computador.",
+      "homebrew": "Instalado com o Homebrew, que o atualiza: rode brew upgrade.",
+      "linuxPackage": "Instalado como pacote do sistema: seu gerenciador de pacotes (apt) o atualiza.",
+      "microsoftStore": "Instalado pela Microsoft Store, que o mantém atualizado."
+    },
+    "versionUnknown": "desconhecida"
+  },
+  "sharedFolder": {
+    "title": "Pasta compartilhada",
+    "description": "Uma pasta deste computador que sua attack box vê em {mount}: ferramentas entram, o espólio sai. Ela fica quando um lab é removido. Para labs que rodam neste computador (com QEMU, só no Linux; não com Hyper-V nem com um hipervisor que a execução do lab não indique); não em um servidor nem em uma conta de nuvem.",
+    "pick": "Pasta a compartilhar com a attack box",
+    "change": "Alterar…",
+    "open": "Abrir a pasta"
+  },
+  "launchDefaults": {
+    "title": "Escolhas de inicialização lembradas",
+    "remembered": "Um motor de contêineres, forma de VM ou hipervisor está lembrado para esta máquina.",
+    "asked": "A caixa de diálogo de inicialização pergunta sempre.",
+    "reset": "Perguntar de novo"
+  },
+  "managed": {
+    "title": "Gerenciado pela sua organização",
+    "description": "Sua equipe de TI desativou estes recursos neste computador. Fale com ela se precisar de algum.",
+    "off": "Desativado",
+    "keys": {
+      "DisableWebsiteAgent": "Iniciar labs pelo site",
+      "DisableUpdater": "Atualizações no app",
+      "DisableToolInstalls": "Instalação de ferramentas com um clique",
+      "DisableCloudLaunches": "Labs em contas de nuvem",
+      "RefusePrivilegedLabs": "Labs com máquinas privilegiadas"
+    },
+    "installsOff": "Sua organização desativou a instalação e a remoção de ferramentas com um clique neste computador (DisableToolInstalls). Faça isso você mesmo ou peça à sua equipe de TI."
+  }
+}

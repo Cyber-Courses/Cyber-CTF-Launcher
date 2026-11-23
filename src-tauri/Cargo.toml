@@ -1,0 +1,206 @@
+[package]
+name = "cyberctf-desktop"
+version = "2.0.0"
+description = "CyberCTF desktop launcher: runs Docker and VM labs locally"
+authors = ["Cyber-Courses"]
+license = "Apache-2.0"
+repository = "https://github.com/Cyber-Courses/Cyber-CTF-Launcher"
+edition = "2024"
+rust-version = "1.90"
+# Two binaries: the app (`src/main.rs`) and the command line (`src/bin/cyberctf.rs`); `cargo run`
+# and Tauri start the app.
+default-run = "cyberctf-desktop"
+
+[lib]
+name = "cyberctf_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# The engineering standard's lints (thresholds in clippy.toml): clippy's default groups and
+# `pedantic` are denied, and so is every lint listed here, so a plain `cargo clippy` fails on any of
+# them on every platform (macOS, Windows, Linux; `scripts/check/other-platforms.sh` checks the other
+# two). A lint the code can't meet yet goes at "warn": the quality ratchet (`pnpm quality`,
+# quality-baseline.json) counts it, its count may go down, never up, and at zero it moves to "deny".
+[lints.rust]
+unused = { level = "deny", priority = -1 }
+# The crate's one public item is `run()`: rustc's `missing_docs` holds that API, and clippy's
+# `missing_docs_in_private_items` (below), limited to what other modules can use
+# (`missing-docs-in-crate-items` in clippy.toml), holds every `pub` and `pub(crate)` item inside it.
+missing_docs = "deny"
+# Calls into libc and Win32 need `unsafe`: they all sit in `platform::sys`, the one audited module
+# allowed it. The only other `unsafe` is test-only: `runtime::fake_clis` putting stand-in tools on PATH.
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+too_many_lines = "deny"
+panic = "deny"
+too_many_arguments = "deny"
+cognitive_complexity = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+missing_docs_in_private_items = "deny"
+case_sensitive_file_extension_comparisons = "deny"
+cast_lossless = "deny"
+cast_possible_truncation = "deny"
+checked_conversions = "deny"
+default_trait_access = "deny"
+doc_markdown = "deny"
+float_cmp = "deny"
+fn_params_excessive_bools = "deny"
+format_collect = "deny"
+format_push_string = "deny"
+if_not_else = "deny"
+ignore_without_reason = "deny"
+ip_constant = "deny"
+items_after_statements = "deny"
+large_futures = "deny"
+manual_let_else = "deny"
+manual_string_new = "deny"
+map_unwrap_or = "deny"
+match_same_arms = "deny"
+needless_pass_by_value = "deny"
+needless_raw_string_hashes = "deny"
+redundant_closure_for_method_calls = "deny"
+semicolon_if_nothing_returned = "deny"
+similar_names = "deny"
+single_match_else = "deny"
+stable_sort_primitive = "deny"
+uninlined_format_args = "deny"
+unnecessary_wraps = "deny"
+wildcard_imports = "deny"
+
+[build-dependencies]
+tauri-build = { version = "2.7.0", features = [] }
+
+[features]
+# WebdriverIO e2e: compile the embedded W3C WebDriver server into the app. Off in release builds;
+# the GUI e2e rig builds with `--features wdio`.
+wdio = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]
+# Labs that run their own cloud services: a hand-written Terraform module (`cloud/*.tf`) with the
+# launcher's own lab file beside it (`cloud/lab.yml`), run by Isothrum as any Terraform folder.
+# Off by default until a published lab uses it.
+cloud-services = []
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+sysinfo = "0.38"
+log = "0.4"
+tauri = { version = "2.12.0", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-deep-link = "2"
+# WebdriverIO e2e, behind the `wdio` feature only (not built in release): the Execute/mocking plugin
+# the @wdio/tauri-service checks for, and the embedded WebDriver server the `embedded` provider needs.
+tauri-plugin-wdio = { version = "1", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time", "net", "signal", "sync"] }
+thiserror = "2"
+sha2 = "0.11.0"
+# The attack box password's SHA-512 crypt hash (`$6$`, what /etc/shadow and `chpasswd -e` take):
+# RustCrypto's, pinned, not a hand-written one.
+sha-crypt = { version = "=0.6.0", default-features = false, features = ["alloc", "password-hash"] }
+base64 = "0.23.1"
+rand = "0.10.3"
+# Private temp folders, removed when they drop: a root step's proxy settings (Linux installs),
+# and a test's temp folder, a failed test's too (`testing::temp_dir`).
+tempfile = "3"
+url = "2.5.8"
+flate2 = "1.1.10"
+tar = "0.4.46"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+reqwest = { version = "0.13", features = ["json", "form"] }
+# rustls's crypto provider ring, installed at start (lib.rs): the default, AWS-LC, seeds its
+# random generator from CPU jitter and aborts the process when the jitter source fails its health
+# test (aws-lc-sys 0.46's tree_jitter_initialize_once): on a nested Windows 11 VM about one
+# launch in five ended with 0xC0000409 and no message (2026-11-12). AWS-LC stays linked (reqwest's
+# and the updater plugin's features) and unused.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde_yaml_ng = "0.10.0"
+# Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
+# layered crates, the 3.0 line. Only `src/runtime/lab` calls them (`lab.rs` and `lab/`, its
+# `lab::isolooms_spec_and_generators_are_used_here_alone` test says so): the spec (`isoloom-spec`),
+# the backends' registry, the resolved snapshot and the message filled from it (`isoloom-targets`).
+isoloom-spec = "3.0.0"
+isoloom-targets = "3.0.0"
+# The Isothrum runner: runs the native project Isoloom writes (a Compose file, a Vagrantfile, a
+# Terraform module), opened by its folder; every lab runs through it (`runtime/isothrum`). The 3.0
+# line.
+isothrum-runner = "3.0.0"
+# Which hypervisors this machine can run a lab's VMs on, and why not (`runtime/providers`): the
+# machine check's detection, its reasons the webview translates (`ts-rs`: their TypeScript types).
+isothrum-machine = { version = "3.0.0", features = ["ts-rs"] }
+# The launcher's own store (`store`): servers, tools, the storage record and the settings, one
+# SQLite file in WAL mode, every change a transaction. Bundled, so every platform runs the same
+# SQLite; the same version as the runner's store, which links the same library.
+rusqlite = { version = "0.41", features = ["bundled"] }
+# The Isothrum runner service (`run_service::host`): this executable, run as `serve --home <home>`,
+# is the service of a home; the app and the command line reach it through its client.
+isothrum-service = "3.0.0"
+isothrum-client = "3.0.0"
+# The in-app terminal's pseudo-terminal (`terminal`).
+portable-pty = "0.9"
+tauri-plugin-dialog = "2"
+# The TypeScript types of the commands' arguments and results, derived from these structs
+# (see `ts_bindings.rs`).
+ts-rs = "12"
+# A POSIX shell-word splitter: the in-app terminal on Windows (no `sh`, and cmd.exe can't read
+# POSIX quoting) runs its `sh_quote`d command lines' words directly; tests check `sh_quote`
+# round-trips through it.
+shell-words = "1"
+# The command line's (`cli`) arguments, help and shell completions.
+clap = { version = "4.6", features = ["derive", "env"] }
+clap_complete = "4.6"
+# Secrets taken out of the log and the setup log (`platform::redact`). Already in the tree
+# through Tauri.
+regex = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# The machine-wide policy on macOS: the managed preferences an MDM profile installs, a property
+# list (`platform::policy`). Already in the tree through Tauri.
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = "1"
+
+# Job objects: a timed tool's whole process tree ends with it on Windows. Shell (and Registry, which
+# its SHELLEXECUTEINFOW needs): the UAC-elevated Vagrant for Hyper-V.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell"] }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[dev-dependencies]
+# Tokio's paused clock (`#[tokio::test(start_paused = true)]`): tests where time matters run on a
+# fake clock, in milliseconds, whatever the machine's load.
+tokio = { version = "1", features = ["test-util"] }
+# Property tests for the parsers of tool output and user input: never panic, round-trips,
+# quoting invariants.
+proptest = { version = "1", default-features = false, features = ["std"] }
+# Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
+tauri = { version = "2.12.0", features = ["test"] }
+# The runner's test doubles (scripted processes and host ports), for `runtime/isothrum`'s.
+isothrum-runner = { version = "3.0.0", features = ["fake"] }
+# A loopback TLS server for the certificate pinning tests (`runtime/server/tls_pin`). Already in
+# the tree through reqwest.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+
+# A test binary's room for open files, made once as it loads (`platform::sys`): macOS starts a
+# process with 256. Already in the tree through Tauri.
+[target.'cfg(unix)'.dev-dependencies]
+ctor = { version = "1", default-features = false }
+
+# The test rig's prebuilt set (the workspace's rig/lib/ci/prebuilt.py builds with --profile rig):
+# release behaviour, built fast: no LTO, many codegen units, no debug info, opt-level 2. The rig
+# tests what the app does, not how fast its binary is; a release stays `release`.
+[profile.rig]
+inherits = "release"
+lto = false
+codegen-units = 16
+debug = 0
+incremental = false
+opt-level = 2

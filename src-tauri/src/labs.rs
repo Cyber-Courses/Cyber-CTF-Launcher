@@ -1,0 +1,945 @@
+//! Launching a lab: startLab (CyberBackend) -> download the lab at its pinned
+//! commit from GitHub -> run it with `CTF_API_URL` / `CTF_LAUNCH_TOKEN`, which the
+//! lab's `evidence` service exchanges for this player's evidence.
+
+use std::path::{Path, PathBuf};
+
+use crate::platform::AppDirs;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::account::api;
+use crate::error::{Error, Result};
+use crate::runtime::{self, Runtime};
+
+mod archive;
+pub(crate) mod ctf;
+pub(crate) mod imported;
+mod launch_env;
+mod offline;
+pub(crate) mod remove;
+
+use archive::extract;
+use launch_env::{EnvVar, launch_env};
+
+/// A lab to download and run, as the backend's `startLab` and `claimLaunch` answer it. Its `Debug`
+/// leaves the values out: they carry the launch token.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Launch {
+    /// The lab's id.
+    pub(crate) lab_id: String,
+    /// The runtime the lab declares.
+    pub(crate) runtime: Runtime,
+    /// The CyberCTF repository the lab comes from.
+    pub(crate) repository: String,
+    /// The commit of `repository` to install.
+    pub(crate) commit: String,
+    env: Vec<EnvVar>,
+}
+
+impl std::fmt::Debug for Launch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Launch")
+            .field("lab_id", &self.lab_id)
+            .field("runtime", &self.runtime)
+            .field("repository", &self.repository)
+            .field("commit", &self.commit)
+            .field("env", &format_args!("<redacted>"))
+            .finish()
+    }
+}
+
+/// A lab release to install: the lab, the CyberCTF repository and commit it comes from, and the
+/// runtime it declares (what a parked copy of it is taken down in before it is replaced).
+#[derive(Clone, Copy)]
+struct Release<'a> {
+    lab_id: &'a str,
+    repository: &'a str,
+    commit: &'a str,
+    runtime: Runtime,
+}
+
+/// A catalogue lab's source: `repository` at `commit`, fetched only when [`validate_source`] allows
+/// it (a CyberCTF repository at a full SHA).
+pub(crate) fn source<'a>(repository: &'a str, commit: &'a str) -> crate::runtime::lab::Source<'a> {
+    crate::runtime::lab::Source { repository, commit, check: validate_source }
+}
+
+/// Only CyberCTF repositories at a full commit SHA are downloaded; the API
+/// enforces the same rule when labs are published.
+pub(crate) fn validate_source(repository: &str, commit: &str) -> Result<()> {
+    let repo_ok = repository.strip_prefix("CyberCTF/").is_some_and(|name| {
+        !name.is_empty() && name.len() <= 100 && !name.contains("..") && name.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+    });
+    let commit_ok = commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase());
+    if repo_ok && commit_ok { Ok(()) } else { Err(Error::Invalid(format!("refusing to download {repository}@{commit}"))) }
+}
+
+/// The lab's GitHub tarball at `commit`.
+async fn download(repository: &str, commit: &str) -> Result<Vec<u8>> {
+    fetch_archive(&format!("https://codeload.github.com/{repository}/tar.gz/{commit}"), crate::platform::http::MAX_LAB_ARCHIVE).await
+}
+
+/// A lab archive at `url`, streamed with timeouts (a stalled transfer is given up) and refused
+/// past `max` bytes. It was read whole into memory with no limit and no timeout: a stalled
+/// GitHub transfer hung the launch forever.
+async fn fetch_archive(url: &str, max: u64) -> Result<Vec<u8>> {
+    let res = crate::platform::http::download_client()?.get(url).send().await.map_err(|e| Error::Invalid(format!("download failed: {e}")))?;
+    if !res.status().is_success() {
+        return Err(Error::Invalid(format!("download failed: HTTP {}", res.status())));
+    }
+    crate::platform::http::body_limited(res, max).await
+}
+
+/// Downloads the lab into `<app data>/labs/<lab id>/` unless that exact commit is
+/// already installed. Extracts next to it, then swaps, so a failed download
+/// never leaves a half-installed lab.
+async fn install(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String)) -> Result<PathBuf> {
+    install_with(dirs, release, log, || download(release.repository, release.commit)).await
+}
+
+/// [`install`], the archive fetched by `fetch` (when the commit isn't installed yet).
+async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String), fetch: impl AsyncFnOnce() -> Result<Vec<u8>>) -> Result<PathBuf> {
+    let Release { lab_id, repository, commit, runtime: declared } = release;
+    // The lab id comes from the backend and is used to build paths (join, remove_dir_all, rename).
+    // Validate it like every other id so a hostile/buggy response can't escape the labs dir with
+    // `..` or an absolute path. Reachable unattended through the agent, so this is the guard.
+    runtime::validate_id(lab_id)?;
+    validate_source(repository, commit)?;
+    let slot = Slot::of(dirs, lab_id).await?;
+    if runtime::lab::installed_at(&slot.dir, commit) {
+        runtime::lab::ensure_instance(&slot.labs, &slot.dir, &slot.in_use)?;
+        return Ok(slot.dir);
+    }
+    // A new version of a lab that is up, here or elsewhere: swapping the folder would pull the
+    // files its run reads (its manifest, what its containers bind-mount) out from under it. Stop
+    // it first. One taken down outside the app is forgotten first.
+    runtime::forget_gone(dirs, lab_id, &mut |l| log(l)).await?;
+    runtime::refuse_replace(dirs, &slot.dir, lab_id).await?;
+    log(runtime::deploy_log::downloading(repository, &commit[..12]));
+    let bytes = fetch().await?;
+    let (labs, into, id, sha) = (slot.labs.clone(), slot.dir.clone(), lab_id.to_owned(), commit.to_owned());
+    let staged = move || stage(&labs, &into, &bytes, &id, &sha);
+    install_into(dirs, &slot, (lab_id, declared), log, staged).await?;
+    log(runtime::deploy_log::INSTALLED.into());
+    Ok(slot.dir)
+}
+
+/// Where an install puts a lab: the labs folder, the lab's folder there, and the address blocks
+/// Docker's networks hold now (so a new lab's instance lands on blocks nothing else holds).
+struct Slot {
+    labs: PathBuf,
+    dir: PathBuf,
+    in_use: Vec<String>,
+}
+
+impl Slot {
+    /// Lab `lab_id`'s slot.
+    async fn of(dirs: &AppDirs, lab_id: &str) -> Result<Slot> {
+        let labs = crate::runtime::paths::labs_root(dirs)?;
+        let dir = labs.join(lab_id);
+        let in_use = crate::runtime::isothrum::address_blocks_in_use(&crate::runtime::paths::runner_home(dirs)?, lab_id).await;
+        Ok(Slot { labs, dir, in_use })
+    }
+}
+
+/// The steps every install shares, once the caller has refused a replacement of a lab that is up:
+/// a parked copy of the lab (`id`, declared `runtime`) is taken down, the folder `fill` stages
+/// (seconds of file work, on a blocking thread) swapped in all or nothing, and the lab given its
+/// own room on this machine (networks, names), so it runs beside the other labs.
+async fn install_into(
+    dirs: &AppDirs,
+    slot: &Slot,
+    (id, runtime): (&str, Runtime),
+    log: &impl Fn(String),
+    fill: impl FnOnce() -> Result<PathBuf> + Send + 'static,
+) -> Result<()> {
+    // A parked copy of the previous version would be orphaned once its folder (and the runner's
+    // record of it) is gone: take it down first, before its markers are carried over.
+    clear_parked(dirs, runtime::LabRef { dir: &slot.dir, id, runtime }, log).await?;
+    let into = slot.dir.clone();
+    blocking(move || swap_in(&fill()?, &into)).await?;
+    runtime::lab::ensure_instance(&slot.labs, &slot.dir, &slot.in_use)?;
+    Ok(())
+}
+
+/// Takes down a parked copy of `lab` before its folder is replaced ([`runtime::clear_parked`]);
+/// when that fails the replacement is refused, the parked copy left as it was.
+async fn clear_parked(dirs: &AppDirs, lab: runtime::LabRef<'_>, log: &impl Fn(String)) -> Result<()> {
+    runtime::clear_parked(dirs, lab, &mut |l| log(l)).await.map_err(|e| {
+        Error::Refused(format!("A parked copy of this lab is here and couldn't be removed ({e}). Resume it and stop it, then start the lab again."))
+    })
+}
+
+/// The folder an install of lab `lab_id` fills under `labs` before it is swapped in: one per lab,
+/// never two installs of it at once (the run service admits one operation per lab).
+fn staging_dir(labs: &Path, lab_id: &str) -> PathBuf {
+    labs.join(format!(".{lab_id}.staging"))
+}
+
+/// Extracts the downloaded lab `lab_id` at `commit` into its staging folder, with its commit
+/// marker and the installed copy (`dir`)'s instance number, which stays the installed lab's.
+/// Nothing of where the old copy ran comes along: the install refused a lab still up and took a
+/// parked one down first, so such a marker could only be stale. Returns the staging folder.
+fn stage(labs: &Path, dir: &Path, tarball: &[u8], lab_id: &str, commit: &str) -> Result<PathBuf> {
+    let staging = staging_dir(labs, lab_id);
+    clear_leftover(&staging);
+    std::fs::create_dir_all(&staging)?;
+    // A staging that can't be filled (a refused archive) goes at once, not at the next install:
+    // left, `labs/.<id>.staging` stays until then.
+    if let Err(e) = fill_staging(&staging, dir, tarball, commit) {
+        clear_leftover(&staging);
+        return Err(e);
+    }
+    Ok(staging)
+}
+
+/// The staging folder's contents: the archive extracted, the commit marker, the installed
+/// copy's instance marker when it has one.
+fn fill_staging(staging: &Path, dir: &Path, tarball: &[u8], commit: &str) -> Result<()> {
+    extract(tarball, staging)?;
+    std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), commit)?;
+    if let Ok(value) = std::fs::read(dir.join(runtime::lab::INSTANCE_MARKER)) {
+        std::fs::write(staging.join(runtime::lab::INSTANCE_MARKER), value)?;
+    }
+    Ok(())
+}
+
+/// Replaces the installed lab with the staged one, all or nothing: the old one is moved aside
+/// (a rename, which Windows refuses whole while a file inside is open, where deleting it would
+/// stop halfway and leave a broken lab), the new one moved in, and the old one put back if
+/// that fails. The old copy is deleted last, best effort; a leftover goes on the next update.
+fn swap_in(staging: &Path, dir: &Path) -> Result<()> {
+    swap_in_with(staging, dir, rename_retrying)
+}
+
+/// [`swap_in`], moving folders with `rename`. Should the old copy not go back after the new
+/// one failed to move in, the lab is in neither place the launcher looks: that is logged, and
+/// the error says where the old copy is.
+fn swap_in_with(staging: &Path, dir: &Path, rename: impl Fn(&Path, &Path) -> std::io::Result<()>) -> Result<()> {
+    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let old = dir.with_file_name(format!(".{name}.old"));
+    clear_leftover(&old);
+    let had_old = dir.exists();
+    if had_old {
+        rename(dir, &old).map_err(|e| in_use(e, dir))?;
+    }
+    if let Err(e) = rename(staging, dir) {
+        if had_old && let Err(back) = rename(&old, dir) {
+            log::error!("lab update: {} didn't move in ({e}), and the installed copy didn't go back from {} ({back})", dir.display(), old.display());
+            return Err(Error::Invalid(format!(
+                "Couldn't update the lab, nor put the installed copy back: it is in {}. Move that folder back to {}, or remove the lab and add it again.",
+                old.display(),
+                dir.display()
+            )));
+        }
+        return Err(in_use(e, dir));
+    }
+    clear_leftover(&old);
+    Ok(())
+}
+
+/// Removes `path`, a staging folder or an old copy an earlier install may have left. Best effort:
+/// one that won't go is logged, and tried again by the next install.
+fn clear_leftover(path: &Path) {
+    if let Err(e) = crate::platform::fs::remove_dir_if_present(path) {
+        log::warn!("couldn't remove {}: {e}", path.display());
+    }
+}
+
+/// Runs `f`, file work that can take seconds (unpacking an archive, copying a folder, a rename
+/// retried while a file is held), on a blocking thread, off the async workers.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| Error::Invalid(format!("installing the lab's files: {e}")))?
+}
+
+/// `rename`, retried briefly: on Windows an antivirus or the search indexer holds a just-written
+/// file open for a moment, and the rename fails with "access denied" meanwhile.
+fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut last = None;
+    for wait_ms in [0, 100, 250, 500, 1000] {
+        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("rename failed")))
+}
+
+/// A rename refused because something holds a file in the lab folder, said as what to do.
+fn in_use(e: std::io::Error, dir: &Path) -> Error {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        Error::Invalid(format!(
+            "Couldn't update the lab: a file in {} is open in another program (an editor, a terminal, or a VM). Close it and try again.",
+            dir.display()
+        ))
+    } else {
+        Error::Io(e)
+    }
+}
+
+/// A `startLab` or `claimLaunch` answer, typed after the fact: what the tests build by hand
+/// (`start_lab` types its answer at the boundary).
+#[cfg(test)]
+pub(crate) fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
+    serde_json::from_value(launch_json).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))
+}
+
+/// Installs and starts a lab from a launch spec (the `startLab`/`claimLaunch` answer). Shared by
+/// the manual launch command and the agent's claim loop (bring your own compute).
+/// It runs where `to` says.
+pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination<'_>, log: impl Fn(String)) -> Result<Option<String>> {
+    runtime::validate_id(&launch.lab_id)?;
+    // Nowhere to start it, or a start the policy turns off: said before the download.
+    runtime::check_destination(dirs, launch.runtime, &to)?;
+    let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit, runtime: launch.runtime };
+    let dir = install(dirs, release, &log).await?;
+    // Fixed names for every lab; the evidence itself is never in the environment. Which of them
+    // are sensitive (masked in the logs, given as secrets) the lab's spec says, at the start.
+    let env = launch_env(launch.env);
+    let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
+    runtime::start(dirs, lab, to, &env, log).await?;
+    // Where the lab's target is reachable on this machine, for the website to open.
+    Ok(runtime::primary_url(dirs, &dir, &launch.lab_id, launch.runtime).await)
+}
+
+/// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending what the runner service
+/// still runs on it, if any (`end_operations`, handed in by the app shell), and the website's
+/// co-location check of it.
+pub(crate) async fn stop_lab_retiring_colocation(
+    dirs: &AppDirs,
+    id: &str,
+    runtime: Runtime,
+    end_operations: impl Future<Output = ()>,
+    log: impl FnMut(String),
+) -> Result<()> {
+    let end_first = async {
+        end_operations.await;
+        crate::account::colocation::retire(id);
+    };
+    runtime::stop_lab(dirs, id, runtime, end_first, log).await
+}
+
+/// The backend's operation starting a lab for the signed-in player: what to download and run,
+/// and the launch's values (the evidence claim, the player's flags).
+const START_LAB: &str = "mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }";
+
+/// The data of the `startLab` operation's answer.
+#[derive(serde::Deserialize)]
+struct StartLabData {
+    #[serde(rename = "startLab")]
+    start_lab: Launch,
+}
+
+/// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's
+/// values, typed at the boundary rather than as raw JSON the caller types a step later.
+async fn start_lab(lab_id: &str) -> Result<Launch> {
+    let data = api::graphql_signed_in(START_LAB, json!({ "id": lab_id })).await?;
+    let answer: StartLabData = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))?;
+    Ok(answer.start_lab)
+}
+
+/// The values a launch of `lab_id` gives the lab, as the backend at `base` answers player
+/// `token`'s `startLab` (no extras): for the integration tests, against a local test backend.
+#[cfg(test)]
+pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> Result<Vec<(String, String)>> {
+    let data = api::send(base, Some(token.to_owned()), START_LAB, json!({ "id": lab_id })).await?;
+    Ok(launch_env(parse_launch(data["startLab"].clone())?.env))
+}
+
+/// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline
+/// start), or, when the backend can't be reached and the player asked for it (`offline`), the
+/// installed lab's (see `offline`).
+async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(String)) -> Result<Launch> {
+    let base = dirs.data()?;
+    let user = crate::account::auth::signed_in_user().await.unwrap_or_else(|e| {
+        log::warn!("the session can't be read, so {lab_id}'s launch isn't kept for an offline start: {e}");
+        None
+    });
+    match start_lab(lab_id).await {
+        Ok(answer) => {
+            if let Some(user) = &user
+                && let Err(e) = offline::keep(base, &answer, user)
+            {
+                log::warn!("couldn't keep {lab_id}'s launch for an offline start: {e}");
+            }
+            Ok(answer)
+        }
+        Err(failed) => {
+            let spec = offline::instead_of(failed, base, lab_id, user.as_deref(), offline)?;
+            log(offline::STARTING_OFFLINE.into());
+            Ok(spec)
+        }
+    }
+}
+
+/// The backend's catalogue entry of a lab: the runtime it declares and its source, read without
+/// starting it (what a placement is chosen from before the launch is asked for).
+const CATALOGUE_SOURCE: &str = "query ($id: ID!) { labs(where: { id: { eq: $id } }) { runtime { runtime repository commit } } }";
+
+/// A lab's runtime and source, as the catalogue lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct CatalogueSource {
+    /// The runtime the lab declares.
+    pub(crate) runtime: Runtime,
+    /// The CyberCTF repository it comes from.
+    pub(crate) repository: String,
+    /// The commit the catalogue pins.
+    pub(crate) commit: String,
+}
+
+impl CatalogueSource {
+    /// Its source, with the catalogue's rule for which repositories may be fetched.
+    pub(crate) fn source(&self) -> runtime::lab::Source<'_> {
+        source(&self.repository, &self.commit)
+    }
+}
+
+/// Lab `lab_id`'s runtime and source as the catalogue lists it; when the backend can't be reached,
+/// the source of its last launch online (kept for an offline start) when the player asked for an
+/// offline start (`offline`), as [`launch_spec`] falls back.
+pub(crate) async fn catalogue_source(dirs: &AppDirs, lab_id: &str, offline: bool) -> Result<CatalogueSource> {
+    runtime::validate_id(lab_id)?;
+    let listed = async {
+        let data = api::graphql_signed_in(CATALOGUE_SOURCE, json!({ "id": lab_id })).await?;
+        let entry = data["labs"].get(0).map(|l| l["runtime"].clone()).filter(|r| !r.is_null());
+        let entry = entry.ok_or_else(|| Error::Invalid(format!("the catalogue has no lab `{lab_id}`")))?;
+        serde_json::from_value::<CatalogueSource>(entry).map_err(|e| Error::Invalid(format!("the catalogue's entry of `{lab_id}` is incomplete: {e}")))
+    };
+    match listed.await {
+        Ok(listed) => Ok(listed),
+        Err(failed) => {
+            let user = crate::account::auth::signed_in_user().await.ok().flatten();
+            let kept = offline::instead_of(failed, dirs.data()?, lab_id, user.as_deref(), offline)?;
+            Ok(CatalogueSource { runtime: kept.runtime, repository: kept.repository, commit: kept.commit })
+        }
+    }
+}
+
+/// What the player asked to start, and where.
+#[derive(Debug, Clone)]
+pub struct LaunchRequest {
+    /// The lab.
+    pub lab_id: String,
+    /// Where and how it runs, as picked ([`runtime::placement::choose`]): taken as it is.
+    pub placement: runtime::placement::Placement,
+    /// The installed lab started without the backend when it can't be reached (no progress
+    /// saved): the player's answer to a launch that failed with `Code::OfflineReady`.
+    pub offline: bool,
+}
+
+/// A launch ready to run: the lab, its `startLab` spec, and where and how it runs (the Docker
+/// context a container lab here is pinned to resolved from the chosen engine).
+pub(crate) struct PreparedLaunch {
+    /// Its `startLab` spec.
+    pub(crate) launch: Launch,
+    /// Where it runs and how.
+    pub(crate) place: runtime::Placed,
+}
+
+/// Prepares `request`'s launch: checks everything on this machine that would stop it, before the
+/// launch is registered ([`runtime::preflight`]: a refusal spends no launch token), then resolves
+/// the `startLab` spec (the backend's, kept for a later offline start, or the installed lab's when
+/// the backend can't be reached and the player asked) and the Docker context of the engine it
+/// runs on. The deploy itself runs next ([`run`]), its run's operations in the runner service (so
+/// quitting the app never cuts them short); `log` carries the one "starting offline" line the
+/// preparation may emit.
+pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
+    let listed = catalogue_source(dirs, &request.lab_id, request.offline).await?;
+    let (lab_id, placement) = (request.lab_id.clone(), request.placement.clone());
+    // Boxed: the preflight reads the spec and asks this machine's tools, which makes its future large.
+    let check = |at: CatalogueSource| {
+        let (lab_id, placement) = (&lab_id, &placement);
+        async move { Box::pin(runtime::preflight::check(dirs, lab_id, at.runtime, at.source(), placement)).await }
+    };
+    prepare_checked(request, listed, check, async |request: &LaunchRequest| launch_spec(dirs, &request.lab_id, request.offline, log).await).await
+}
+
+/// [`prepare_launch`] once the catalogue was read (`listed`): `check` (the preflight) of the spec
+/// at the catalogue's commit first, then `register` (`startLab`) only once it passed. `startLab`
+/// names the commit that is installed and runs: the catalogue's, unless the lab moved on between
+/// the two reads; then the spec at that commit is checked too, before anything is installed (the
+/// launch is registered by then, but a start that can't run here never begins).
+async fn prepare_checked<F: Future<Output = Result<()>>>(
+    request: LaunchRequest,
+    listed: CatalogueSource,
+    check: impl Fn(CatalogueSource) -> F,
+    register: impl AsyncFnOnce(&LaunchRequest) -> Result<Launch>,
+) -> Result<PreparedLaunch> {
+    check(listed.clone()).await?;
+    let launch = register(&request).await?;
+    let runs = CatalogueSource { runtime: launch.runtime, repository: launch.repository.clone(), commit: launch.commit.clone() };
+    if runs != listed {
+        check(runs).await?;
+    }
+    let docker_context = pinned_context(&request.placement).await?;
+    Ok(PreparedLaunch { launch, place: runtime::Placed { placement: request.placement, docker_context } })
+}
+
+/// The Docker context a container lab here is pinned to, resolved now (on the main process, where
+/// Docker answers) from the engine its placement names; none without one, or elsewhere than on
+/// Docker here. An engine with no context here is an error: starting on the current context would
+/// run the lab on another engine than the one picked.
+pub(crate) async fn pinned_context(placement: &runtime::placement::Placement) -> Result<Option<String>> {
+    match placement {
+        runtime::placement::Placement::Docker { engine: Some(engine), .. } => crate::machine::system::docker::engine_context(engine.id()).await.map(Some),
+        _ => Ok(None),
+    }
+}
+
+/// A stable lab id for a lab imported from the local directory `src`: `local-<slug>` of the lab's
+/// own name (its folder name when the spec has none), so the ordinary lifecycle commands act on it
+/// by id. Errors when `src` is not a lab folder.
+pub(crate) fn local_id(src: &Path) -> Result<String> {
+    let spec = runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
+    let base = if spec.name.is_empty() { src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() } else { spec.name };
+    let slug: String = base.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c.to_ascii_lowercase() } else { '-' }).collect();
+    let slug = slug.trim_matches('-');
+    let slug = if slug.is_empty() { "lab" } else { slug };
+    let id = format!("{}{}", imported::PREFIX, &slug[..slug.len().min(56)]);
+    runtime::validate_id(&id)?;
+    Ok(id)
+}
+
+/// Installs the lab from the local directory `src` into `<app data>/labs/<lab id>/` by copying it
+/// (no download): an imported lab. The rest is the ordinary install — its own instance room, any
+/// parked copy cleared first — so the lifecycle commands then drive it like any installed lab.
+async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(String)) -> Result<PathBuf> {
+    runtime::validate_id(lab_id)?;
+    // The folder is read again here: the operation that runs this may start well after the import
+    // was asked for (`local_id`), and the folder may have changed since.
+    runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
+    let slot = Slot::of(dirs, lab_id).await?;
+    // Re-importing while the previous copy is up would pull its files out from under it, as an
+    // update would. Stop it first. One taken down outside the app is forgotten first.
+    runtime::forget_gone(dirs, lab_id, &mut |l| log(l)).await?;
+    runtime::refuse_replace(dirs, &slot.dir, lab_id).await?;
+    log(runtime::deploy_log::importing(lab_id, src));
+    let (from, staging) = (src.to_path_buf(), staging_dir(&slot.labs, lab_id));
+    let copied = move || {
+        clear_leftover(&staging);
+        runtime::lab::copy_tree(&from, &staging)?;
+        Ok(staging)
+    };
+    install_into(dirs, &slot, (lab_id, Runtime::Docker), log, copied).await?;
+    log(runtime::deploy_log::IMPORTED.into());
+    Ok(slot.dir)
+}
+
+/// Installs and starts the lab in the local directory `src` as a Docker lab with development
+/// inputs (no backend, no flags): an imported custom lab, for running one not published yet.
+/// Returns its local URL.
+pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: impl Fn(String)) -> Result<Option<String>> {
+    runtime::validate_id(lab_id)?;
+    let dir = install_local(dirs, lab_id, src, &log).await?;
+    let lab = runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker };
+    // An imported lab runs here: a container lab on the current context, on free ports.
+    let here = runtime::placement::Placement::Docker { engine: None, default_ports: false };
+    runtime::start(dirs, lab, runtime::Destination::at(&here), &[], log).await?;
+    Ok(runtime::primary_url(dirs, &dir, lab_id, Runtime::Docker).await)
+}
+
+/// An update and an import as a launch and the import run them, for the integration tests.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    use std::path::{Path, PathBuf};
+
+    use crate::error::Result;
+    use crate::platform::AppDirs;
+    use crate::runtime::Runtime;
+
+    /// Lab `lab_id`, declared `runtime`, updated to `commit`, whose GitHub tarball is `tarball`.
+    pub(crate) async fn update(dirs: &AppDirs, lab_id: &str, runtime: Runtime, commit: &str, tarball: Vec<u8>) -> Result<PathBuf> {
+        let release = super::Release { lab_id, repository: "CyberCTF/integration-test", commit, runtime };
+        super::install_with(dirs, release, &|_| {}, async move || Ok(tarball)).await
+    }
+
+    /// Lab `lab_id` imported again from the folder `src`.
+    pub(crate) async fn reimport(dirs: &AppDirs, lab_id: &str, src: &Path) -> Result<PathBuf> {
+        super::install_local(dirs, lab_id, src, &|_| {}).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::archive::tests::tarball;
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn an_installs_file_work_leaves_the_async_worker_free() {
+        // Regression: unpacking an archive and the retried renames ran on the async worker,
+        // stalling every task on it for seconds.
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let work = tokio::spawn(blocking(move || held.recv_timeout(std::time::Duration::from_secs(5)).map_err(|e| Error::Invalid(e.to_string()))));
+        // The only worker runs this while the file work waits on it.
+        tokio::spawn(async move { release.send(()) }).await.unwrap().unwrap();
+        work.await.unwrap().unwrap();
+    }
+    #[test]
+    fn only_cyberctf_repos_at_full_shas() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert!(validate_source("CyberCTF/invoice-portal-sqli", sha).is_ok());
+        for (repo, commit) in [
+            ("someone/lab", sha),
+            ("CyberCTF/", sha),
+            ("CyberCTF/../x", sha),
+            ("CyberCTF/a/b", sha),
+            ("CyberCTF/lab", "main"),
+            ("CyberCTF/lab", &sha.to_uppercase()),
+        ] {
+            assert!(validate_source(repo, commit).is_err(), "{repo}@{commit}");
+        }
+    }
+
+    /// A release of a container lab from `CyberCTF/invoice`, as `lab_id` at `commit`.
+    fn invoice<'a>(lab_id: &'a str, commit: &'a str) -> Release<'a> {
+        Release { lab_id, repository: "CyberCTF/invoice", commit, runtime: Runtime::Docker }
+    }
+
+    #[test]
+    fn launch_specs_parse_or_say_why_not() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let l = parse_launch(serde_json::json!({
+            "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": sha,
+            "env": [{"name": "CTF_API_URL", "value": "https://api"}]
+        }))
+        .unwrap();
+        assert_eq!(
+            (l.lab_id.as_str(), l.runtime, l.repository.as_str(), l.commit.as_str(), l.env.len()),
+            ("invoice", Runtime::Docker, "CyberCTF/invoice", sha, 1)
+        );
+        let err = parse_launch(serde_json::json!({ "labId": "x" })).err().unwrap().to_string();
+        assert!(err.starts_with("invalid launch spec: "), "{err}");
+    }
+
+    /// An archive that can't be extracted leaves no staging folder behind.
+    #[test]
+    fn a_refused_archive_leaves_no_staging_folder() {
+        let root = crate::testing::temp_dir("stage-refused");
+        let labs = root.join("labs");
+        let dir = labs.join("invoice");
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = stage(&labs, &dir, b"not a tarball", "invoice", "0123456").unwrap_err();
+        assert!(!staging_dir(&labs, "invoice").exists(), "the staging went with the failure: {err}");
+    }
+
+    #[test]
+    fn staging_carries_the_lab_its_commit_and_its_instance() {
+        let labs = crate::testing::temp_dir("stage");
+        let dir = labs.join("invoice");
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(runtime::lab::INSTANCE_MARKER), "3").unwrap();
+        std::fs::write(dir.join("old.txt"), "old").unwrap();
+        // Nothing is installed at that commit yet.
+        assert!(!runtime::lab::installed_at(&dir, sha));
+
+        let staging = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]), "invoice", sha).unwrap();
+        assert_eq!(staging, labs.join(".invoice.staging"));
+        assert_eq!(std::fs::read_to_string(staging.join("isoloom.yml")).unwrap(), "name: invoice");
+        assert_eq!(std::fs::read_to_string(staging.join(runtime::lab::INSTANCE_MARKER)).unwrap(), "3", "the installed lab's room stays");
+
+        swap_in(&staging, &dir).unwrap();
+        assert!(!staging.exists());
+        assert!(!dir.join("old.txt").exists());
+        assert!(runtime::lab::installed_at(&dir, sha));
+        assert!(!runtime::lab::installed_at(&dir, "ffffffffffffffffffffffffffffffffffffffff"));
+        assert!(!labs.join(".invoice.old").exists(), "the old copy is cleared");
+    }
+
+    #[test]
+    fn a_failed_update_that_cant_put_the_old_copy_back_says_where_it_is() {
+        let labs = crate::testing::temp_dir("swap-back");
+        let (dir, staging, old) = (labs.join("invoice"), labs.join(".invoice.staging"), labs.join(".invoice.old"));
+        for (d, v) in [(&dir, "old"), (&staging, "new")] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("a.txt"), v).unwrap();
+        }
+        // Moving aside works; moving the new copy in, and the old one back, don't.
+        let rename = |from: &Path, to: &Path| if from == dir.as_path() { std::fs::rename(from, to) } else { Err(std::io::Error::other("held")) };
+        let err = swap_in_with(&staging, &dir, rename).unwrap_err().to_string();
+        assert!(err.contains("nor put the installed copy back") && err.contains(&old.display().to_string()), "{err}");
+        assert_eq!(std::fs::read_to_string(old.join("a.txt")).unwrap(), "old", "the old copy kept where the error says");
+        // The old copy back fine: the move-in's own error, the lab where it was.
+        std::fs::rename(&old, &dir).unwrap();
+        let rename = |from: &Path, to: &Path| if from == staging.as_path() { Err(std::io::Error::other("held")) } else { std::fs::rename(from, to) };
+        let err = swap_in_with(&staging, &dir, rename).unwrap_err().to_string();
+        assert!(!err.contains("put the installed copy back"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "old");
+    }
+
+    /// Windows: a file of the installed lab open in another program (no delete sharing, like an
+    /// editor or a VM's disk) used to leave the lab half-deleted. Now the update is refused whole,
+    /// the installed lab intact, and it goes through once the file is closed.
+    #[cfg(windows)]
+    #[test]
+    fn an_update_with_a_file_held_open_keeps_the_installed_lab_whole() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        let labs = crate::testing::temp_dir("swap");
+        let (dir, staging) = (labs.join("invoice"), labs.join(".invoice.staging"));
+        for (d, v) in [(&dir, "old"), (&staging, "new")] {
+            std::fs::create_dir_all(d.join("sub")).unwrap();
+            std::fs::write(d.join("a.txt"), v).unwrap();
+            std::fs::write(d.join("sub").join("disk.vmdk"), v).unwrap();
+        }
+        let held = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(dir.join("sub").join("disk.vmdk")).unwrap();
+
+        let err = swap_in(&staging, &dir).unwrap_err().to_string();
+        assert!(err.contains("open in another program"), "{err}");
+        for f in ["a.txt", "sub/disk.vmdk"] {
+            assert_eq!(std::fs::read_to_string(dir.join(f)).unwrap(), "old", "{f}");
+            assert_eq!(std::fs::read_to_string(staging.join(f)).unwrap(), "new", "{f}");
+        }
+
+        drop(held);
+        swap_in(&staging, &dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("sub").join("disk.vmdk")).unwrap(), "new");
+        assert!(!staging.exists() && !labs.join(".invoice.old").exists());
+    }
+
+    const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[tokio::test]
+    async fn a_new_lab_version_is_installed_unless_the_old_one_still_runs() {
+        use crate::runtime::providers::testing::no_tools;
+        let t = crate::testing::test_app::TestApp::new();
+        let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
+        let tools = no_tools();
+        let lines = std::sync::Mutex::new(Vec::<String>::new());
+        let log = |l: String| lines.lock().unwrap().push(l);
+        let dir = install_with(&t.dirs(), invoice("invoice", SHA), &log, async || Ok(gz.clone())).await.unwrap();
+        assert_eq!(dir, t.data().join("labs").join("invoice"));
+        assert!(runtime::lab::installed_at(&dir, SHA) && dir.join("isoloom.yml").is_file());
+        assert_eq!(lines.lock().unwrap().as_slice(), ["Downloading CyberCTF/invoice@0123456789ab", "Lab installed"]);
+        // The same commit again: nothing downloaded.
+        install_with(&t.dirs(), invoice("invoice", SHA), &log, async || panic!("no download")).await.unwrap();
+        drop(tools);
+        // A newer commit while the old one is up, wherever the runner runs it: refused, the
+        // running copy left alone. Regression: only this machine's Docker and the lab folder's
+        // Vagrant record were asked, where the runner keeps nothing, so a VM,
+        // ESXi, Proxmox or cloud run had its folder swapped out from under it.
+        let newer = "1123456789abcdef0123456789abcdef01234567";
+        for (host, target) in [(None, "docker"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some("pve1"), "proxmox"), (Some("aws1"), "cloud-vm")] {
+            crate::runtime::test_support::record_run(t.data(), "invoice", host, target, "ready");
+            let err = install_with(&t.dirs(), invoice("invoice", newer), &log, async || panic!("no download")).await.unwrap_err();
+            assert!(err.is_refusal(), "{target}: {err}");
+            let expected = host.map_or_else(|| "This lab is still running on this machine".to_owned(), |h| format!("This lab is still running on {h}."));
+            assert!(err.to_string().starts_with(&expected), "{target}: {err}");
+            assert!(runtime::lab::installed_at(&dir, SHA), "{target}: the running copy was replaced");
+        }
+        // Stopped (the run taken down): the new version goes in.
+        crate::runtime::test_support::record_run(t.data(), "invoice", None, "docker", "absent");
+        install_with(&t.dirs(), invoice("invoice", newer), &log, async || Ok(gz.clone())).await.unwrap();
+        assert!(runtime::lab::installed_at(&dir, newer));
+        // Ids and sources are checked before anything else.
+        assert!(matches!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(
+            install_with(&t.dirs(), Release { lab_id: "invoice", repository: "evil/lab", commit: SHA, runtime: Runtime::Docker }, &log, async || panic!())
+                .await
+                .is_err()
+        );
+    }
+
+    /// A parked copy the runner couldn't take down refuses the new version: swapping the folder
+    /// would orphan its machines. The parked copy stays as it was.
+    #[tokio::test]
+    async fn a_new_lab_version_is_refused_while_a_parked_copy_couldnt_be_taken_down() {
+        let t = crate::testing::test_app::TestApp::new();
+        let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
+        let _tools = crate::runtime::providers::testing::no_tools();
+        let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
+        crate::runtime::test_support::record_parked(t.data(), "invoice", "docker", "shutdown");
+        let compose = runtime::lab::compose_file(&dir);
+        std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
+        std::fs::write(&compose, "not a compose file").unwrap();
+        let newer = "1123456789abcdef0123456789abcdef01234567";
+        let err = install_with(&t.dirs(), invoice("invoice", newer), &|_| {}, async || Ok(gz.clone())).await.unwrap_err();
+        assert!(matches!(err, Error::Refused(_)), "{err:?}");
+        assert!(err.to_string().starts_with("A parked copy of this lab is here and couldn't be removed"), "{err}");
+        assert!(runtime::lab::installed_at(&dir, SHA), "the parked copy's folder was replaced");
+        assert!(!t.data().join("labs").join(".invoice.staging").exists());
+    }
+
+    #[tokio::test]
+    async fn a_chosen_engine_with_no_context_here_fails_the_launch_rather_than_use_another() {
+        // Regression: an engine whose context couldn't be found pinned nothing, and the lab
+        // started on the current context: another engine than the one the player picked.
+        use crate::machine::system::docker::Engine;
+        use crate::runtime::placement::Placement;
+        use isothrum_runner::fake::{FakeProcesses, Reply};
+        let contexts = FakeProcesses::script().allow("docker context ls", Reply::ok("default *\ncolima-dev\n")).build();
+        let host = crate::runtime::providers::testing::host(std::path::Path::new("/nonexistent/cyberctf-test-machine"));
+        let _machine = crate::runtime::providers::testing::Machine::set(std::sync::Arc::new(contexts), host);
+        let docker = |engine| Placement::Docker { engine, default_ports: false };
+        assert_eq!(pinned_context(&docker(Some(Engine::Colima))).await.unwrap().as_deref(), Some("colima-dev"));
+        assert_eq!(pinned_context(&docker(Some(Engine::Orbstack))).await.unwrap_err().to_string(), "no Docker context for orbstack");
+        // Elsewhere than on Docker here, or with no engine chosen, nothing is pinned.
+        assert_eq!(pinned_context(&Placement::Server { host: "pve".into() }).await.unwrap(), None);
+        assert_eq!(pinned_context(&docker(None)).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn a_launch_that_cant_run_here_is_never_registered() {
+        use crate::runtime::placement::Placement;
+        let request = || LaunchRequest { lab_id: "web".into(), placement: Placement::Docker { engine: None, default_ports: false }, offline: false };
+        let registered = std::sync::atomic::AtomicUsize::new(0);
+        let register = async |_: &LaunchRequest| -> Result<Launch> {
+            registered.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            parse_launch(json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": SHA, "env": [] }))
+        };
+        let listed = CatalogueSource { runtime: Runtime::Docker, repository: "CyberCTF/web".into(), commit: SHA.into() };
+        // The preflight refuses: `startLab` is never asked, no launch token spent.
+        let refused = prepare_checked(request(), listed.clone(), |_| async { Err(Error::coded(crate::error::Code::NoHypervisor)) }, register).await;
+        assert_eq!(refused.err().map(|e| e.code()), Some(crate::error::Code::NoHypervisor));
+        assert_eq!(registered.load(std::sync::atomic::Ordering::SeqCst), 0);
+        // It passes: registered once, its spec checked once (`startLab` installs the commit checked).
+        let checks = std::sync::atomic::AtomicUsize::new(0);
+        let check = |_| {
+            checks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async { Ok(()) }
+        };
+        let prepared = prepare_checked(request(), listed, check, register).await.unwrap();
+        assert_eq!((prepared.launch.lab_id.as_str(), registered.load(std::sync::atomic::Ordering::SeqCst)), ("web", 1));
+        assert_eq!(checks.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn the_spec_that_runs_is_the_one_checked_even_when_the_lab_moved_on() {
+        use crate::runtime::placement::Placement;
+        let request = || LaunchRequest { lab_id: "web".into(), placement: Placement::Docker { engine: None, default_ports: false }, offline: false };
+        let listed = CatalogueSource { runtime: Runtime::Docker, repository: "CyberCTF/web".into(), commit: "1".repeat(40) };
+        // `startLab` answers a newer commit than the catalogue listed.
+        let register = async |_: &LaunchRequest| -> Result<Launch> {
+            parse_launch(json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": SHA, "env": [] }))
+        };
+        let checked = std::sync::Mutex::new(Vec::new());
+        let check = |at: CatalogueSource| {
+            checked.lock().unwrap().push(at.commit.clone());
+            async move { if at.commit == SHA { Err(Error::coded(crate::error::Code::NoHypervisor)) } else { Ok(()) } }
+        };
+        // The spec at the commit `startLab` installs is checked too, and its refusal stops the start.
+        let refused = prepare_checked(request(), listed, check, register).await;
+        assert_eq!(refused.err().map(|e| e.code()), Some(crate::error::Code::NoHypervisor));
+        assert_eq!(*checked.lock().unwrap(), ["1".repeat(40), SHA.to_owned()]);
+    }
+
+    #[test]
+    fn a_folder_without_a_lab_has_no_local_id() {
+        // The lab id of a local import comes from its spec; a folder with no isoloom.yml is not a
+        // lab, so `lab_launch_local` (the command) refuses before it ever reaches the runner.
+        let dir = crate::testing::temp_dir("notalab");
+        let err = local_id(&dir);
+        assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");
+    }
+
+    #[tokio::test]
+    async fn re_importing_a_lab_that_is_up_here_or_elsewhere_is_refused() {
+        // Regression: the import asked this machine's Docker, the lab folder's Vagrant record and
+        // `deployments/`, where the runner keeps nothing: a copy the runner ran as VMs here, in a
+        // local VM or on a server was swapped out from under it.
+        use crate::runtime::providers::testing::no_tools;
+        use crate::runtime::test_support::record_run;
+        let t = crate::testing::test_app::TestApp::new();
+        // Removed when the test ends, a failed assertion included (it was left after one).
+        let src = crate::testing::temp_dir("import-src");
+        std::fs::write(src.join("isoloom.yml"), SPEC).unwrap();
+        let _tools = no_tools();
+        let log = |_: String| {};
+        let dir = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
+        std::fs::write(dir.join("mine"), "kept").unwrap();
+        // Up here, as the runner records it (a failed start that left its VM counts too).
+        record_run(t.data(), "local-invoice", None, "vagrant", "failed");
+        let err = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap_err();
+        assert_eq!(err.code(), crate::error::Code::LabRunningHere, "{err:?}");
+        assert!(err.to_string().contains("its machines are still there"), "{err}");
+        // On a server host: the host is named.
+        record_run(t.data(), "local-invoice", Some("esxi1"), "vagrant", "ready");
+        let err = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap_err();
+        assert!(err.is_refusal() && err.to_string().contains("still running on esxi1"), "{err}");
+        // Refused before anything was staged: the installed copy is untouched.
+        assert!(dir.join("mine").is_file() && !dir.with_file_name(".local-invoice.staging").exists());
+        // Stopped: imported again.
+        record_run(t.data(), "local-invoice", Some("esxi1"), "vagrant", "absent");
+        install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
+        assert!(!dir.join("mine").exists());
+    }
+
+    #[tokio::test]
+    async fn an_archive_download_is_limited_and_says_why_it_failed() {
+        use crate::platform::http::tests::serve_once;
+        let gz = tarball(&[("lab-abc/isoloom.yml", b"name: x")]);
+        let mut ok = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", gz.len()).into_bytes();
+        ok.extend_from_slice(&gz);
+        assert_eq!(fetch_archive(&serve_once(ok.clone()).await, 1024 * 1024).await.unwrap(), gz);
+        // Past the limit (regression: read whole, unbounded): refused with a clear error.
+        let err = fetch_archive(&serve_once(ok).await, 16).await.unwrap_err().to_string();
+        assert!(err.starts_with("download refused: it is larger than"), "{err}");
+        let missing = serve_once(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()).await;
+        assert_eq!(fetch_archive(&missing, 16).await.unwrap_err().to_string(), "download failed: HTTP 404 Not Found");
+        // Nothing listening: a connection error, not a hang.
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+        assert!(fetch_archive(&format!("http://{closed}/"), 16).await.unwrap_err().to_string().starts_with("download failed: "));
+    }
+
+    #[test]
+    fn repository_names_at_the_length_boundary_and_commit_lengths() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(100)), sha).is_ok());
+        assert!(matches!(validate_source(&format!("CyberCTF/{}", "a".repeat(101)), sha).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(validate_source("CyberCTF/lab.v2_x-y", sha).is_ok());
+        for (repo, commit) in [
+            ("CyberCTF/lab", &sha[..39]),
+            ("CyberCTF/lab", &format!("{sha}0")),
+            ("CyberCTF/lab", &format!(" {}", &sha[1..])),
+            ("CyberCTF/lab", "0123456789abcdef0123456789abcdef0123456g"),
+            ("CyberCTF/café", sha),
+            ("cyberctf/lab", sha),
+            ("CyberCTF/lab ", sha),
+            ("CyberCTF//lab", sha),
+            ("", sha),
+            ("CyberCTF/lab", ""),
+        ] {
+            assert!(validate_source(repo, commit).is_err(), "{repo:?}@{commit:?}");
+        }
+    }
+
+    #[test]
+    fn a_leftover_staging_folder_is_replaced_whole_and_an_installed_marker_is_trimmed() {
+        let labs = crate::testing::temp_dir("stage");
+        let dir = labs.join("lab");
+        let staging = labs.join(".lab.staging");
+        std::fs::create_dir_all(staging.join("old")).unwrap();
+        std::fs::write(staging.join("old/file"), "from a crashed install").unwrap();
+        let staged = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: lab")]), "lab", SHA).unwrap();
+        assert_eq!(staged, staging);
+        assert!(!staging.join("old").exists(), "the crashed install's files are gone");
+        // The commit marker reads back with surrounding whitespace or CRLF (a hand edit).
+        std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), format!("  {SHA}\r\n")).unwrap();
+        assert!(runtime::lab::installed_at(&staging, SHA));
+        assert!(!runtime::lab::installed_at(&staging, &SHA.to_uppercase()));
+    }
+
+    #[tokio::test]
+    async fn lab_ids_at_the_validation_boundaries_install_or_are_refused() {
+        use crate::runtime::providers::testing::no_tools;
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = no_tools();
+        let log = |_: String| {};
+        let max = "A".repeat(63) + "_";
+        let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
+        let dir = install_with(&t.dirs(), invoice(&max, SHA), &log, async || Ok(gz.clone())).await.unwrap();
+        assert_eq!(dir.file_name().unwrap().to_str().unwrap(), max);
+        for bad in ["", &"a".repeat(65), "é", "a b", "a/b", ".", "a.b", "..", "a\u{0}b"] {
+            let bad = bad.to_string();
+            let err = install_with(&t.dirs(), invoice(&bad, SHA), &log, async || panic!("no download for {bad:?}")).await.unwrap_err().to_string();
+            assert!(err.starts_with("invalid lab id"), "{bad:?}: {err}");
+        }
+        // "-" and "_" alone pass the rule (a folder of that name is harmless).
+        let dir = install_with(&t.dirs(), invoice("-", SHA), &log, async || Ok(gz.clone())).await.unwrap();
+        assert_eq!(dir, t.data().join("labs").join("-"));
+    }
+}

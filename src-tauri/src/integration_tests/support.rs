@@ -1,0 +1,327 @@
+//! What the real-lab tests share: a scenario's run (its checks, then its teardown whatever happens
+//! in them: [`scenario`]), its knobs, its checks (each failure collected, so the lab is always
+//! stopped after) and its log; by concern, a lab installed for a test and run through the runner,
+//! and what a lab leaves on Docker ([`lab`]), the attack box driven as the lab page drives it,
+//! through the console the lab page opens ([`attack_box`]), and the JSON records an entry point
+//! the test rig calls writes for it ([`results`]).
+
+pub(crate) mod attack_box;
+pub(crate) mod lab;
+pub(crate) mod results;
+
+use crate::platform::unwind::{CatchUnwind, panic_message};
+
+/// How a test says it returned because a knob it needs isn't set: `tests/integration/run.sh`
+/// records the scenario as skipped on this line, where cargo counts the early return as a pass.
+pub(crate) const SKIPPED: &str = "integration test skipped, not set:";
+
+/// How a test says it returned because the launcher refuses its lab on the provider it was given
+/// (Isoloom's own rule, as the launch says it: a lab whose VMs are on a network can't run on UTM,
+/// whose Vagrant provider gives a VM no private network): `tests/integration/run.sh` records the
+/// scenario as skipped, with the launcher's words as the reason. The scenario was never started.
+pub(crate) const REFUSED: &str = "integration test skipped, refused by the launcher:";
+
+/// Whether the launcher refuses to start the lab installed in `dir` as `target` on `provider`,
+/// before anything runs, through the launch's own check ([`crate::runtime::launch::refusal_here`]):
+/// said on the test's output ([`REFUSED`], the refusal's words) so the test returning on it is
+/// recorded as skipped. Any other refusal, or one the launch makes later, is the scenario's
+/// failure as before. A lab that can't be read isn't refused here: its start says why.
+pub(crate) fn refused_by_launcher(dir: &std::path::Path, target: crate::runtime::lab::Target, provider: crate::runtime::providers::Provider) -> bool {
+    match crate::runtime::launch::refusal_here(dir, target, provider) {
+        Ok(Some(why)) => {
+            println!("{REFUSED} {why}");
+            true
+        }
+        Ok(None) | Err(_) => false,
+    }
+}
+
+/// Knobs renamed to `CYBERCTF_TEST_<AREA>_<WHAT>` whose old names the workspace's test rig still
+/// sets: (new, old). The old name is read when the new one isn't set. Remove each pair once the rig
+/// sets the new name (tests/README.md, "Knobs").
+const OLD_NAMES: &[(&str, &str)] =
+    &[("CYBERCTF_TEST_BOX_SHARED_FOLDER", "CYBERCTF_TEST_SHARED_FOLDER"), ("CYBERCTF_TEST_PVE_RUNNER_HOME", "CYBERCTF_TEST_RUNNER_HOME")];
+
+/// Knob `name` from the environment (or its old name, [`OLD_NAMES`]); None when unset or blank.
+pub(crate) fn var(name: &str) -> Option<String> {
+    let set = |n: &str| std::env::var(n).ok().filter(|v| !v.trim().is_empty());
+    set(name).or_else(|| OLD_NAMES.iter().find(|(new, _)| *new == name).and_then(|(_, old)| set(old)))
+}
+
+/// Knob `name`, the test's input from the environment; None when it is unset or blank, said on
+/// the test's output ([`SKIPPED`]) so the test returning on it isn't taken for a pass.
+pub(crate) fn knob(name: &str) -> Option<String> {
+    let value = var(name);
+    if value.is_none() {
+        println!("{SKIPPED} {name}");
+    }
+    value
+}
+
+/// The hypervisor a VM scenario runs on: `CYBERCTF_TEST_VM_PROVIDER` (a provider's id, such as
+/// `qemu` or `virtualbox`), else `default`. A value that names no provider ends the scenario,
+/// naming it.
+pub(crate) fn vm_provider(default: crate::runtime::providers::Provider) -> crate::runtime::providers::Provider {
+    var("CYBERCTF_TEST_VM_PROVIDER").map_or(default, |id| {
+        serde_json::from_value(serde_json::json!(id)).unwrap_or_else(|e| panic!("CYBERCTF_TEST_VM_PROVIDER: {id} is no hypervisor ({e})"))
+    })
+}
+
+/// What a scenario keeps its failed checks in: a list of them, or a state of its own holding one.
+pub(crate) trait Checks {
+    fn failures(&mut self) -> &mut Vec<String>;
+}
+
+impl Checks for Vec<String> {
+    fn failures(&mut self) -> &mut Vec<String> {
+        self
+    }
+}
+
+/// Runs a scenario's `body` (the lab started, its checks), then its `teardown` (the lab stopped,
+/// what it left checked) whatever happens in the body: a panic there is a failed check of its own,
+/// and the teardown still runs. A lab a scenario leaves behind fails the ones after it (a UTM VM
+/// still registered made every later VM import fail). A panic in the teardown is a failed
+/// check too. Each part's failures go to `state`. The launcher's checks of this machine (its
+/// hypervisors, the virtiofsd a shared folder needs) read this machine, not a unit test's empty
+/// one ([`read_this_machine`](crate::runtime::providers::testing::read_this_machine)).
+pub(crate) async fn scenario<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&mut S), teardown: impl AsyncFnOnce(&mut S)) {
+    crate::runtime::providers::testing::read_this_machine();
+    body_then_teardown(state, body, teardown).await;
+}
+
+/// [`scenario`]'s `body`, then its `teardown` whatever happened in the body, each one's panic a
+/// failed check of `state`'s.
+async fn body_then_teardown<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&mut S), teardown: impl AsyncFnOnce(&mut S)) {
+    if let Err(panic) = (CatchUnwind(Box::pin(body(state)))).await {
+        check(false, format!("the scenario ran to its end (it panicked: {})", panic_message(&*panic)), state.failures());
+    }
+    if let Err(panic) = (CatchUnwind(Box::pin(teardown(state)))).await {
+        check(false, format!("the teardown ran to its end (it panicked: {})", panic_message(&*panic)), state.failures());
+    }
+}
+
+/// How long [`eventually`] waits, and how often it looks.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Wait {
+    /// How long it waits at most.
+    pub(crate) within: std::time::Duration,
+    /// How long it lets pass between two looks.
+    pub(crate) every: std::time::Duration,
+}
+
+impl Wait {
+    /// At most `secs` seconds, looking every `every`.
+    pub(crate) const fn secs(secs: u64, every: std::time::Duration) -> Wait {
+        Wait { within: std::time::Duration::from_secs(secs), every }
+    }
+}
+
+/// Waits for `what` to happen: `look` is called until it answers `Ok` (what happened) or `wait`
+/// is over; the answer, or the last thing it saw (its `Err`) when it never answered. A scenario
+/// waits on what it can see, not for a time it guesses, and when nothing came the failure says
+/// what was seen last. `look` stops the wait early by answering `Ok` with what it saw (a process
+/// that ended before it made anything, say).
+pub(crate) async fn eventually<T, S>(what: &str, wait: Wait, mut look: impl AsyncFnMut() -> Result<T, S>) -> Result<T, S> {
+    let deadline = std::time::Instant::now() + wait.within;
+    loop {
+        let seen = look().await;
+        if seen.is_ok() || std::time::Instant::now() + wait.every > deadline {
+            if seen.is_err() {
+                println!("note: waited {:.0?} for {what}, in vain", wait.within);
+            }
+            return seen;
+        }
+        tokio::time::sleep(wait.every).await;
+    }
+}
+
+/// `url` fetched on this machine (15 s at most): its status, or why it couldn't be.
+pub(crate) async fn fetch(url: &str) -> std::result::Result<reqwest::StatusCode, String> {
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
+    client.get(url).send().await.map(|r| r.status()).map_err(|e| e.to_string())
+}
+
+/// When the test's process first logged or checked: what [`log`]'s and [`check`]'s times count
+/// from (a scenario runs alone in its process).
+static STARTED: std::sync::LazyLock<std::time::Instant> = std::sync::LazyLock::new(std::time::Instant::now);
+
+/// When the last check was made, for the time each step took.
+static LAST_CHECK: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// The test's log for the lab `id`: each line printed, tagged with the id and the seconds since
+/// the test began.
+pub(crate) fn log(id: &str) -> impl FnMut(String) + use<> {
+    let tag = id.to_string();
+    std::sync::LazyLock::force(&STARTED);
+    move |l: String| println!("[{tag} {:.1}s] {l}", STARTED.elapsed().as_secs_f64())
+}
+
+/// One check: an `ok:` line when it holds, else a `FAILED:` line and `what` among the `failures`.
+/// Each line ends with when it was made ([`step_time`]), so a slow step shows in the log.
+pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
+    let at = step_time();
+    if ok {
+        println!("ok: {what} {at}");
+    } else {
+        println!("FAILED: {what} {at}");
+        failures.push(what);
+    }
+}
+
+/// `[at <s>s, +<s>s]`: the seconds since the test began, and since the check before (or since
+/// it began, for the first).
+fn step_time() -> String {
+    let now = std::time::Instant::now();
+    let started = *STARTED;
+    let before = LAST_CHECK.lock().map(|mut last| last.replace(now)).unwrap_or_default().unwrap_or(started);
+    format!("[at {:.1}s, +{:.1}s]", now.duration_since(started).as_secs_f64(), now.duration_since(before).as_secs_f64())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unset_knob_is_none_and_said_as_the_runner_reads_it() {
+        assert_eq!(knob("CYBERCTF_TEST_NEVER_SET_BY_ANYONE"), None);
+        // A renamed knob is read by its old name too, while the rig sets that one.
+        assert!(OLD_NAMES.iter().all(|(new, old)| new.starts_with("CYBERCTF_TEST_") && old.starts_with("CYBERCTF_TEST_") && new != old));
+        // tests/integration/run.sh records a scenario as skipped on this line.
+        assert!(include_str!("../../../tests/integration/run.sh").contains(&format!("KNOB_UNSET=\"{SKIPPED}\"")));
+        // And as skipped, with the launcher's words, on this one.
+        assert!(include_str!("../../../tests/integration/run.sh").contains(&format!("REFUSED=\"{REFUSED}\"")));
+    }
+
+    /// The runner's `PLATFORM_FAILURE` pattern, which ends a provider's scenarios once one failed
+    /// on the platform itself: it matches each of the launcher's own refusals of the platform,
+    /// and not a failure in the lab.
+    #[test]
+    fn the_runner_knows_the_launchers_platform_refusals() {
+        use serde_json::json;
+        let runner = include_str!("../../../tests/integration/run.sh");
+        let pattern = runner.lines().find_map(|l| l.strip_prefix("PLATFORM_FAILURE=\"")).and_then(|l| l.strip_suffix('"')).expect("PLATFORM_FAILURE in run.sh");
+        let re = regex::Regex::new(pattern).unwrap();
+        // The machine check's reasons, as the launcher says them.
+        let reason = |wire: serde_json::Value| crate::runtime::providers::said(&serde_json::from_value(wire).unwrap());
+        let platform = [
+            reason(json!({ "code": "vagrantMissing" })),
+            reason(json!({ "code": "virtualboxStuck" })),
+            reason(json!({ "code": "hypervOff" })),
+            reason(json!({ "code": "hypervNeedsAdmin" })),
+            reason(json!({ "code": "notInstalled", "args": { "program": "VBoxManage" } })),
+            reason(json!({ "code": "notInstalled", "args": { "program": null } })),
+            reason(json!({ "code": "newLogin", "args": { "group": "kvm" } })),
+            reason(json!({ "code": "noKvm" })),
+            reason(json!({ "code": "kvmDenied", "args": { "group": "kvm" } })),
+            reason(json!({ "code": "hypervisorTooOld", "args": { "name": "VirtualBox", "version": "6.1", "min": "7.0" } })),
+            reason(json!({ "code": "pluginTooOld", "args": { "plugin": "vagrant-libvirt", "version": "0.1", "min": "0.12" } })),
+            reason(json!({ "code": "pluginMissing", "args": { "plugin": "vagrant-qemu" } })),
+            reason(json!({ "code": "vmwareUtilityStopped" })),
+            reason(json!({ "code": "vmwareUtilityMissing" })),
+            crate::error::Error::ToolMissing { tool: "qemu-system-x86_64" }.to_string(),
+            crate::error::Error::coded(crate::error::Code::DockerNotRunning).to_string(),
+            "This lab can't run on UTM yet: `web` is on a network. Run it on another hypervisor, a server or in your cloud account.".to_string(),
+            "FAILED: it starts: platform architecture x86 is not supported on ARM".to_string(),
+        ];
+        for said in platform {
+            assert!(re.is_match(&said), "not a platform failure to the runner: {said}");
+        }
+        for lab in [
+            "FAILED: the web machine answers: connection refused",
+            "thread 'main' panicked at 'the lab's init container exited 1'",
+            "FAILED: nothing left: a VM is still listed",
+        ] {
+            assert!(!re.is_match(lab), "a lab failure read as the platform's: {lab}");
+        }
+    }
+
+    /// The lab both forms of which take a private network (as Isoloom's solo-web's VM does).
+    const NETWORKED: &str = "version: 1\nname: both\nnetworks:\n  lab: { cidr: 10.70.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    app: { image: nginx:1.27, steps: [{ run: setup.sh }] }\n";
+
+    /// A lab of one Windows Server VM, which no UTM box runs.
+    const WINDOWS: &str =
+        "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\n";
+
+    #[test]
+    fn a_lab_the_launcher_refuses_on_a_provider_is_skipped_with_its_words_and_one_it_runs_is_not() {
+        use crate::runtime::lab::Target;
+        use crate::runtime::providers::Provider;
+        let t = crate::testing::test_app::TestApp::new();
+        let dir = t.lab("networked", &[("isoloom.yml", NETWORKED), ("setup.sh", "true\n")]);
+        // UTM with a Windows Server VM (no UTM box of it is known): refused, as the start itself
+        // refuses it, and nothing is generated for it.
+        let windows = t.lab("windows", &[("isoloom.yml", WINDOWS)]);
+        let why = crate::runtime::launch::refusal_here(&windows, Target::Vagrant, Provider::Utm).unwrap().expect("refused on UTM");
+        assert!(why.to_string().starts_with("This lab can't run on UTM yet: ") && why.to_string().contains("boxes.utm"), "{why}");
+        assert!(refused_by_launcher(&windows, Target::Vagrant, Provider::Utm));
+        assert!(!windows.join(".isoloom").exists(), "the check generates nothing");
+        // A hypervisor the lab runs on: not refused, so the scenario runs, and a start that
+        // fails there is its failure.
+        for provider in [Provider::Virtualbox, Provider::Libvirt, Provider::Qemu, Provider::Utm] {
+            assert!(!refused_by_launcher(&dir, Target::Vagrant, provider), "{provider:?}");
+        }
+        // Not a lab at all: not a refusal of the provider; the start says why, as a failure.
+        let empty = t.lab("empty", &[]);
+        assert!(!refused_by_launcher(&empty, Target::Vagrant, Provider::Utm));
+    }
+
+    #[tokio::test]
+    async fn a_wait_ends_on_what_it_waits_for_or_says_what_it_saw_last() {
+        let quick = Wait { within: std::time::Duration::from_secs(5), every: std::time::Duration::from_millis(1) };
+        // It looks until the thing happens, and answers it.
+        let mut looks = 0;
+        let third = eventually("the third look", quick, async || {
+            looks += 1;
+            if looks == 3 { Ok(looks) } else { Err(format!("look {looks}")) }
+        })
+        .await;
+        assert_eq!(third, Ok(3));
+        // Never: the last thing it saw, once the wait is over.
+        let short = Wait { within: std::time::Duration::from_millis(30), every: std::time::Duration::from_millis(5) };
+        let mut looks = 0;
+        let never = eventually("nothing", short, async || -> Result<(), String> {
+            looks += 1;
+            Err(format!("look {looks}"))
+        })
+        .await;
+        assert_eq!(never, Err(format!("look {looks}")));
+        assert!(looks > 1, "it looked again before giving up");
+        // A wait that can't be met any more ends at once, on the look's own answer.
+        let mut looks = 0;
+        let ended = eventually("a child that ended", quick, async || -> Result<bool, ()> {
+            looks += 1;
+            Ok(false)
+        })
+        .await;
+        assert_eq!((ended, looks), (Ok(false), 1));
+    }
+
+    #[tokio::test]
+    async fn a_scenario_that_panics_is_still_torn_down_and_says_where_it_stopped() {
+        // Regression: a scenario's `expect` panicked before its teardown, its UTM VM stayed
+        // registered, and every VM scenario after it failed.
+        let mut failures = Vec::new();
+        let torn_down = std::cell::Cell::new(false);
+        // Its parts alone: a unit test never reads this machine (`scenario` would).
+        body_then_teardown(
+            &mut failures,
+            async |f: &mut Vec<String>| {
+                check(true, "the lab starts".into(), f);
+                tokio::task::yield_now().await;
+                panic!("a console into the box: no such machine");
+            },
+            async |f: &mut Vec<String>| {
+                torn_down.set(true);
+                check(false, "nothing of it is left".into(), f);
+            },
+        )
+        .await;
+        assert!(torn_down.get(), "the teardown ran");
+        assert_eq!(failures, ["the scenario ran to its end (it panicked: a console into the box: no such machine)", "nothing of it is left"]);
+        // A body that ends, and a teardown that panics: said too.
+        let mut failures = Vec::new();
+        body_then_teardown(&mut failures, async |_: &mut Vec<String>| {}, async |_: &mut Vec<String>| panic!("{}", String::from("stop failed"))).await;
+        assert_eq!(failures, ["the teardown ran to its end (it panicked: stop failed)"]);
+    }
+}

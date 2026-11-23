@@ -1,0 +1,223 @@
+//! Assisted, one-click install of lab dependencies, streaming the package manager's output.
+//! It never shows a custom password prompt: it uses the OS's own trusted flow (winget's
+//! UAC, Linux pkexec, or downloading the official app/installer for macOS casks and
+//! letting the tool's own installer run).
+//!
+//! The tools, their rows (where each exists, what proves it installed, where else the player gets
+//! it) and their install and removal plans are isothrum-machine's ([`Dependency`]); the launcher
+//! names each tool ([`name`]), says why a plan can't be made in the player's words ([`refusal`])
+//! and records what it installed. Every plan is built on any OS, so the tests read every row.
+
+use super::steps::{Plan, Progress, run_plan, run_step};
+use super::uninstall;
+use crate::error::{Error, Result};
+use crate::platform::policy::{self, Key};
+use crate::runtime::providers::Provider;
+use isothrum_machine::install::{Elevation, Interaction, Prompt, Refusal};
+use isothrum_machine::{Host, HostOs};
+
+/// A tool the guided setup installs, as the webview names it: isothrum-machine's, whose rows say
+/// where each runs and what proves it installed.
+pub use isothrum_machine::install::Dependency;
+
+/// `dep`'s name on this OS, as the setup installs it here (Docker Engine on Linux, from Docker's
+/// repository or the distribution's `docker.io`; Docker Desktop elsewhere): what a message and
+/// Settings' list of installed tools call it.
+pub fn name(dep: Dependency) -> &'static str {
+    name_on(dep, isothrum_runner::this_host())
+}
+
+/// [`name`] on `os`.
+pub(crate) fn name_on(dep: Dependency, os: HostOs) -> &'static str {
+    match dep {
+        Dependency::Docker if os == HostOs::Linux => "Docker Engine",
+        Dependency::Docker => "Docker Desktop",
+        Dependency::Vagrant => "Vagrant",
+        Dependency::Terraform => "Terraform",
+        Dependency::Awscli => "AWS CLI",
+        Dependency::Azurecli => "Azure CLI",
+        Dependency::Gcloud => "Google Cloud CLI",
+        Dependency::Wsl => "WSL 2",
+        Dependency::VmwareUtility => "Vagrant VMware Utility",
+        Dependency::Virtualbox | Dependency::Qemu | Dependency::Utm | Dependency::Libvirt | Dependency::Hyperv => {
+            dep.hypervisor().map_or("", |p| Provider::from(p).label())
+        }
+    }
+}
+
+/// Whether `dep` exists on `os`. An install or a removal elsewhere is refused ([`not_here`]).
+pub fn runs_on(dep: Dependency, os: HostOs) -> bool {
+    dep.runs_on(os)
+}
+
+/// How root steps run on this Linux machine: through pkexec's prompt, or unattended (see
+/// `platform::elevation`) as root or through `sudo -n`.
+pub(crate) fn elevation() -> Elevation {
+    if crate::platform::elevation::unattended() { Elevation::Unattended { root: crate::platform::elevation::is_root() } } else { Elevation::Prompt }
+}
+
+/// Why isothrum-machine can't make a plan here, in the player's words.
+pub(super) fn refusal(refused: Refusal) -> Error {
+    match refused {
+        Refusal::NotHere { dependency, os } => not_here(dependency, os),
+        Refusal::WithoutPackages { dependency } => Error::Invalid(format!(
+            "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install {} yourself, then re-check.",
+            name_on(dependency, HostOs::Linux)
+        )),
+        Refusal::AptOnly { dependency } => Error::Invalid(format!(
+            "The guided setup installs {} through apt only for now: install it yourself, then re-check.",
+            name_on(dependency, HostOs::Linux)
+        )),
+        Refusal::NoHomebrew => Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()),
+        Refusal::HomebrewNeeded => Error::Invalid("Homebrew is needed to remove this tool.".into()),
+        Refusal::NoVirtualboxImage => Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()),
+        Refusal::NotOnWindowsOnArm { provider, .. } => Error::Invalid(format!(
+            "{} doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.",
+            Provider::from(provider).label_on(HostOs::Windows)
+        )),
+        Refusal::NoBuild { dependency, os, why, .. } => {
+            Error::Invalid(format!("The guided setup doesn't offer {} on this computer: {why}.", name_on(dependency, os)))
+        }
+        Refusal::WindowsFeature { dependency: Dependency::Wsl } => Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into()),
+        Refusal::WindowsFeature { .. } => Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into()),
+        Refusal::NothingAdded { .. } => uninstall::not_ours(),
+        other => Error::Io(std::io::Error::other(other.to_string())),
+    }
+}
+
+/// The ordered install steps for a dependency on `host`, for the player `user` (Linux joins
+/// them to the groups a tool's devices need): isothrum-machine's ([`isothrum_machine::install::plan`]),
+/// its administrator's steps elevated [`elevation`]'s way, each saying what it asks of the player.
+pub(super) fn plan_on(dep: Dependency, host: &Host, user: Option<&str>) -> Result<Plan> {
+    isothrum_machine::install::plan(dep, host, user, elevation()).map_err(refusal)
+}
+
+/// The ordered install steps for a dependency on this computer. One that doesn't run here is
+/// refused before the package manager is looked up.
+async fn plan(dep: Dependency) -> Result<Plan> {
+    let os = isothrum_runner::this_host();
+    if !runs_on(dep, os) {
+        return Err(not_here(dep, os));
+    }
+    plan_on(dep, &crate::runtime::providers::host().await, crate::platform::exec::login_name().as_deref())
+}
+
+/// What installing `dep` on this computer asks of the player ([`isothrum_machine::install::interactions`]).
+pub async fn asks(dep: Dependency) -> Vec<Interaction> {
+    let host = crate::runtime::providers::host().await;
+    isothrum_machine::install::interactions(dep, &host, elevation(), crate::platform::exec::login_name().as_deref())
+}
+
+/// Why `dep` can't be installed or removed on `os`: it doesn't run there ([`Dependency::runs_on`]).
+pub(super) fn not_here(dep: Dependency, os: HostOs) -> Error {
+    Error::Invalid(format!("{} doesn't run on {}: there is nothing of it to install or remove here.", name_on(dep, os), isothrum_machine::host::os_name(os)))
+}
+
+/// Refused when this computer's policy turns one-click installs off (`DisableToolInstalls`): the
+/// organization installs its tools itself. Said on the install's log too.
+pub(super) fn installs_allowed(on_line: &mut impl FnMut(String)) -> Result<()> {
+    policy::current().check(Key::DisableToolInstalls).inspect_err(|e| on_line(e.to_string()))
+}
+
+/// Installs a dependency, streaming each command and its output to the UI, and what each step
+/// asks of the player before it runs. Nothing it runs accepts a licence, an agreement or terms
+/// for the player: a vendor that asks for one shows it in its own window (Docker Desktop at its
+/// first start), and the player accepts it there.
+pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Dependency, mut on: impl FnMut(Progress)) -> Result<()> {
+    let mut on_line = |line: String| on(Progress::Line { line });
+    installs_allowed(&mut on_line)?;
+    let steps = plan(dependency).await.inspect_err(|e| on_line(e.to_string()))?;
+    // What of the tool is here before its plan runs (its packages, or the tool itself), so what
+    // the install added is known after it: isothrum-machine's.
+    let before = isothrum_machine::install::before(&crate::runtime::providers::machine_setup().await, dependency).await;
+    run_plan(&steps, &mut on).await?;
+    // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
+    crate::platform::env_path::refresh(&crate::runtime::providers::machine()).await;
+    // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: what was
+    // already there (a tool, or a package of it: a QEMU installed by hand whose helpers this
+    // install added) is never recorded, and a tool whose installer was only opened (macOS casks)
+    // or isn't found yet counts once a later check finds it.
+    let installed = before.installed(&crate::runtime::providers::machine_setup().await).await;
+    uninstall::record_installed(&dirs, dependency, &installed);
+    // Its features start at the next restart: the check asks for one until then, even if the
+    // app is reopened first.
+    if dependency == Dependency::Wsl {
+        crate::machine::system::wsl::mark_installed(&dirs);
+    }
+    if dependency == Dependency::Hyperv {
+        crate::machine::system::wsl::mark_hyperv_on(&dirs);
+    }
+    on(Progress::Line { line: "Done. Re-checking this machine…".into() });
+    Ok(())
+}
+
+/// What letting VirtualBox share the CPU's virtualization with KVM asks of the player: its root
+/// step's password prompt, unless it runs unattended (as `setup::Action::ShareVirtualization`
+/// says it).
+pub(crate) fn share_asks() -> Vec<Interaction> {
+    match elevation() {
+        Elevation::Prompt => vec![Interaction::AdminPassword { via: Prompt::Pkexec }],
+        Elevation::Unattended { .. } => Vec::new(),
+    }
+}
+
+/// Lets VirtualBox share the CPU's virtualization with KVM, which holds it from its module's load
+/// on Linux 6.12 and later: isothrum-machine's
+/// [`share_virtualization`](isothrum_machine::setup::share_virtualization), its root step
+/// elevated as an install's are ([`elevation`]), streaming its output. Refused, as installs are,
+/// when this computer's policy turns them off.
+pub async fn share_virtualization(mut on: impl FnMut(Progress)) -> Result<isothrum_machine::setup::Shared> {
+    use isothrum_machine::setup::{ShareFailed, Shared};
+    let mut on_line = |line: String| on(Progress::Line { line });
+    installs_allowed(&mut on_line)?;
+    let asks = share_asks();
+    if !asks.is_empty() {
+        on(Progress::Asks { interactions: asks });
+    }
+    let mut on_line = |line: String| on(Progress::Line { line });
+    crate::platform::remembered::forget_all();
+    let cx = crate::runtime::providers::machine_setup().await;
+    // Its lines come through a channel, as an install step's do: the future stays `Send`.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let run = async move {
+        let mut send = |line: &str| {
+            tx.send(line.to_owned()).ok();
+        };
+        isothrum_machine::setup::share_virtualization(&cx, elevation(), &mut send).await
+    };
+    let shown = async {
+        while let Some(line) = rx.recv().await {
+            on_line(crate::platform::redact::redact(&line).into_owned());
+        }
+    };
+    let (shared, ()) = tokio::join!(run, shown);
+    crate::platform::remembered::forget_all();
+    let shared = shared.map_err(|failed| match failed {
+        ShareFailed::NotHere => Error::Invalid("KVM is only on Linux.".into()),
+        ShareFailed::BuiltIn => Error::Invalid(
+            "KVM is built into this Linux kernel: start Linux with kvm.enable_virt_at_load=0 for VirtualBox to use the CPU's virtualization.".into(),
+        ),
+        failed => Error::Invalid(format!("KVM couldn't be set to share the CPU's virtualization ({failed}).")),
+    })?;
+    on_line(match shared {
+        Shared::Now => "Done. Re-checking this machine…".into(),
+        Shared::AfterRestart => "Done: it applies from the next restart.".into(),
+    });
+    Ok(shared)
+}
+
+/// Installs a Vagrant plugin (userland, no admin), streaming the output. isothrum-machine refuses
+/// a name that isn't a `vagrant-*` / `vagrant_*` identifier.
+pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(String)) -> Result<()> {
+    installs_allowed(&mut on_line)?;
+    let Some(step) = isothrum_machine::install::vagrant_plugin(&plugin) else {
+        return Err(Error::Invalid(format!("invalid plugin name `{plugin}`")));
+    };
+    on_line(isothrum_machine::install::command_line(&step));
+    run_step(&step, &mut on_line).await?;
+    on_line("Done. Re-checking this machine…".into());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

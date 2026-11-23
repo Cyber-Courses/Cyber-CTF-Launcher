@@ -1,0 +1,147 @@
+import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "@playwright/test";
+import { test, expect, openApp, animationsFinished, paletteKey, emitEvent } from "../fixtures";
+
+// Accessibility, checked by axe on the main screens in both themes: text contrast (WCAG AA,
+// 4.5:1 for the small mono and faint text the launcher uses a lot) and every rule axe rates
+// critical or serious (missing names on buttons and fields, broken ARIA, and the like). One test per screen,
+// so a slow machine slows each a little instead of pushing one long walk past its time limit.
+
+/** axe's findings that fail the test: any contrast issue, and anything critical or serious. axe runs in the
+ *  page itself (legacy mode): by default it finishes every run in a new blank tab, seconds per
+ *  check on a loaded machine, only to reach cross-origin frames, which the launcher has none of. */
+async function violations(page: Page) {
+  const { violations } = await new AxeBuilder({ page }).setLegacyMode().analyze();
+  return violations
+    .filter((v) => v.id === "color-contrast" || v.impact === "critical" || v.impact === "serious")
+    .flatMap((v) => v.nodes.map((n) => `${v.id} (${v.impact}): ${n.target.join(" ")} :: ${(n.any[0]?.message ?? n.failureSummary ?? "").slice(0, 160)}`));
+}
+
+/** The sidebar's screens, with their title once open. */
+const SCREENS = [
+  ["Overview", /Ada/],
+  ["Labs", "Labs"],
+  ["Machine", "Machine"],
+  ["Servers", "Servers"],
+  ["Cloud", "Cloud"],
+] as const;
+
+for (const theme of ["dark", "light"] as const) {
+  test.describe(`accessibility, ${theme} theme`, () => {
+    test.beforeEach(async ({ context }) => {
+      await context.addInitScript((t) => {
+        try {
+          localStorage.setItem("cyberctf.appearance", t);
+        } catch {
+          /* storage unavailable */
+        }
+      }, theme);
+    });
+
+    for (const [tab, heading] of SCREENS) {
+      test(`the ${tab} screen passes axe's contrast, critical and serious rules`, async ({ page, app }) => {
+        await openApp(page);
+        await app.nav(tab).click();
+        await expect(app.title).toHaveText(heading);
+        // Past the entrance animations (they start from a lighter state).
+        await animationsFinished(page);
+        expect(await violations(page)).toEqual([]);
+      });
+    }
+
+    // The empty pages: the shared empty state with its provider chips (the cloud ones buttons).
+    for (const [tab, query, title] of [
+      ["Servers", "&servers=none", "No server connected"],
+      ["Cloud", "&cloud=none", "No cloud account connected"],
+      ["Machine", "&machine=fresh", "No provider installed"],
+    ] as const) {
+      test(`the empty ${tab} screen passes too`, async ({ page, app }) => {
+        await openApp(page, query);
+        await app.nav(tab).click();
+        await expect(app.main.getByRole("region", { name: title })).toBeVisible();
+        await animationsFinished(page);
+        expect(await violations(page)).toEqual([]);
+      });
+    }
+
+    // The Machine page with a row in every state (machine=many), a status tooltip open and a
+    // row's test open: the status words, the Default mark and "Use by default" in each theme.
+    test("the Machine screen with several providers of each kind passes too", async ({ page, app }) => {
+      await openApp(page, "&machine=many&deploying=none");
+      await app.nav("Machine").click();
+      const providers = app.main.getByRole("list", { name: "Providers" });
+      await expect(providers.locator(':scope > [role="listitem"]')).toHaveCount(6);
+      await providers.getByRole("button", { name: "Test", exact: true }).first().click();
+      await providers.locator('[data-slot="status"]').last().focus();
+      await animationsFinished(page);
+      expect(await violations(page)).toEqual([]);
+    });
+
+    test("a running lab's page, with its diagram, passes too", async ({ page, lab, labs }) => {
+      await openApp(page);
+      await labs.openLab("Invoice portal API");
+      // The diagram fades in once laid out (it waits at opacity 0 till then, which no animation
+      // shows): fully in, and the rest of the page settled.
+      await expect(lab.diagram).toHaveCSS("opacity", "1");
+      await animationsFinished(page);
+      expect(await violations(page)).toEqual([]);
+    });
+
+    test("the run dialog, over a stopped lab, passes too", async ({ page, labs }) => {
+      await openApp(page);
+      await labs.openLab("Blind orders");
+      await page.getByRole("button", { name: /Start lab/ }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await animationsFinished(page);
+      expect(await violations(page)).toEqual([]);
+    });
+
+    test("the command palette passes too", async ({ page }) => {
+      await openApp(page);
+      await page.keyboard.press(await paletteKey(page));
+      await expect(page.getByRole("combobox")).toBeFocused();
+      // Measured once its fade-in is over: mid-animation, its text reads as low contrast.
+      await animationsFinished(page);
+      expect(await violations(page)).toEqual([]);
+    });
+
+    test("a launch from the website waiting for approval passes too", async ({ page }) => {
+      await openApp(page);
+      await emitEvent(page, "launch-confirm", {
+        sessionId: "sess-a11y",
+        labName: "Invoice portal API",
+        repository: "CyberCTF/invoice-portal",
+        commit: "0123456789abcdef0123456789abcdef01234567",
+        place: "here",
+        target: "",
+        privileged: true,
+        expiresAtMs: Date.now() + 180_000,
+      });
+      await expect(page.getByRole("alertdialog")).toBeVisible();
+      await animationsFinished(page);
+      expect(await violations(page)).toEqual([]);
+    });
+
+    test("the Settings window, with what an administrator manages, passes too", async ({ page }) => {
+      await page.goto("/?window=settings&mock&managed");
+      await page.locator("nav button").last().click();
+      await expect(page.getByRole("heading", { name: "Managed by your organization" })).toBeVisible();
+      await animationsFinished(page);
+      expect(await violations(page)).toEqual([]);
+    });
+
+    test("the Settings window passes too", async ({ page }) => {
+      await page.goto("/?window=settings&mock");
+      const tabs = page.locator("nav button");
+      await expect(tabs.first()).toBeVisible();
+      const found: string[] = [];
+      for (let i = 0; i < (await tabs.count()); i++) {
+        await tabs.nth(i).click();
+        await expect(tabs.nth(i)).toHaveAttribute("aria-current", "page");
+        await animationsFinished(page);
+        found.push(...(await violations(page)).map((v) => `settings tab ${i}: ${v}`));
+      }
+      expect(found).toEqual([]);
+    });
+  });
+}

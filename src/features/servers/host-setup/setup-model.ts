@@ -1,0 +1,297 @@
+import type {
+  CloudClis,
+  CloudProvider,
+  Dependency,
+  ProxmoxPlacement,
+  RemoteProvider,
+  ServerHostInput,
+  ServerTest,
+  SshKeySignIn,
+  SystemReport,
+} from "@/lib/tauri";
+import { CLOUD_PROVIDERS, HOST_KINDS, PROVIDER_NAMES, isCloudProvider, isServerProvider } from "@/lib/tauri";
+import { TOKEN_PATTERN } from "@/lib/tauri/generated/Patterns";
+import {
+  AWS_REGIONS,
+  AZURE_LOCATIONS,
+  DEFAULT_REGION,
+  DO_REGIONS,
+  EMPTY_CLOUD,
+  EMPTY_HOST,
+  GCP_REGIONS,
+  LINODE_REGIONS,
+  OCI_REGIONS,
+  SERVER_USER,
+  type StepKey,
+} from "@/features/servers/host-setup/constants";
+
+// The server / cloud setup's logic, as pure functions of the form and what this machine has.
+
+/** A cloud account's default name: its cloud's (the player can rename it). */
+const defaultName = (p: CloudProvider) => PROVIDER_NAMES[p];
+const DEFAULT_NAMES = CLOUD_PROVIDERS.map(defaultName);
+
+/** Token clouds (DigitalOcean, Linode) authenticate with just a pasted API token (no CLI, no username). */
+const isTokenCloud = (p: RemoteProvider) => HOST_KINDS[p].signIn === "apiToken";
+
+/** Azure and GCP authenticate through their CLI (no access keys); the flow is the same shape. */
+const isCliAuthCloud = (p: RemoteProvider) => HOST_KINDS[p].signIn === "cliSignIn";
+
+/**
+ * The ordered steps for this setup. Editing skips choosing the provider or hypervisor and
+ * installing the tools; a cloud setup opened on a chosen provider (`providerChosen`, the Cloud
+ * page's Connect rows) skips choosing it too; only AWS asks how to connect (CLI or access keys).
+ * Proxmox describes the server first, then picks how to sign in to it.
+ */
+export function setupSteps(provider: RemoteProvider, editing: boolean, providerChosen = false): StepKey[] {
+  if (!isCloudProvider(provider)) {
+    const connect: StepKey[] = provider === "proxmox" ? ["server", "connection"] : ["connection"];
+    return editing ? [...connect, "placement", "test"] : ["hypervisor", "tools", ...connect, "placement", "test"];
+  }
+  const account: StepKey[] = provider === "aws" ? ["account"] : [];
+  const choose: StepKey[] = editing ? [] : providerChosen ? ["tools"] : ["provider", "tools"];
+  return [...choose, ...account, "credentials", "options", "test"];
+}
+
+/** The region / location choices for a cloud (code, human name). */
+export const REGIONS: Record<CloudProvider, [string, string][]> = {
+  aws: AWS_REGIONS,
+  azure: AZURE_LOCATIONS,
+  gcp: GCP_REGIONS,
+  digitalocean: DO_REGIONS,
+  linode: LINODE_REGIONS,
+  oci: OCI_REGIONS,
+};
+
+/** The form after choosing cloud `id`: its region and fresh credentials, its short name unless
+ *  the user typed their own. */
+export function withProvider(s: ServerHostInput, id: CloudProvider): ServerHostInput {
+  return {
+    ...s,
+    provider: id,
+    name: !s.name.trim() || DEFAULT_NAMES.includes(s.name.trim()) ? defaultName(id) : s.name,
+    host: DEFAULT_REGION[id],
+    username: "",
+    password: null,
+    useCliCreds: id === "aws",
+    awsProfile: null,
+    // node = GCP org id; clear it when switching provider.
+    node: null,
+    // Budget is AWS-only; don't carry one typed on AWS over to Azure/GCP.
+    monthlyLimit: id === "aws" ? s.monthlyLimit : null,
+  };
+}
+
+/** What a new setup starts from, as its window's query names it: a server, a new cloud account,
+ *  or one on the cloud `provider` named (the Cloud page's Connect rows), whose setup then skips
+ *  choosing the provider (`providerChosen`). An unknown provider starts as a plain new account. */
+export function startingSetup(kind: string | null, provider: string | null): { form: ServerHostInput; providerChosen: boolean } {
+  if (kind !== "cloud") return { form: { ...EMPTY_HOST }, providerChosen: false };
+  if (isCloudProvider(provider)) return { form: withProvider(EMPTY_CLOUD, provider), providerChosen: true };
+  return { form: { ...EMPTY_CLOUD }, providerChosen: false };
+}
+
+/** How the launcher signs in to a Proxmox node: with the player's SSH key (it then makes its own
+ *  API token there), an API token, or a user and password. */
+export type SignIn = "sshKey" | "token" | "password";
+
+/** Whether `username` is a Proxmox API token id (`user@realm!name`) rather than a user: the
+ *  backend's own pattern (`TOKEN_PATTERN`), which the form reads as it is typed. */
+export const isProxmoxToken = (username: string): boolean => TOKEN_PATTERN.test(username);
+
+/** A saved host's sign-in; a new Proxmox setup starts on the SSH key. */
+export function initialSignIn(v: ServerHostInput): SignIn {
+  if (v.sshKey) return "sshKey";
+  if (isProxmoxToken(v.username)) return "token";
+  return v.id === null && v.provider === "proxmox" ? "sshKey" : "password";
+}
+
+/** The SSH key sign-in a setup starts from: the saved one, else root on port 22, its key to pick. */
+export function initialSshKey(v: ServerHostInput): SshKeySignIn {
+  return v.sshKey ?? { path: "", user: SERVER_USER.proxmox, port: 22 };
+}
+
+/** A port a field may hold: empty (the default) or a whole TCP port number. */
+const portOk = (port: number | null | undefined) => port == null || (Number.isInteger(port) && port >= 1 && port <= 65535);
+
+/** Whether the Server step (Proxmox: its name, address and API port) has what it needs. */
+export function serverReady(v: ServerHostInput): boolean {
+  return v.host.trim() !== "" && portOk(v.port);
+}
+
+/** Whether a Proxmox SSH key sign-in names a key, a user and a port. */
+function sshKeyReady(k: SshKeySignIn): boolean {
+  return k.path.trim() !== "" && k.user.trim() !== "" && portOk(k.port);
+}
+
+/** Whether two SSH key sign-ins are the same key, user and port. */
+export function sameSshKey(a: SshKeySignIn | null | undefined, b: SshKeySignIn): boolean {
+  return !!a && a.path.trim() === b.path.trim() && a.user.trim() === b.user.trim() && a.port === b.port;
+}
+
+/** What a save sends. An SSH key sign-in whose token isn't made yet (`made` false) goes with no
+ *  username, for the node to make the token (`server_save_ssh_key`); once made, with the token
+ *  id the form now holds, kept by a plain save. Password and token setups send no key. */
+export function savePayload(v: ServerHostInput, signIn: SignIn, key: SshKeySignIn, made = false): ServerHostInput {
+  const named = { ...v, name: saveName(v) };
+  if (v.provider !== "proxmox" || signIn !== "sshKey") return { ...named, sshKey: null };
+  const sshKey = { ...key, path: key.path.trim(), user: key.user.trim() };
+  return made ? { ...named, password: null, sshKey } : { ...named, username: "", password: null, sshKey };
+}
+
+/** The form placed on node `nodeName` of the server's choices (the first node when it isn't one):
+ *  a value the form holds stays when that node offers it, unless `reset` (the node was just
+ *  changed); otherwise the node's default (`local-lvm`, `local`, the bridge on the server's LAN). */
+export function placementWith(v: ServerHostInput, placement: ProxmoxPlacement, nodeName: string | null, reset = false): ServerHostInput {
+  const node = placement.nodes.find((n) => n.name === nodeName) ?? placement.nodes.at(0);
+  if (!node) return v;
+  const keep = (value: string | null | undefined, options: string[], fallback: string | null) =>
+    !reset && value && options.includes(value) ? value : fallback;
+  return {
+    ...v,
+    node: node.name,
+    datastore: keep(v.datastore, node.diskStorages, node.defaultDisk),
+    imageStorage: keep(v.imageStorage, node.imageStorages, node.defaultImage),
+    snippetStorage: keep(v.snippetStorage, node.snippetStorages, node.defaultSnippet),
+    network: keep(
+      v.network,
+      node.bridges.map((b) => b.name),
+      node.defaultBridge,
+    ),
+  };
+}
+
+/** Whether a save must first make the token on the node (an SSH key sign-in with no token yet). */
+export const makesToken = (payload: ServerHostInput) => !!payload.sshKey && payload.username === "";
+
+/** Whether the connection / credentials step has what it needs to go on. `secretKept`: a saved
+ *  secret stays when the field is left empty (see `keepsSecret`). `key`: the Proxmox SSH key
+ *  sign-in, when that is how it signs in. */
+export function connectionReady(v: ServerHostInput, secretKept: boolean, key: SshKeySignIn | null = null): boolean {
+  if (v.provider === "proxmox" && key) return serverReady(v) && sshKeyReady(key);
+  const host = v.host.trim() !== "";
+  const user = v.username.trim() !== "";
+  const secret = secretKept || (v.password ?? "") !== "";
+  if (isTokenCloud(v.provider)) return host && secret;
+  if (isCliAuthCloud(v.provider) || HOST_KINDS[v.provider].signIn === "apiKey") return host && user;
+  if (isCloudProvider(v.provider) && v.useCliCreds) return host;
+  // A server's port: empty (its default) or a whole number a TCP port can be (the field took 0
+  // or 70000 and went on).
+  return host && user && secret && portOk(v.port);
+}
+
+/** Whether an edited host or account has a saved secret to keep: one that signed in with the
+ *  cloud's CLI and now uses keys never had a secret key, so it must be typed. */
+export function keepsSecret(initial: ServerHostInput, v: ServerHostInput): boolean {
+  return initial.id !== null && !(initial.useCliCreds && !v.useCliCreds);
+}
+
+/** The provider's kind and how it connects, as the setup steps read it. */
+export function providerTraits(provider: RemoteProvider) {
+  return {
+    cloud: isCloudProvider(provider),
+    aws: provider === "aws",
+    azure: provider === "azure",
+    gcp: provider === "gcp",
+    digitalocean: provider === "digitalocean",
+    linode: provider === "linode",
+    oci: provider === "oci",
+    tokenCloud: isTokenCloud(provider),
+    cliAuth: isCliAuthCloud(provider),
+    kind: { port: HOST_KINDS[provider].defaultPort, user: isServerProvider(provider) ? SERVER_USER[provider] : "" },
+  };
+}
+
+/** The cloud CLIs the setup installs, by program: the dependency that installs it, its key in the
+ *  report. */
+const CLIS = {
+  aws: { dependency: "awscli", key: "aws" },
+  az: { dependency: "azurecli", key: "azure" },
+  gcloud: { dependency: "gcloud", key: "gcloud" },
+} as const satisfies Record<string, { dependency: Dependency; key: keyof CloudClis }>;
+
+/** The CLI a cloud needs on this machine, as the backend says (`HOST_KINDS`): its program, the
+ *  dependency that installs it and its key in the report; null for the token and key clouds. */
+export function cloudCli(provider: CloudProvider) {
+  const program = HOST_KINDS[provider].cli;
+  return program ? { program, ...CLIS[program] } : null;
+}
+
+/**
+ * What this machine needs to drive the chosen server or cloud, and what it has: ESXi goes through
+ * Vagrant, its ESXi plugin and VMware's OVF Tool; Proxmox through Terraform (installed locally);
+ * a cloud through Terraform and its CLI (the token and key clouds have none).
+ */
+export function machineTools(provider: RemoteProvider, report: SystemReport | null) {
+  const cloud = isCloudProvider(provider);
+  const cli = cloud ? cloudCli(provider) : null;
+  const status = report?.vmProviders.find((p) => p.provider === provider);
+  const cloudHasCli = cli !== null;
+  const cloudCliTool = cli ? report?.cloudClis[cli.key] : undefined;
+  const tools = {
+    vagrantOk: !!report?.vagrant.installed,
+    esxiPluginOk: !!status?.pluginInstalled,
+    // The Vagrant plugin ESXi needs, as the backend names it (none until the report is in).
+    esxiPlugin: status?.plugin ?? null,
+    ovftoolOk: !!report?.ovftool.installed,
+    terraformOk: !!report?.terraform.installed,
+    cloudHasCli,
+    cloudCliTool,
+    cloudCliOk: !!cloudCliTool?.installed,
+    /** The cloud's CLI (its program, the dependency that installs it), when it has one. */
+    cloudCli: cli,
+  };
+  const toolsOk = cloud
+    ? (cloudHasCli ? tools.cloudCliOk : true) && tools.terraformOk
+    : provider === "vmware_esxi"
+      ? tools.vagrantOk && tools.esxiPluginOk && tools.ovftoolOk
+      : tools.terraformOk;
+  return { ...tools, toolsOk };
+}
+
+/** The AWS CLI release that brought `aws login`, its browser sign-in. */
+const AWS_LOGIN_SINCE = [2, 32] as const;
+
+/** Where to update the AWS CLI. */
+export const AWS_CLI_UPDATE_URL = "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html";
+
+/**
+ * The AWS CLI's version when it is too old for `aws login` (before 2.32, v1 included), as the
+ * machine check read it (`aws-cli/2.15.0 Python/3.11.6 Darwin/23.3.0 …`); null when it is recent
+ * enough, or its version can't be told (the sign-in then says for itself).
+ */
+export function awsCliTooOld(version: string | null | undefined): string | null {
+  const m = /aws-cli\/(\d+)\.(\d+)(?:\.(\d+))?/.exec(version ?? "");
+  if (!m) return null;
+  const [major, minor] = [Number(m[1]), Number(m[2])];
+  const [since, sinceMinor] = AWS_LOGIN_SINCE;
+  const old = major < since || (major === since && minor < sinceMinor);
+  return old ? m[0].slice("aws-cli/".length) : null;
+}
+
+/** The name a host is saved under: the typed one, else the cloud's short name or the address. */
+export function saveName(v: ServerHostInput): string {
+  const fallback = isCloudProvider(v.provider) ? defaultName(v.provider) : v.host.trim();
+  return v.name.trim() || fallback;
+}
+
+/** The setup window's title: what was saved and whether its test passed ("connected" only once
+ *  the test says so: a saved host whose test failed isn't), else what is being set up. */
+export function setupTitle({
+  saved,
+  test,
+  editing,
+  cloud,
+  initialName,
+}: {
+  saved: { name: string } | null;
+  test: ServerTest | "testing" | null;
+  editing: boolean;
+  cloud: boolean;
+  initialName: string;
+}) {
+  const failed = !!test && test !== "testing" && !test.ok;
+  if (saved) return { key: failed ? "savedNotConnected" : "connected", name: saved.name } as const;
+  if (editing) return { key: "edit", name: initialName } as const;
+  return { key: cloud ? "cloud" : "host", name: "" } as const;
+}

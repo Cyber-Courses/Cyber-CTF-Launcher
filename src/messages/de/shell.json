@@ -1,0 +1,126 @@
+{
+  "tabs": {
+    "home": "Übersicht",
+    "labs": "Labs",
+    "machine": "Rechner",
+    "server": "Server",
+    "cloud": "Cloud",
+    "events": "Events",
+    "settings": "Einstellungen"
+  },
+  "sidebar": {
+    "find": "Suchen…",
+    "soon": "Bald",
+    "running": "Läuft",
+    "labRunning": "läuft"
+  },
+  "header": {
+    "thisMachine": "Dieser Rechner",
+    "dockerNotRunning": "Docker läuft nicht",
+    "checkFailed": "Rechnerprüfung fehlgeschlagen",
+    "checking": "wird geprüft…"
+  },
+  "window": {
+    "minimize": "Minimieren",
+    "maximize": "Maximieren",
+    "restore": "Wiederherstellen",
+    "close": "Schließen"
+  },
+  "palette": {
+    "label": "Befehlsmenü",
+    "placeholder": "Labs, Ansichten, Aktionen suchen…",
+    "noResults": "Keine Ergebnisse",
+    "findLab": "Lab suchen",
+    "findLabKeywords": "labs suche suchen ctf search",
+    "openSettings": "Einstellungen öffnen",
+    "openSettingsKeywords": "einstellungen optionen darstellung design theme settings",
+    "goTo": "Zu {screen} wechseln",
+    "labKeywords": "lab {category}",
+    "groups": {
+      "actions": "Aktionen",
+      "screens": "Ansichten",
+      "labs": "Labs"
+    }
+  },
+  "screen": {
+    "checkFailed": "Dieser Rechner konnte nicht geprüft werden",
+    "tryAgain": "Erneut versuchen",
+    "checking": "Dieser Rechner wird geprüft…",
+    "loading": "Wird geladen…",
+    "comingSoon": "{title} kommt bald",
+    "eventsDescription": "Nimm an Live-CTF-Events teil, deren Labs von Cyber CTF gehostet werden: Auf deinem Rechner läuft nichts, jede Person bekommt für die Dauer des Events ihr eigenes Lab."
+  },
+  "failures": {
+    "openSettings": "Einstellungen konnten nicht geöffnet werden",
+    "restart": "Cyber CTF konnte nicht neu gestartet werden"
+  },
+  "update": {
+    "installed": "Update installiert. Cyber CTF wird neu gestartet…",
+    "failed": "Update fehlgeschlagen. Versuche es später erneut.",
+    "available": "Version <version>{version}</version> ist verfügbar.",
+    "restartNow": "Jetzt neu starten",
+    "updating": "Wird aktualisiert…",
+    "update": "Aktualisieren",
+    "waitForLabs": "Das Update startet Cyber CTF neu. Warte, bis deine Labs fertig gestartet, gestoppt oder pausiert sind.",
+    "busyUnknown": "Es ließ sich nicht prüfen, ob ein Lab gerade startet oder stoppt, daher wartet das Update. Versuche es gleich noch einmal."
+  },
+  "error": {
+    "title": "Etwas ist schiefgelaufen",
+    "description": "In Cyber CTF ist ein unerwarteter Fehler aufgetreten. Deine Labs laufen weiter. Versuche es erneut; wenn es wieder passiert, kopiere die Details und schick sie uns.",
+    "stepDescription": "In diesem Schritt ist ein unerwarteter Fehler aufgetreten. Versuche es erneut oder geh einen Schritt zurück. Wenn es weiter passiert, kopiere die Details und schick sie uns.",
+    "unknown": "Unbekannter Fehler",
+    "tryAgain": "Erneut versuchen",
+    "reload": "Neu laden",
+    "copied": "Kopiert",
+    "copyDetails": "Details kopieren"
+  },
+  "terminal": {
+    "connecting": "verbinde…",
+    "open": "Attack box",
+    "ended": "Sitzung beendet",
+    "failed": "Verbindung fehlgeschlagen",
+    "noLab": "Dieses Fenster wurde für kein Lab geöffnet: Öffne die Shell auf der Seite des Labs.",
+    "systemTerminal": "System-Terminal",
+    "systemTerminalHint": "Diese Shell in deiner eigenen Terminal-App öffnen",
+    "systemTerminalFailed": "Das Systemterminal ließ sich nicht öffnen",
+    "shellEnded": "Die Shell wurde beendet.",
+    "shellEndedWithCode": "Die Shell wurde beendet (Exit-Code {code}).",
+    "reconnect": "Neu verbinden",
+    "close": "Schließen"
+  },
+  "vmScreen": {
+    "state": {
+      "connecting": "verbinde…",
+      "showing": "Bildschirm",
+      "rdp": "Remotedesktop",
+      "unavailable": "kein Bildschirm",
+      "failed": "Verbindung verloren",
+      "ended": "geschlossen"
+    },
+    "connecting": "Verbinde mit dem Bildschirm der Maschine…",
+    "noViewer": "Das Fenster konnte seine Bildschirmanzeige nicht starten.",
+    "securityFailure": "Der Bildschirm der Maschine hat das übergebene Passwort abgelehnt.",
+    "lost": "Die Verbindung zum Bildschirm der Maschine ist abgebrochen.",
+    "noAnswer": "Der Bildschirm der VM hat unter {address} nicht geantwortet.",
+    "noAnswerAnywhere": "Der Bildschirm der VM hat nicht geantwortet.",
+    "unavailable": "Diese Maschine hat keinen Bildschirm zum Anzeigen",
+    "retry": "Erneut versuchen",
+    "passwordCopied": "Passwort kopiert: Füge es ein, wenn der Remotedesktop danach fragt.",
+    "rdpTitle": "Der Bildschirm dieser Maschine öffnet sich im Remotedesktop",
+    "rdpHint": "Er öffnet sich in {client}. Lass dieses Fenster offen, solange du ihn nutzt: Schließen beendet die Verbindung.",
+    "noClient": "Es ist keine Remotedesktop-App installiert. Auf dem Mac installiere Windows App aus dem App Store, unter Linux FreeRDP (xfreerdp) oder Remmina. Dann versuche es erneut.",
+    "tunnelled": "Er läuft durch einen verschlüsselten SSH-Tunnel von diesem Computer, der sich mit diesem Fenster schließt.",
+    "tunnelClosed": "Der Tunnel der Konsole wurde geschlossen: {reason}",
+    "openFailed": "Die Remotedesktop-App konnte nicht geöffnet werden",
+    "openRdp": "In {client} öffnen",
+    "copyPassword": "Passwort kopieren",
+    "closed": "Der Bildschirm wurde geschlossen.",
+    "signIn": "Anmeldung",
+    "signInTitle": "Bei der Attack-Box anmelden",
+    "signInHint": "Wo ihr Bildschirm ein Passwort verlangt (eine Sperre, eine Anmeldung), melde dich als {user} mit diesem Passwort an.",
+    "user": "Benutzer",
+    "password": "Passwort",
+    "shareClipboard": "Die Zwischenablage dieses Computers mit der Maschine teilen",
+    "shareClipboardHint": "Standardmäßig aus: Die Maschine könnte lesen, was du hier kopierst (Passwörter, Tokens), und es ändern. Nur für dieses Fenster; Laufwerke, Drucker und andere Geräte werden nie geteilt."
+  }
+}

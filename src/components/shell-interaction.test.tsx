@@ -1,0 +1,483 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { FlaskConical, Search } from "lucide-react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { CommandPalette, type Command } from "@/components/command-palette";
+import { UpdateBanner } from "@/components/update-banner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { QuitGuard } from "@/features/app/quit-guard";
+import { commands, installTauri } from "@/test/tauri";
+import { flush, preloadLabScreens } from "@/test/ui";
+import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/components/shell-test-kit";
+import { emitSettled, must } from "@/components/test-support";
+import { resetUpdater, updater } from "@/components/updater-double";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
+
+vi.mock("@tauri-apps/plugin-updater", () => import("@/components/updater-double"));
+
+// The deep-link plugin: the link the app was opened with, and the handler for links opened later.
+const links = vi.hoisted(() => ({
+  launch: null as string[] | null,
+  onOpen: null as null | ((urls: string[]) => void),
+}));
+vi.mock("@tauri-apps/plugin-deep-link", () => ({
+  getCurrent: () => Promise.resolve(links.launch),
+  onOpenUrl: (fn: (urls: string[]) => void) => {
+    links.onOpen = fn;
+    return Promise.resolve(() => {
+      if (links.onOpen === fn) links.onOpen = null;
+    });
+  },
+}));
+
+const onMac = () => vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)");
+const onLinux = () => vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (X11; Linux x86_64)");
+
+// jsdom lays nothing out, so `offsetParent` is always null and the focus trap sees no focusable
+// element: give every element a layout parent, as in the real webview.
+let offsetParent: PropertyDescriptor | undefined;
+beforeEach(() => {
+  resetUpdater();
+  links.launch = null;
+  offsetParent = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetParent");
+  Object.defineProperty(HTMLElement.prototype, "offsetParent", { configurable: true, get: () => document.body });
+});
+afterEach(() => {
+  if (offsetParent) Object.defineProperty(HTMLElement.prototype, "offsetParent", offsetParent);
+  vi.restoreAllMocks();
+});
+
+/** The main window, past the onboarding, once its first reads have settled. */
+const shell = () => openMainWindow(60);
+
+const current = () => screen.getByRole("button", { current: "page" }).textContent;
+/** The open palette's search field. */
+const field = () => must(screen.getByRole("dialog").querySelector("input"), "the palette's search field");
+const crumbs = () => document.querySelector("main > [data-tauri-drag-region]")?.textContent ?? "";
+
+describe("deep links into the main window", () => {
+  // First in the file: the link the app was opened with is read once per session (module state).
+  it("opens the lab the app was launched with", async () => {
+    links.launch = ["https://example.com/", "cyberctf://labs/invoice-portal-api"];
+    installTauri();
+    await shell();
+    await flush(80);
+    expect(current()).toContain("Labs");
+    expect(crumbs()).toContain("Invoice portal API");
+  });
+
+  it("opens a lab linked while the app runs, whatever screen is open", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    await shell();
+    await user.click(screen.getByRole("button", { name: /^cloud/i }));
+    expect(current()).toContain("Cloud");
+    act(() => {
+      links.onOpen?.(["cyberctf://labs/sqli-blind-orders"]);
+    });
+    await flush(80);
+    expect(current()).toContain("Labs");
+    expect(crumbs()).toContain("Blind orders");
+  });
+
+  it("ignores links that aren't lab links, and never starts anything", async () => {
+    const calls = installTauri();
+    await shell();
+    act(() => {
+      links.onOpen?.(["cyberctf://settings/x", "cyberctf://labs/Bad_Slug", "https://cyberctf.com/labs/goad-light"]);
+    });
+    await flush(50);
+    expect(current()).toContain("Overview");
+    // A web page can show a lab, never start one.
+    expect(commands(calls)).not.toContain("lab_launch");
+  });
+});
+
+describe("CommandPalette keyboard", () => {
+  /** The commands, each telling `run` its name when it runs. */
+  const cmds = (run = vi.fn<(name: string) => void>()): Command[] =>
+    [
+      { id: "find", label: "Find a lab", hint: "/", icon: Search, keywords: "labs search", group: "Actions", name: "find" },
+      { id: "go-home", label: "Go to Overview", icon: Search, group: "Screens", name: "home" },
+      { id: "go-cloud", label: "Go to Cloud", icon: Search, group: "Screens", name: "cloud" },
+      { id: "lab-a", label: "Blind orders", hint: "Web", icon: FlaskConical, keywords: "lab web", group: "Labs", name: "lab-a" },
+      { id: "lab-b", label: "GOAD Light", hint: "Active Directory", icon: FlaskConical, keywords: "lab ad", group: "Labs", name: "lab-b" },
+    ].map(({ name, ...c }) => ({
+      ...c,
+      run: () => {
+        run(name);
+      },
+    }));
+  const active = () => document.querySelector("[data-active=true]")?.textContent ?? "";
+  /** The palette open over `cmds`, with spies for what runs and for closing it. */
+  const open = () => {
+    const run = vi.fn<(name: string) => void>();
+    const onClose = vi.fn();
+    render(<CommandPalette open onClose={onClose} commands={cmds(run)} />);
+    return { run, onClose };
+  };
+
+  it("focuses its search field and selects the first command on open", async () => {
+    render(<CommandPalette open onClose={vi.fn()} commands={cmds()} />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
+    expect(active()).toContain("Find a lab");
+  });
+
+  it("wraps from the first command to the last with ArrowUp", async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette open onClose={vi.fn()} commands={cmds()} />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
+    await user.keyboard("{ArrowUp}");
+    expect(active()).toContain("GOAD Light");
+    await user.keyboard("{ArrowDown}");
+    expect(active()).toContain("Find a lab");
+  });
+
+  it("keeps the selection in range when typing narrows the list, so Enter runs the one left", async () => {
+    const user = userEvent.setup();
+    const { run, onClose } = open();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
+    // Down to the last row, then a query only one command matches.
+    for (let i = 0; i < 4; i++) await user.keyboard("{ArrowDown}");
+    expect(active()).toContain("GOAD Light");
+    await user.type(field(), "overview");
+    expect(active()).toContain("Go to Overview");
+    await user.keyboard("{Enter}");
+    expect(run).toHaveBeenCalledWith("home");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds a lab by its category hint and keywords, not only its title", async () => {
+    const user = userEvent.setup();
+    render(<CommandPalette open onClose={vi.fn()} commands={cmds()} />);
+    await user.type(field(), "active directory");
+    // The results are a listbox's options (a screen reader hears which one is picked).
+    const rows = within(screen.getByRole("dialog")).getAllByRole("option");
+    expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining("GOAD Light")]);
+  });
+
+  it("titles each group once, above its first command", () => {
+    render(<CommandPalette open onClose={vi.fn()} commands={cmds()} />);
+    const text = screen.getByRole("dialog").textContent;
+    expect(text.match(/Screens/g)).toHaveLength(1);
+    expect(text.match(/Labs/g)).toHaveLength(1);
+  });
+
+  it("does nothing on Enter when no command matches", async () => {
+    const user = userEvent.setup();
+    const { run, onClose } = open();
+    await user.type(field(), "zzzz");
+    await user.keyboard("{Enter}");
+    expect(run).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText("No results")).toBeTruthy();
+  });
+
+  it("keeps Tab in the palette, between the search field and its results, and Enter runs the picked result", async () => {
+    // A combobox over a listbox: the results are options picked with the arrows, never focused
+    // one by one. Their scrolling list is a tab stop of its own (axe: a scrollable region must
+    // be reachable from the keyboard), where the arrows still move the pick.
+    const { run } = open();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
+    fireEvent.keyDown(field(), { key: "Tab", shiftKey: true });
+    const list = must(document.activeElement as HTMLElement | null, "a focused element");
+    expect(list).not.toBe(field());
+    expect(screen.getByRole("dialog").contains(list)).toBe(true);
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "Tab" });
+    expect(document.activeElement).toBe(field());
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  // Regression: the Enter that confirms an IME composition (Japanese is a shipped language) ran the
+  // highlighted command while the player was still typing.
+  it("Enter confirming an IME composition in the search field runs no command", () => {
+    const { run } = open();
+    fireEvent.keyDown(field(), { key: "Enter", isComposing: true, keyCode: 229 });
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("AppShell shortcuts", () => {
+  it("toggles the palette closed with Ctrl+K pressed again while typing in it", async () => {
+    onLinux();
+    installTauri();
+    const user = userEvent.setup();
+    await shell();
+    await user.keyboard("{Control>}k{/Control}");
+    await focusedPalette();
+    await user.keyboard("cl");
+    await user.keyboard("{Control>}k{/Control}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("opens the palette fresh each time: the last query is gone", async () => {
+    onLinux();
+    installTauri();
+    const user = userEvent.setup();
+    await shell();
+    await user.keyboard("{Control>}k{/Control}");
+    await focusedPalette();
+    await user.keyboard("cloud");
+    await user.keyboard("{Escape}");
+    await user.keyboard("{Control>}k{/Control}");
+    expect(field().value).toBe("");
+  });
+
+  it("types / into the palette's field instead of jumping to the lab search", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    await shell();
+    await user.click(screen.getByRole("button", { name: /find/i }));
+    const input = field();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(input);
+    });
+    await user.keyboard("/");
+    await flush(30);
+    expect(input.value).toBe("/");
+    expect(current()).toContain("Overview");
+    // The "Find a lab" action has "/" as its hint, so it matches.
+    expect(screen.getByRole("dialog").textContent).toContain("Find a lab");
+  });
+
+  it("ignores / with a modifier held", async () => {
+    installTauri();
+    await shell();
+    fireEvent.keyDown(window, { key: "/", altKey: true });
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+    await flush(30);
+    expect(current()).toContain("Overview");
+  });
+
+  it("gives the focus back to the Find button when the palette closes", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    await shell();
+    const find = screen.getByRole("button", { name: /find/i });
+    await user.click(find);
+    await focusedPalette();
+    await user.keyboard("{Escape}");
+    expect(document.activeElement).toBe(find);
+  });
+
+  it("names every button in the main window, so a screen reader can tell them apart", async () => {
+    installTauri();
+    await shell();
+    const unnamed = screen
+      .getAllByRole("button")
+      .filter((b) => !b.textContent.trim() && !b.getAttribute("aria-label") && !b.getAttribute("title") && !b.getAttribute("aria-labelledby"));
+    expect(unnamed.map((b) => b.outerHTML.slice(0, 120))).toEqual([]);
+  });
+
+  // Regression: the shell's shortcuts ran behind an open modal: with the quit guard up, "/" switched
+  // the screen behind it and took the focus out of it.
+  it("/ leaves the screen behind the quit guard alone while the dialog has the focus", async () => {
+    installTauri();
+    await shell();
+    await emitSettled("quit-blocked", 1);
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(must(document.activeElement, "the focused element"), { key: "/" });
+    await flush(50);
+    expect(current()).toContain("Overview");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it("keeps / and Ctrl+K off while a modal is open, even with the focus outside it", async () => {
+    onLinux();
+    installTauri();
+    await shell();
+    await emitSettled("quit-blocked", 1);
+    const dialog = screen.getByRole("alertdialog");
+    // A click on the page behind, or a dialog that didn't take the focus: it's on the body.
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(dialog.contains(document.activeElement)).toBe(false);
+    fireEvent.keyDown(window, { key: "/" });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    await flush(50);
+    expect(current()).toContain("Overview");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes the palette with its own shortcut even when a modal opened over it", async () => {
+    onLinux();
+    installTauri();
+    await shell();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await emitSettled("quit-blocked", 1);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+  });
+
+  // Regression: Ctrl+K opened the palette on macOS too, where its shortcut is Cmd+K and Ctrl+K is
+  // a text field's "delete to end of line" (and the attack box shell's kill-line).
+  it("on macOS Ctrl+K in a text field reaches the field, not the palette", async () => {
+    onMac();
+    installTauri();
+    await shell();
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    input.remove();
+  });
+});
+
+describe("QuitGuard", () => {
+  it("shows the latest count when another quit is blocked while it is open", async () => {
+    installTauri();
+    await blockQuit();
+    await emitSettled("quit-blocked", 2);
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    expect(screen.getByRole("alertdialog").textContent).toContain("2 labs are being worked on");
+  });
+
+  it("puts the focus on Keep waiting, the safe choice, and gives it back when closed", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    render(
+      <>
+        <button>Behind</button>
+        <QuitGuard />
+      </>,
+    );
+    await flush();
+    const behind = screen.getByRole("button", { name: "Behind" });
+    behind.focus();
+    await emitSettled("quit-blocked", 1);
+    expect(document.activeElement?.textContent).toBe("Keep waiting");
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.activeElement).toBe(behind);
+  });
+
+  it("disables both quit buttons while one is in flight, so a double click can't send two", async () => {
+    let release: () => void = () => {};
+    const calls = installTauri({ linger_quit: () => new Promise<void>((r) => (release = r)) });
+    const user = userEvent.setup();
+    await blockQuit();
+    await user.click(screen.getByRole("button", { name: "Finish in background" }));
+    await user.click(screen.getByRole("button", { name: "Finish in background" }));
+    expect(screen.getByRole("button", { name: "Quit anyway" }).hasAttribute("disabled")).toBe(true);
+    expect(commands(calls).filter((c) => c === "linger_quit" || c === "force_quit")).toEqual(["linger_quit"]);
+    release();
+  });
+
+  // Regression: the quit guard had no Escape handling; Escape now keeps waiting, the safe answer.
+  it("Escape dismisses the quit guard and keeps waiting", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    await blockQuit();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(commands(calls)).not.toContain("force_quit");
+  });
+});
+
+describe("LaunchConfirm keyboard", () => {
+  const request = {
+    sessionId: "sess-1",
+    labName: "S3 leak",
+    repository: "cyber-courses/lab-s3",
+    commit: "0123456789abcdef",
+    place: "cloud",
+    target: "AWS sandbox",
+    privileged: false,
+    expiresAtMs: Date.now() + 180_000,
+  };
+
+  it("puts the focus on Decline first, so Enter after a misclick never starts billable resources", async () => {
+    const calls = installTauri({ confirm_launch: () => true });
+    const user = userEvent.setup();
+    await askLaunch(request);
+    expect(document.activeElement?.textContent).toBe("Decline");
+    await user.keyboard("{Enter}");
+    await flush();
+    expect(calls.filter((c) => c.cmd === "confirm_launch").map((c) => c.args)).toEqual([{ sessionId: "sess-1", approve: false }]);
+  });
+
+  // Regression: the launch confirmation had no Escape handling. Escape declines, as Decline does.
+  it("Escape declines the cloud launch confirmation", async () => {
+    const calls = installTauri({ confirm_launch: () => true });
+    const user = userEvent.setup();
+    await askLaunch(request);
+    await user.keyboard("{Escape}");
+    await flush();
+    expect(calls.filter((c) => c.cmd === "confirm_launch").map((c) => c.args)).toEqual([{ sessionId: "sess-1", approve: false }]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
+
+describe("ConfirmDialog keyboard", () => {
+  it("puts the focus on Cancel, and Escape cancels without reaching the page's own Escape", async () => {
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn();
+    const pageEscape = vi.fn();
+    window.addEventListener("keydown", pageEscape);
+    const user = userEvent.setup();
+    render(
+      <ConfirmDialog title="Delete?" confirmLabel="Delete" onConfirm={onConfirm} onCancel={onCancel}>
+        Gone for good.
+      </ConfirmDialog>,
+    );
+    expect(document.activeElement?.textContent).toBe("Cancel");
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(pageEscape).not.toHaveBeenCalled();
+    window.removeEventListener("keydown", pageEscape);
+  });
+
+  it("keeps Tab between Cancel and the confirm button", () => {
+    render(
+      <ConfirmDialog title="Delete?" confirmLabel="Delete" onConfirm={vi.fn()} onCancel={vi.fn()}>
+        Gone for good.
+      </ConfirmDialog>,
+    );
+    const [cancel, del] = screen.getAllByRole("button");
+    fireEvent.keyDown(del, { key: "Tab" });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(del);
+  });
+});
+
+describe("UpdateBanner retry", () => {
+  it("lets the player try again after a failed install, and relaunches when it works", async () => {
+    let tries = 0;
+    updater.pending = {
+      version: "9.9.9",
+      downloadAndInstall: () => (++tries === 1 ? Promise.reject(new Error("signature mismatch")) : Promise.resolve()),
+    };
+    // No lab deploying: an update waits for deploys to finish.
+    const calls = installTauri({ restart_app: () => null, busy_labs: () => [], active_operations: () => [] });
+    const user = userEvent.setup();
+    render(<UpdateBanner />);
+    await flush();
+    expect(screen.getByRole("status").textContent).toContain("9.9.9");
+    await user.click(screen.getByRole("button", { name: "Update" }));
+    await flush();
+    expect(screen.getByRole("status").textContent).toContain("Update failed");
+    expect(commands(calls)).not.toContain("restart_app");
+    await user.click(screen.getByRole("button", { name: "Update" }));
+    await flush();
+    expect(tries).toBe(2);
+    expect(commands(calls)).toContain("restart_app");
+  });
+});

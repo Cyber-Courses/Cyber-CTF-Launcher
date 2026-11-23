@@ -1,0 +1,236 @@
+import { invoke } from "@tauri-apps/api/core";
+import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
+import { awaitOperation } from "@/lib/tauri/run-events";
+
+export type { ActiveOperation } from "@/lib/tauri/run-events";
+import type {
+  CloudPreview,
+  AttackStatus,
+  ImportedLab,
+  LabChallenge,
+  LabCheck,
+  LabCheckResult,
+  LabFileProblem,
+  LabInterface,
+  LabLogin,
+  LabMachine,
+  LabNetwork,
+  LabOutput,
+  LabPlace,
+  LabPort,
+  LabRemoval,
+  LabRequirements,
+  LabRunOptions,
+  LabRunPath,
+  LabRunRefusalCause,
+  LabService,
+  LabPlacement,
+  LabPlacementChoice,
+  LabConsole,
+  LabControl,
+  LabStatus,
+  LabTool,
+  OperationId,
+  Park,
+  Runtime,
+  SharedFolder,
+  ScreenConnection,
+  SignIn,
+  TermEvent,
+} from "@/lib/tauri/generated";
+
+/** Each provider's name as the player reads it, from the backend (`Provider::label`). */
+export { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
+
+/** The marks a run's closing line starts with, and how the launcher's own deploy-log lines start, by
+ *  the step the lab page files them under (`deploy_log`). */
+export { DONE_MARK, FAILED_CODE, FAILED_MARK, FETCH_LINES, PREPARE_LINES, STEP_IDS } from "@/lib/tauri/generated/DeployLog";
+
+export type {
+  CloudPreview,
+  AttackStatus,
+  ImportedLab,
+  LabChallenge,
+  LabCheck,
+  LabCheckResult,
+  LabFileProblem,
+  LabInterface,
+  LabLogin,
+  LabMachine,
+  LabNetwork,
+  LabConsole,
+  LabControl,
+  LabOutput,
+  LabPlace,
+  LabPort,
+  LabRemoval,
+  LabRequirements,
+  LabRunOptions,
+  LabRunPath,
+  LabRunRefusalCause,
+  LabService,
+  LabPlacement,
+  LabPlacementChoice,
+  LabStatus,
+  LabTool,
+  Park,
+  Runtime,
+  ScreenConnection,
+  SharedFolder,
+  SignIn,
+  TermEvent,
+};
+
+/** Whether this build runs labs of their own cloud services (the core's `cloud-services` feature). */
+export const cloudServicesSupported = () => invoke<boolean>("cloud_services_supported");
+
+/** A cloud lab's cost and inputs before it starts; null for other labs. */
+export const labCloudPreview = (id: string, repository: string, commit: string) =>
+  invoke<CloudPreview | null>("lab_cloud_preview", { id, source: { repository, commit } });
+
+/** Where a lab (declared `runtime`) runs for the player's `choice`, by the one rule the command
+ *  line and the website's launches apply too (`placement::choose`): what Isoloom allows from its
+ *  spec at the catalogue's pinned commit and what is ready here, then the choice, else the saved
+ *  preference. The launch sends what it answers, as it is (`labLaunch`). Without the lab's
+ *  `source`, the catalogue's. */
+export const labPlacement = (id: string, runtime: Runtime, source: { repository: string; commit: string } | null, choice: LabPlacementChoice) =>
+  invoke<LabPlacement>("lab_placement", { id, runtime, source, choice });
+
+/** Every way a lab (declared `runtime`) can start, from its spec at the catalogue's pinned commit:
+ *  per form, the hypervisors, servers and clouds it runs on, each with its launch path's badge,
+ *  and where Isoloom refuses it. */
+export const labRunOptions = (id: string, runtime: Runtime, repository: string, commit: string) =>
+  invoke<LabRunOptions>("lab_run_options", { id, runtime, source: { repository, commit } });
+
+/** A lab's minimum-to-run requirements (CPU/RAM/disk) as a lightest-to-heaviest range; null for a lab with no machines of its own. */
+export const labRequirements = (id: string, repository: string, commit: string) =>
+  invoke<LabRequirements | null>("lab_requirements", { id, source: { repository, commit } });
+
+/** Asks the core for a lab operation (`command`), then follows it to its end through the run
+ *  events: its log lines to `onLog`, resolved when it went through, rejected with its error. A
+ *  refusal (another operation runs on the lab) rejects before anything ran. */
+async function invokeOperation(command: string, args: Record<string, unknown>, onLog: (line: string) => void): Promise<void> {
+  const id = await invoke<OperationId>(command, args);
+  await awaitOperation(id, onLog);
+}
+
+export const labStop = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeOperation("lab_stop", { id, runtime }, onLog);
+
+/** Pauses or shuts a lab down, keeping its machines; `labResume` brings it back as it was. */
+export const labPark = (id: string, runtime: Runtime, mode: Park, onLog: (line: string) => void) => invokeOperation("lab_park", { id, runtime, mode }, onLog);
+
+/** Runs a VM lab's provisioners again on one machine (or all with `null`), in place. */
+export const labProvision = (id: string, runtime: Runtime, machine: string | null, onLog: (line: string) => void) =>
+  invokeOperation("lab_provision", { id, runtime, machine }, onLog);
+
+export const labResume = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeOperation("lab_resume", { id, runtime }, onLog);
+
+export const labStatus = (id: string, runtime: Runtime) => invoke<LabStatus>("lab_status", { id, runtime });
+
+/** Watches `labs` (each with its catalogue runtime), `open` among them looked at closely (a lab
+ *  page shows it): the core reconciles them and tells their statuses, and what its scan sees up,
+ *  as run events (`onLabEvent`). Replaces what the window watched. */
+export const labsWatch = (labs: { id: string; runtime: Runtime }[], open: string[]) => invokeUnit("labs_watch", { labs, open });
+
+/** The lab's observers, at their addresses where it runs. */
+export const labTools = (id: string, runtime: Runtime) => invoke<LabTool[]>("lab_tools", { id, runtime });
+
+/** Runs a lab's exploitability check: is the intended exploit path still solvable? */
+export const labCheck = (id: string, runtime: Runtime) => invoke<LabCheck>("lab_check", { id, runtime });
+
+/** The lab's attack box (a machine the launcher adds to the lab) as the runner reports it, and
+ *  the lab networks it can join. Known before the box is up. */
+export const attackBoxStatus = (id: string, runtime: Runtime) => invoke<AttackStatus>("attack_box_status", { id, runtime });
+
+/** The learner's pick for an attack box: the lab network it joins (null: the seat the lab declares,
+ *  else its first network), the image a container box runs (null: the launcher's default), and
+ *  whether a VM box (Kali) gets its desktop. */
+export type AttackPick = { network: string | null; image: string | null; desktop: boolean };
+
+/** Adds the attack box to the running lab as one of its machines, as `pick` says. */
+export const attackBoxAttach = (id: string, runtime: Runtime, pick: AttackPick, onLog: (line: string) => void) =>
+  invokeOperation("attack_box_attach", { id, runtime, pick }, onLog);
+
+/** Takes the attack box back out of the running lab. */
+export const attackBoxDetach = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeOperation("attack_box_detach", { id, runtime }, onLog);
+
+/** How the player signs in to the lab's attack box where it asks for a password (its screen, su,
+ *  SSH): its account and the password the launcher keeps for it; null when it keeps none. */
+export const attackBoxSignIn = (id: string) => invoke<SignIn | null>("attack_box_sign_in", { id });
+
+/** Opens the attack box shell in the system terminal, on the command the runner builds. */
+export const labAttackShell = (id: string, runtime: Runtime) => invokeUnit("lab_attack_shell", { id, runtime });
+/** Starts a lab where `placement` says (`labPlacement`'s answer), taken as it is. `offline`:
+ *  start the installed lab without Cyber CTF when it can't be reached (no progress saved), after
+ *  a launch failed with the `offlineReady` code. */
+export type LabLaunch = { labId: string; placement: LabPlacement; offline?: boolean };
+
+export const labLaunch = ({ offline = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
+  invokeOperation("lab_launch", { ...launch, offline }, onLog);
+
+/** Imports and starts a lab from a local directory `path` (an unpublished lab, bypassing the
+ *  catalogue and the backend); the deploy's log is streamed to `onLog`. The lab then appears in
+ *  the running labs by its derived `local-<name>` id, driven by the ordinary lifecycle commands. */
+export const labLaunchLocal = (path: string, onLog: (line: string) => void) => invokeOperation("lab_launch_local", { path }, onLog);
+
+/** The labs imported from a folder installed here, each with what its own `.ctf/` folder says of
+ *  it (title, description, category, difficulty, challenges) and which of those files can't be read. */
+export const importedLabs = () => invoke<ImportedLab[]>("imported_labs");
+
+/** Whether a lab is installed here: whether it has anything for `labRemove` to remove. */
+export const labInstalled = (id: string) => invoke<boolean>("lab_installed", { id });
+
+/** Removes a lab from this computer: the app's copy of it and everything the app keeps for it
+ *  (its run's records, its generated files, its deploy logs), never the folder an imported lab
+ *  came from. Refused while anything of it is up or an operation runs on it; what couldn't be
+ *  deleted is in the answer's `left`. */
+export const labRemove = (id: string) => invoke<LabRemoval>("lab_remove", { id });
+
+/** The labs with any operation in flight (a start, a stop, a park, a provisioning run), in the
+ *  app or the runner service: what an update install waits for (Rust's `busy_labs`). */
+export const busyLabs = () => invoke<string[]>("busy_labs");
+
+/** Quit by finishing in the background: hides the windows and exits once the lab operations
+ *  of this process (a stop, a park, a start) are done. */
+export const lingerQuit = () => invokeUnit("linger_quit");
+
+/** Quit the app even though a deploy is in progress (the user confirmed from the warning). */
+export const forceQuit = () => invokeUnit("force_quit");
+
+/** Opens (or focuses) the shell window for a lab. */
+export const terminalWindow = (id: string, runtime: Runtime, title: string) => invokeUnit("terminal_window", { id, runtime, title });
+
+/** Opens (or focuses) the screen window of a lab machine (its graphical console). */
+export const screenWindow = (id: string, runtime: Runtime, machine: string, title: string) => invokeUnit("screen_window", { id, runtime, machine, title });
+
+/** Opens lab `id`'s running VM `machine` in its hypervisor's own app ("Open in VirtualBox"), or its
+ *  web console in the browser. */
+export const screenOpenNative = (id: string, runtime: Runtime, machine: string) => invokeUnit("screen_open_native", { id, runtime, machine });
+
+/** The screen of the calling screen window's machine: VNC through the window's bridge, or RDP for the
+ *  system's client. */
+export const screenConnect = () => invoke<ScreenConnection>("screen_connect");
+
+/** Opens the calling screen window's Remote Desktop in the system's client; `clipboard`: this
+ *  computer's clipboard is shared with the machine for this session (off unless the player asks). */
+export const screenOpenRdp = (clipboard: boolean) => invokeUnit("screen_open_rdp", { clipboard });
+
+/** The calling screen window's Remote Desktop password, to copy on request. */
+export const screenPassword = () => invoke<string>("screen_password");
+
+/** How the player signs in where the calling screen window's machine asks, when it is the lab's
+ *  attack box; null for any other machine. */
+export const screenSignIn = () => invoke<SignIn | null>("screen_sign_in");
+
+/** The shell a terminal opens, and its size in cells. */
+export type TerminalSpec = { id: string; runtime: Runtime; cols: number; rows: number };
+
+/** Starts the shell in a pseudo-terminal; returns the session that write/resize/close take. */
+export const terminalOpen = (spec: TerminalSpec, onEvent: (e: TermEvent) => void) => invokeStreaming<number>("terminal_open", spec, onEvent, "events");
+export const terminalWrite = (session: number, data: string) => invokeUnit("terminal_write", { session, data });
+export const terminalResize = (session: number, cols: number, rows: number) => invokeUnit("terminal_resize", { session, cols, rows });
+export const terminalClose = (session: number) => invokeUnit("terminal_close", { session });
+
+export const sharedFolderGet = () => invoke<SharedFolder>("shared_folder_get");
+export const sharedFolderSet = (enabled: boolean, path: string) => invoke<SharedFolder>("shared_folder_set", { enabled, path });
+export const sharedFolderOpen = () => invokeUnit("shared_folder_open");

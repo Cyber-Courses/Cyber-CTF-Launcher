@@ -1,0 +1,64 @@
+import { engineName, isDockerEngine } from "@/features/machine/setup-steps/engines";
+import { providerName } from "@/features/machine/hypervisors";
+import { PROVIDER_NAMES, isCloudProvider, type CloudProvider, type DockerEngine, type LabStatus, type RemoteProvider, type ServerHost } from "@/lib/tauri";
+import type { T } from "@/lib/i18n";
+
+// Where a lab runs, as one fact the page tells the same way everywhere: the header's "on …",
+// Details' "Runs on", the Deployment panel's destination, and the network diagram's host card
+// with the place's logo.
+
+export type Place =
+  /** Containers on this machine: the engine the lab runs on (null: unknown, the machine report not in). */
+  | { kind: "engine"; engine: DockerEngine | null }
+  /** VMs on this machine, on `provider` (a VM lab's, or a container lab's one VM per machine). */
+  | { kind: "hypervisor"; provider: string }
+  /** One of the player's servers (Proxmox, ESXi): the saved host, when it is still saved. */
+  | { kind: "server"; name: string; provider: RemoteProvider | null; address: string | null }
+  /** One of the player's cloud accounts, in `region`. */
+  | { kind: "cloud"; name: string; provider: CloudProvider; region: string };
+
+/** Where the lab runs, from its status: the engine it was started on (recorded at launch) or the
+ *  machine's current one, the hypervisor the status names, or the saved host of its id. */
+export function placeOf(status: LabStatus | undefined, isDocker: boolean, currentEngine: DockerEngine | null, hosts: ServerHost[]): Place | null {
+  if (!status) return null;
+  if (status.host !== null) {
+    const host = hosts.find((h) => h.id === status.hostId);
+    if (host && isCloudProvider(host.provider)) return { kind: "cloud", name: host.name, provider: host.provider, region: host.host };
+    return { kind: "server", name: status.host, provider: host?.provider ?? null, address: host?.host ?? null };
+  }
+  if (isDocker && status.place !== "local_vm") {
+    const engine = status.provider && isDockerEngine(status.provider) ? status.provider : currentEngine;
+    return { kind: "engine", engine };
+  }
+  return { kind: "hypervisor", provider: status.provider ?? "" };
+}
+
+/** The place's own name: the engine, the hypervisor, the server, the cloud. */
+export function placeName(place: Place): string {
+  switch (place.kind) {
+    case "engine":
+      return place.engine ? engineName(place.engine) : "";
+    case "hypervisor":
+      return providerName(place.provider);
+    case "server":
+      return place.name;
+    case "cloud":
+      return PROVIDER_NAMES[place.provider];
+  }
+}
+
+/** The place as the header's "on …" and Details' "Runs on" say it: "this machine · Docker
+ *  Desktop", "this machine · QEMU", "homelab · Proxmox", "AWS · eu-west-3". */
+export function placeText(t: T, place: Place): string {
+  const name = placeName(place);
+  switch (place.kind) {
+    case "engine":
+      return name ? t("labs.detail.thisMachineWith", { engine: name }) : t("labs.detail.thisMachine");
+    case "hypervisor":
+      return name ? t("labs.detail.thisMachineWith", { engine: name }) : t("labs.detail.thisMachine");
+    case "server":
+      return place.provider ? t("labs.detail.serverWith", { name, kind: PROVIDER_NAMES[place.provider] }) : name;
+    case "cloud":
+      return t("labs.detail.cloudWith", { cloud: name, region: place.region });
+  }
+}

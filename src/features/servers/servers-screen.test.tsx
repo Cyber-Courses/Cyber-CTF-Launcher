@@ -1,0 +1,663 @@
+// @vitest-environment jsdom
+import { seedSettings } from "@/test/settings";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ServerScreen } from "@/features/servers/servers-screen";
+import { NodeKeysPrompt } from "@/features/servers/node-keys-prompt";
+import { HostRow, type HostView } from "@/features/servers/host-row";
+import { SELFTEST_PLAN, ServerSelfTest, selfTestOutcome } from "@/features/servers/server-self-test";
+import { loadVmTests } from "@/features/servers/vm-tests";
+import { answer } from "@/lib/dev-mock";
+import { PROVIDER_NAMES, SELFTEST_STEPS, SERVER_PROVIDERS, type ServerHost, type ServerList, type ServerTest, type SystemReport } from "@/lib/tauri";
+import { freshReport } from "@/test/fixtures";
+import { answersDialog, commands, dialogsAsked, installTauri, rejects, stream, type Call, type Handler } from "@/test/tauri";
+import { button, flush } from "@/test/ui";
+import { must } from "@/components/test-support";
+import { Toaster } from "@/components/ui/toaster";
+
+const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
+const [pve, esxi] = sample().hosts;
+const ok: ServerTest = { ok: true, reachable: true, authenticated: true, latencyMs: 12, message: "Connected", checks: [] };
+const fail = (message: string): ServerTest => ({ ok: false, reachable: false, authenticated: null, latencyMs: null, message, checks: [] });
+const argsOf = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
+/** A command that fails with `message`, as the Rust core's `other` error. */
+const failsWith = (message: string) => rejects({ code: "other", message });
+
+async function renderScreen(onNavigate = vi.fn(), report: SystemReport | null = null) {
+  render(<ServerScreen report={report} onNavigate={onNavigate} />);
+  await flush(50);
+  return onNavigate;
+}
+
+/** Opens a host row's overflow menu and presses `item`. */
+async function menu(user: ReturnType<typeof userEvent.setup>, rowName: string, item: RegExp) {
+  const row = screen.getByText(rowName).closest(".border-t") as HTMLElement;
+  await user.click(within(row).getByRole("button", { name: /more actions/i }));
+  await user.click(button(item));
+  await flush();
+}
+
+/** The open menu's backdrop: hidden from assistive tech, a click on it closes the menu. */
+function menuBackdrop(): Element {
+  const el = document.querySelector("button[aria-hidden]");
+  if (!el) throw new Error("the menu is closed");
+  return el;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  // A timed test that fails leaves no fake clock to the next.
+  vi.useRealTimers();
+});
+
+describe("ServerScreen", () => {
+  it("lists only the hypervisors, tests and probes each once, and summarises them", async () => {
+    const list = sample();
+    // Token and key clouds are cloud accounts too: they belong on the Cloud page.
+    list.hosts.push(
+      { ...esxi, id: "do", name: "DO droplets", provider: "digitalocean", host: "fra1" },
+      { ...esxi, id: "oci", name: "Oracle tenancy", provider: "oci", host: "eu-frankfurt-1" },
+    );
+    const calls = installTauri({ server_list: () => list, server_running_labs: () => ({ pve: 2 }) });
+    await renderScreen();
+    expect(screen.getByText("homelab-pve")).toBeTruthy();
+    expect(screen.getByText("office-esxi")).toBeTruthy();
+    for (const cloud of ["AWS sandbox", "DO droplets", "Oracle tenancy"]) expect(screen.queryByText(cloud)).toBeNull();
+    expect(argsOf(calls, "server_test").map((a) => a?.id)).toEqual(["pve", "esxi"]);
+    expect(argsOf(calls, "server_capacity").map((a) => a?.id)).toEqual(["pve", "esxi"]);
+    expect(document.body.textContent).toContain("2 of 2 online · 2 hosts");
+    expect(screen.getAllByText("Online")).toHaveLength(2);
+    expect(screen.getByText("2 labs running")).toBeTruthy();
+    expect(screen.getByText("Capacity on homelab-pve")).toBeTruthy();
+    expect(document.body.textContent).toContain("12 ms");
+    expect(document.body.textContent).toContain("node pve");
+  });
+
+  it("tests every host again with Test all, and one with its own Test", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    await renderScreen();
+    calls.length = 0;
+    await user.click(button(/^\s*test all$/i));
+    await flush();
+    expect(argsOf(calls, "server_test").map((a) => a?.id)).toEqual(["pve", "esxi"]);
+    calls.length = 0;
+    const row = screen.getByText("office-esxi").closest(".border-t") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: /^\s*test$/i }));
+    await flush();
+    expect(argsOf(calls, "server_test")).toEqual([{ id: "esxi" }]);
+  });
+
+  it("confirms a node's never-confirmed SSH host keys at a Test the player asks for, never at the page's own", async () => {
+    const fingerprint = "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ";
+    const keys = { pattern: "10.0.0.5", keys: [{ algorithm: "ssh-ed25519", fingerprint }], state: "new" };
+    const calls = installTauri({ server_node_host_keys: (a) => (a?.id === "pve" ? keys : null) });
+    const user = userEvent.setup();
+    render(<NodeKeysPrompt />);
+    await renderScreen();
+    expect(commands(calls)).not.toContain("server_node_host_keys");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const row = screen.getByText("homelab-pve").closest(".border-t") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: /^\s*test$/i }));
+    await flush();
+    const dialog = screen.getByRole("dialog", { name: "Confirm this server's identity" });
+    expect(dialog.textContent).toContain(fingerprint);
+    await user.click(screen.getByRole("button", { name: "They match: trust this server" }));
+    await flush();
+    expect(argsOf(calls, "server_trust_node_host_keys")).toEqual([{ id: "pve", fingerprints: [fingerprint] }]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("asks nothing at Test when the node offers other keys than the confirmed ones", async () => {
+    const calls = installTauri({
+      server_node_host_keys: rejects({
+        code: "sshHostKeyRefused",
+        args: { host: "10.0.0.5" },
+        message: "The SSH host key of 10.0.0.5 isn't the one confirmed for it.",
+      }),
+    });
+    const user = userEvent.setup();
+    render(<NodeKeysPrompt />);
+    await renderScreen();
+    const row = screen.getByText("homelab-pve").closest(".border-t") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: /^\s*test$/i }));
+    await flush();
+    expect(argsOf(calls, "server_node_host_keys")).toEqual([{ id: "pve" }]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+    expect(screen.getAllByText("Online")).toHaveLength(2);
+  });
+
+  it("shows a host that is testing, then its failure, without a phantom running count", async () => {
+    let resolve: (t: ServerTest) => void = () => {};
+    installTauri({
+      server_test: (a) => (a?.id === "pve" ? new Promise<ServerTest>((r) => (resolve = r)) : fail("Connection refused (os error 61)")),
+      server_running_labs: () => ({ pve: 1, esxi: 3 }),
+    });
+    await renderScreen();
+    expect(screen.getByText("Testing…")).toBeTruthy();
+    expect(document.body.textContent).toContain("Checking… · 2 hosts");
+    expect(screen.getByText("Unreachable")).toBeTruthy();
+    expect(screen.getByText("Connection refused (os error 61)")).toBeTruthy();
+    // The unreachable ESXi host doesn't claim its 3 stale running labs.
+    expect(screen.queryByText("3 labs running")).toBeNull();
+    resolve(ok);
+    await flush();
+    expect(document.body.textContent).toContain("1 of 2 online");
+    expect(screen.getByText("1 lab running")).toBeTruthy();
+  });
+
+  it("asks for a password instead of calling a host without one down", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
+    installTauri({ server_test: rejects({ code: "noPasswordStored", message: "no password stored for this host, edit it and enter one" }) });
+    await renderScreen();
+    expect(screen.getAllByText("Needs password")).toHaveLength(2);
+    // A missing password isn't a network problem: no Local Network hint.
+    expect(screen.queryByText(/Open Privacy & Security/)).toBeNull();
+    expect(document.body.textContent).toContain("0 of 2 online");
+  });
+
+  it("points macOS players at the Local Network permission for a LAN host that fails", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
+    const calls = installTauri({ server_test: () => fail("timed out") });
+    const user = userEvent.setup();
+    await renderScreen();
+    const links = screen.getAllByRole("button", { name: /Open Privacy & Security/ });
+    expect(links).toHaveLength(2);
+    await user.click(links[0]);
+    await flush();
+    expect(argsOf(calls, "plugin:opener|open_url")[0]?.url).toMatch(/Privacy_LocalNetwork/);
+  });
+
+  it("does not show the Local Network hint off macOS or for a public host", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    installTauri({ server_test: () => fail("timed out") });
+    await renderScreen();
+    expect(screen.queryByText(/Open Privacy & Security/)).toBeNull();
+  });
+
+  it("toggles the default host: unsets the current default, sets another", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    await renderScreen();
+    const defaults = screen.getAllByRole("button", { name: /default/ });
+    expect(defaults[0].getAttribute("title")).toMatch(/Click to unset/);
+    expect(defaults[1].getAttribute("title")).toMatch(/Make this the default/);
+    // The default host's chip is pressed and says Default; the other offers to become it.
+    expect(defaults.map((d) => [d.textContent.trim(), d.getAttribute("aria-pressed")])).toEqual([
+      ["default", "true"],
+      ["Set as default", "false"],
+    ]);
+    const lists = commands(calls).filter((c) => c === "server_list").length;
+    await user.click(defaults[0]);
+    await flush();
+    await user.click(defaults[1]);
+    await flush();
+    expect(argsOf(calls, "server_set_default")).toEqual([{ id: null }, { id: "esxi" }]);
+    expect(commands(calls).filter((c) => c === "server_list").length).toBe(lists + 2);
+  });
+
+  it("shows why setting the default failed", async () => {
+    installTauri({
+      server_set_default: failsWith("servers.json is read-only"),
+    });
+    const user = userEvent.setup();
+    await renderScreen();
+    await user.click(screen.getAllByRole("button", { name: /default/ })[1]);
+    await flush();
+    expect(screen.getByText("servers.json is read-only")).toBeTruthy();
+  });
+
+  it("removes a host only once the system dialog confirms it, never through the webview's confirm()", async () => {
+    let yes = false;
+    const calls = installTauri({ "plugin:dialog|message": (a) => answersDialog(yes)(a) });
+    const confirm = vi.spyOn(window, "confirm");
+    const user = userEvent.setup();
+    await renderScreen();
+    await menu(user, "office-esxi", /remove/i);
+    await flush();
+    expect(dialogsAsked(calls)).toEqual([
+      {
+        title: "Remove office-esxi?",
+        message: "Cyber CTF forgets this server and deletes its password from the keychain. Nothing changes on the server itself.",
+      },
+    ]);
+    expect(argsOf(calls, "plugin:dialog|message")[0]).toMatchObject({ kind: "warning", buttons: { OkCancelCustom: ["Remove server", "Cancel"] } });
+    expect(commands(calls)).not.toContain("server_remove");
+    yes = true;
+    await menu(user, "office-esxi", /remove/i);
+    await flush();
+    expect(argsOf(calls, "server_remove")).toEqual([{ id: "esxi" }]);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("shows why a removal failed", async () => {
+    installTauri({
+      server_remove: failsWith("keychain locked"),
+    });
+    const user = userEvent.setup();
+    await renderScreen();
+    await menu(user, "homelab-pve", /remove/i);
+    await flush();
+    expect(screen.getByText("keychain locked")).toBeTruthy();
+  });
+
+  it("opens the setup window to edit a host or add one, and shows when it can't", async () => {
+    let failOpen = false;
+    const calls = installTauri({
+      server_open_setup: (a) => (failOpen ? failsWith("window already open")(a) : null),
+    });
+    const user = userEvent.setup();
+    await renderScreen();
+    await menu(user, "homelab-pve", /edit/i);
+    await user.click(button(/add server/i));
+    await flush();
+    expect(argsOf(calls, "server_open_setup")).toEqual([
+      { id: "pve", kind: "server" },
+      { id: null, kind: "server" },
+    ]);
+    failOpen = true;
+    await user.click(button(/add server/i));
+    await flush();
+    expect(screen.getByText("window already open")).toBeTruthy();
+  });
+
+  it("closes the overflow menu on a second click, the backdrop, or a scroll", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    await renderScreen();
+    const row = screen.getByText("homelab-pve").closest(".border-t") as HTMLElement;
+    const more = within(row).getByRole("button", { name: /more actions/i });
+    await user.click(more);
+    expect(screen.getByText("VM test")).toBeTruthy();
+    await user.click(more);
+    expect(screen.queryByText("VM test")).toBeNull();
+    await user.click(more);
+    fireEvent.scroll(window);
+    expect(screen.queryByText("VM test")).toBeNull();
+    await user.click(more);
+    fireEvent.click(menuBackdrop());
+    expect(screen.queryByText("VM test")).toBeNull();
+  });
+
+  it("runs a VM test from the menu, remembers its result and tests the host again", async () => {
+    const calls = installTauri({
+      server_selftest: (a) => {
+        stream(a, ...SELFTEST_PLAN.proxmox.map((p) => ({ step: p.step, state: "ok", detail: p.step === "vm" ? "vm 9001" : null })));
+        return null;
+      },
+    });
+    const user = userEvent.setup();
+    await renderScreen();
+    calls.length = 0;
+    await menu(user, "homelab-pve", /^\s*vm test$/i);
+    await flush(30);
+    expect(argsOf(calls, "server_selftest")[0]).toMatchObject({ id: "pve" });
+    expect(screen.getAllByText("VM test passed").length).toBeGreaterThan(0);
+    expect(screen.getByText("vm 9001")).toBeTruthy();
+    expect(loadVmTests().pve?.result).toBe("ok");
+    expect(argsOf(calls, "server_test")).toEqual([{ id: "pve" }]);
+    expect(commands(calls)).toContain("server_running_labs");
+    // The menu now offers to hide it.
+    await menu(user, "homelab-pve", /hide vm test/i);
+    expect(screen.queryByText("Remove everything the test created")).toBeNull();
+  });
+
+  describe("a VM test on a server whose node's SSH host keys were never confirmed", () => {
+    const fingerprint = "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ";
+    const NODE_KEYS = { pattern: "10.0.0.5", keys: [{ algorithm: "ssh-ed25519", fingerprint }], state: "new" };
+    const passes = (a: Record<string, unknown> | undefined) => {
+      stream(a, ...SELFTEST_PLAN.proxmox.map((p) => ({ step: p.step, state: "ok", detail: null })));
+      return null;
+    };
+
+    /** The page with the node keys' question mounted, the pve row's VM test asked for, its node's
+     *  keys answered by `keys`. */
+    async function vmTestAsked(keys: Handler) {
+      const calls = installTauri({ server_node_host_keys: keys, server_selftest: passes });
+      const user = userEvent.setup();
+      render(
+        <>
+          <NodeKeysPrompt />
+          <Toaster />
+        </>,
+      );
+      await renderScreen();
+      calls.length = 0;
+      await menu(user, "homelab-pve", /^\s*vm test$/i);
+      await flush(30);
+      return { calls, user };
+    }
+
+    it("runs at once when the node's keys are the confirmed ones", async () => {
+      const { calls } = await vmTestAsked(() => null);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(argsOf(calls, "server_node_host_keys")).toEqual([{ id: "pve" }]);
+      expect(argsOf(calls, "server_selftest")[0]).toMatchObject({ id: "pve" });
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+    });
+
+    it("asks to confirm them first, as the setup does, then runs", async () => {
+      const { calls, user } = await vmTestAsked(() => NODE_KEYS);
+      const dialog = screen.getByRole("dialog", { name: "Confirm this server's identity" });
+      expect(dialog.textContent).toContain(fingerprint);
+      expect(commands(calls)).not.toContain("server_selftest");
+      await user.click(screen.getByRole("button", { name: "They match: trust this server" }));
+      await flush(30);
+      expect(argsOf(calls, "server_trust_node_host_keys")).toEqual([{ id: "pve", fingerprints: [fingerprint] }]);
+      expect(commands(calls).indexOf("server_trust_node_host_keys")).toBeLessThan(commands(calls).indexOf("server_selftest"));
+      expect(screen.getAllByText("VM test passed").length).toBeGreaterThan(0);
+    });
+
+    it("runs nothing and fails nothing when the player declines", async () => {
+      const { calls, user } = await vmTestAsked(() => NODE_KEYS);
+      const remembered = loadVmTests().pve;
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await flush(30);
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+      expect(commands(calls)).not.toContain("server_selftest");
+      expect(loadVmTests().pve).toEqual(remembered);
+      expect(screen.queryByText("VM test failed")).toBeNull();
+    });
+
+    it("runs nothing on a node offering other keys than the confirmed ones, and says so in the host key words", async () => {
+      const { calls } = await vmTestAsked(
+        rejects({ code: "sshHostKeyRefused", args: { host: "10.0.0.5" }, message: "The SSH host key of 10.0.0.5 isn't the one confirmed for it." }),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(commands(calls)).not.toContain("server_selftest");
+      expect(commands(calls)).not.toContain("server_trust_node_host_keys");
+      const said = screen
+        .queryAllByRole("alert")
+        .map((a) => a.textContent)
+        .join("\n");
+      expect(said).toContain("This server's identity changed");
+      expect(said).toContain("The SSH host key of 10.0.0.5 isn't the one confirmed for it");
+    });
+  });
+
+  it("shows the remembered result of an earlier VM test", async () => {
+    seedSettings({ serverTests: { esxi: { result: "fail", at: Date.now() - 120_000, why: null } } });
+    installTauri();
+    await renderScreen();
+    expect(screen.getByText("VM test failed")).toBeTruthy();
+  });
+
+  it("reloads and re-tests every host when the setup window saves one", async () => {
+    const calls = installTauri();
+    await renderScreen();
+    calls.length = 0;
+    await act(async () => {
+      await emit("server:changed");
+    });
+    await flush(30);
+    expect(commands(calls)).toContain("server_list");
+    expect(commands(calls)).toContain("server_running_labs");
+    expect(argsOf(calls, "server_test").map((a) => a?.id)).toEqual(["pve", "esxi"]);
+  });
+
+  it("shows the list error", async () => {
+    installTauri({
+      server_list: failsWith("servers.json is corrupt"),
+    });
+    await renderScreen();
+    expect(screen.getByText("servers.json is corrupt")).toBeTruthy();
+  });
+
+  it("offers the first server, and a local hypervisor when this machine can't run VMs", async () => {
+    const calls = installTauri({ server_list: () => ({ default: null, hosts: [] }) });
+    const user = userEvent.setup();
+    const onNavigate = await renderScreen(vi.fn(), freshReport());
+    expect(document.body.textContent).not.toContain("Test all");
+    expect(screen.queryByText("Hosts")).toBeNull();
+    // The empty state carries the one Add server: the header has none of its own then.
+    const empty = screen.getByRole("region", { name: "No server connected" });
+    expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No server connected");
+    // The servers it takes, as avatars before Add server: Proxmox's logo, ESXi's initials "ES" (there is
+    // no VMware mark), named for screen readers and in tooltips, never as text.
+    const avatars = within(empty).getAllByRole("img");
+    expect(avatars.map((a) => a.getAttribute("aria-label"))).toEqual(SERVER_PROVIDERS.map((id) => PROVIDER_NAMES[id]));
+    expect(avatars.map((a) => a.getAttribute("aria-label"))).toEqual(["Proxmox", "VMware ESXi"]);
+    expect(avatars.map((a) => a.textContent)).toEqual(["", "ES"]);
+    expect(must(avatars[0].querySelector("img"), "Proxmox's logo").getAttribute("src")).toBe("/brands/proxmox-icon.svg");
+    expect(screen.getAllByRole("button", { name: /add server/i })).toHaveLength(1);
+    await user.click(within(empty).getByRole("button", { name: /add server/i }));
+    await flush();
+    expect(argsOf(calls, "server_open_setup")).toEqual([{ id: null, kind: "server" }]);
+    await user.click(button(/set up this machine/i));
+    expect(onNavigate).toHaveBeenCalledWith("machine");
+    expect(commands(calls)).not.toContain("server_test");
+    // The shell's report, not a check of its own: each one starts a process per tool.
+    expect(commands(calls)).not.toContain("system_check");
+  });
+
+  it("hides the capacity panel when no host reports its capacity", async () => {
+    installTauri({ server_capacity: () => null });
+    await renderScreen();
+    expect(screen.queryByText(/Capacity on/)).toBeNull();
+    expect(document.body.textContent).not.toContain("vCPU");
+  });
+
+  it("keeps the page up when the capacity read or running count fails", async () => {
+    installTauri({
+      server_capacity: failsWith("pveproxy down"),
+      server_running_labs: failsWith("no state dir"),
+    });
+    await renderScreen();
+    expect(screen.getByText("homelab-pve")).toBeTruthy();
+    expect(screen.queryByText(/labs? running/)).toBeNull();
+  });
+});
+
+describe("HostRow", () => {
+  const noop = () => {};
+  const actions = { onTest: noop, onVmTest: noop, onVmTestDone: noop, onEdit: noop, onRemove: noop, onDefault: noop };
+  const view: HostView = { isDefault: false, running: 0, capacity: undefined, test: undefined, lastVm: undefined, vmTesting: false };
+  const row = (host: ServerHost, patch: Partial<HostView>) => render(<HostRow host={host} view={{ ...view, ...patch }} now={Date.now()} actions={actions} />);
+
+  it("reads Not tested before the first test, with the host's facts", () => {
+    row({ ...esxi, node: null }, { capacity: { cores: 8, memTotal: 16 * 2 ** 30, memFree: 4 * 2 ** 30 } });
+    expect(screen.getByText("Not tested")).toBeTruthy();
+    const facts = document.body.textContent;
+    expect(facts).toContain("VMware ESXi");
+    expect(facts).toContain("root@10.0.4.12:443");
+    expect(facts).toContain("8 vCPU");
+    expect(facts).not.toContain("node");
+  });
+
+  it("disables Test while a test runs", () => {
+    row(pve, { test: "testing" });
+    expect(button(/^\s*test$/i).hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("ServerSelfTest", () => {
+  it("plans the ESXi steps it runs and reports a failed step, the cleanup still run", async () => {
+    installTauri({
+      server_selftest: (a) => {
+        stream(
+          a,
+          { step: "connect", state: "ok" },
+          { step: "prepare", state: "ok" },
+          { step: "image", state: "ok", detail: "Box bento/debian-12 v202510.26.0 (amd64)" },
+          { step: "vm", state: "ok" },
+          { step: "address", state: "fail", detail: "The test VM got no address on port group VM Network within 4 minutes" },
+          { step: "cleanup", state: "ok" },
+        );
+        return null;
+      },
+    });
+    const onDone = vi.fn();
+    render(<ServerSelfTest id="esxi" provider="vmware_esxi" onDone={onDone} />);
+    await flush(30);
+    expect(screen.getByText("Upload the test VM to the ESXi datastore")).toBeTruthy();
+    expect(screen.getByText("Box bento/debian-12 v202510.26.0 (amd64)")).toBeTruthy();
+    expect(screen.getByText("The test VM gets an address on the host's network")).toBeTruthy();
+    expect(screen.getByText("Run a command in the VM")).toBeTruthy();
+    expect(screen.queryByText("Start the test VMs")).toBeNull();
+    expect(screen.getByText("VM test failed")).toBeTruthy();
+    expect(screen.getByText("The test VM got no address on port group VM Network within 4 minutes")).toBeTruthy();
+    expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("times each step as it runs, and shows how far the ESXi upload is and how large it is", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    let args: Record<string, unknown> | undefined;
+    installTauri({
+      server_selftest: (a) => {
+        args = a;
+        return new Promise<null>(() => {});
+      },
+    });
+    render(<ServerSelfTest id="esxi-timed" provider="vmware_esxi" onDone={vi.fn()} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const row = (label: string) => screen.getByText(label).parentElement?.parentElement as HTMLElement;
+    act(() => {
+      stream(args, { step: "connect", state: "running" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(4000);
+      stream(args, { step: "connect", state: "ok", detail: "ok" }, { step: "prepare", state: "ok" }, { step: "image", state: "running" });
+    });
+    // Up front, before the run names the box: the upload takes minutes.
+    expect(within(row("Upload the test VM to the ESXi datastore")).getByText(/Each test uploads the VM's image to the host/)).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(65_600);
+      stream(args, { step: "image", state: "running", detail: "Disk progress: 8%", size: 2_400_000_000 });
+    });
+    const image = row("Upload the test VM to the ESXi datastore");
+    expect(within(image).getByText("Uploading: 8%")).toBeTruthy();
+    expect(within(image).getByText(/about 2.4 GB, to the host/)).toBeTruthy();
+    // The running step's time ticks with the clock; a step done keeps the time it took.
+    expect(image.textContent).toContain("1:05");
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(image.textContent).toContain("1:35");
+    expect(row("Reach the host").textContent).toContain("4s");
+    expect(row("Start the test VM").textContent).not.toMatch(/\d+s|\d:\d\d/);
+    act(() => {
+      stream(args, { step: "image", state: "ok", detail: "Box bento/debian-12 v202510.26.0 (amd64)" });
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(image.textContent).toContain("1:35");
+    expect(within(image).queryByText(/Each test uploads/)).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("never reports a step not run as passed: the test stops before it, never green", async () => {
+    // What an app whose core predates the real Proxmox test answered: the host reached, then done.
+    installTauri({
+      server_selftest: (a) => {
+        stream(a, { step: "connect", label: "Reach the host", state: "ok", detail: "homelab" });
+        return null;
+      },
+    });
+    const onDone = vi.fn();
+    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush(30);
+    expect(screen.queryByText("VM test passed")).toBeNull();
+    expect(screen.getByText("VM test incomplete: stopped before “Prepare the test lab”")).toBeTruthy();
+    expect(screen.getByText(/That step never ran, so the test can't pass/)).toBeTruthy();
+    expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("lists the steps the core's VM test reports, in its order", () => {
+    // Regression: the plan was a hand copy of the core's steps, free to drift from them.
+    expect(SELFTEST_PLAN.proxmox.map((p) => p.step)).toEqual(SELFTEST_STEPS.proxmox);
+    expect(SELFTEST_PLAN.esxi.map((p) => p.step)).toEqual(SELFTEST_STEPS.vmware_esxi);
+  });
+
+  it("passes only when every listed step passed", () => {
+    const plan = SELFTEST_PLAN.proxmox;
+    const ok = Object.fromEntries(plan.map((p) => [p.step, { state: "ok" }]));
+    expect(selfTestOutcome(plan, ok, false, null)).toEqual({ kind: "passed" });
+    expect(selfTestOutcome(plan, ok, true, null)).toEqual({ kind: "running" });
+    // One listed step missing, skipped or still running: incomplete, before that step.
+    for (const state of [undefined, "skip", "running"]) {
+      const states = { ...ok, uplink: state ? { state } : undefined };
+      expect(selfTestOutcome(plan, states, false, null)).toMatchObject({ kind: "incomplete", before: { step: "uplink" }, why: null });
+    }
+    expect(selfTestOutcome(plan, {}, false, "terraform not found")).toMatchObject({
+      kind: "incomplete",
+      before: { step: "connect" },
+      why: "terraform not found",
+    });
+    // A failure anywhere fails it, a step the plan doesn't list included; an error after every step too.
+    expect(selfTestOutcome(plan, { ...ok, cleanup: { state: "fail" } }, false, null)).toEqual({ kind: "failed" });
+    expect(selfTestOutcome(plan, { ...ok, node: { state: "fail" } }, false, null)).toEqual({ kind: "failed" });
+    expect(selfTestOutcome(plan, ok, false, "kept")).toEqual({ kind: "failed" });
+  });
+
+  it("shows the error when the test can't run", async () => {
+    installTauri({
+      server_selftest: failsWith("terraform not found"),
+    });
+    const onDone = vi.fn();
+    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush(30);
+    expect(screen.getByText("terraform not found")).toBeTruthy();
+    expect(screen.getByText("VM test incomplete: stopped before “Reach the host”")).toBeTruthy();
+    expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("a panel reopened while the test runs attaches to it instead of starting a second VM", async () => {
+    let finish: () => void = () => {};
+    let args: Record<string, unknown> | undefined;
+    const selftest = vi.fn((a: Record<string, unknown> | undefined) => {
+      args = a;
+      return new Promise<null>(
+        (r) =>
+          (finish = () => {
+            r(null);
+          }),
+      );
+    });
+    installTauri({ server_selftest: selftest });
+    const onDone = vi.fn();
+    const first = render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush();
+    act(() => {
+      stream(args, { step: "connect", label: "Connect", state: "ok", detail: null });
+    });
+    first.unmount();
+    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush();
+    expect(selftest).toHaveBeenCalledTimes(1);
+    // The step that passed before this view opened is shown again.
+    expect(screen.getByText("Running a real VM on the host…")).toBeTruthy();
+    act(() => {
+      stream(args, ...SELFTEST_PLAN.proxmox.slice(1).map((p) => ({ step: p.step, label: p.step, state: "ok", detail: null })));
+    });
+    finish();
+    await flush();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith("ok");
+  });
+
+  it("is running until the host answers, and doesn't report after unmounting", async () => {
+    let finish: () => void = () => {};
+    installTauri({
+      server_selftest: () =>
+        new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        ),
+    });
+    const onDone = vi.fn();
+    const { unmount } = render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush();
+    expect(screen.getByText("Running a real VM on the host…")).toBeTruthy();
+    unmount();
+    finish();
+    await flush();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+});

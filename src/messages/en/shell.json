@@ -1,0 +1,126 @@
+{
+  "tabs": {
+    "home": "Overview",
+    "labs": "Labs",
+    "machine": "Machine",
+    "server": "Servers",
+    "cloud": "Cloud",
+    "events": "Events",
+    "settings": "Settings"
+  },
+  "sidebar": {
+    "find": "Find…",
+    "soon": "Soon",
+    "running": "Running",
+    "labRunning": "running"
+  },
+  "header": {
+    "thisMachine": "This machine",
+    "dockerNotRunning": "Docker not running",
+    "checkFailed": "machine check failed",
+    "checking": "checking…"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "palette": {
+    "label": "Command menu",
+    "placeholder": "Search labs, screens, actions…",
+    "noResults": "No results",
+    "findLab": "Find a lab",
+    "findLabKeywords": "labs search ctf",
+    "openSettings": "Open Settings",
+    "openSettingsKeywords": "settings preferences appearance theme",
+    "goTo": "Go to {screen}",
+    "labKeywords": "lab {category}",
+    "groups": {
+      "actions": "Actions",
+      "screens": "Screens",
+      "labs": "Labs"
+    }
+  },
+  "screen": {
+    "checkFailed": "Couldn’t check this machine",
+    "tryAgain": "Try again",
+    "checking": "Checking this machine…",
+    "loading": "Loading…",
+    "comingSoon": "{title} is on the way",
+    "eventsDescription": "Join live CTF events where labs are hosted by Cyber CTF: nothing to run on your machine, each participant gets their own lab for the event's duration."
+  },
+  "failures": {
+    "openSettings": "Couldn't open Settings",
+    "restart": "Couldn't restart Cyber CTF"
+  },
+  "update": {
+    "installed": "Update installed. Restarting Cyber CTF…",
+    "failed": "Update failed. Try again later.",
+    "available": "Version <version>{version}</version> is available.",
+    "restartNow": "Restart now",
+    "updating": "Updating…",
+    "update": "Update",
+    "waitForLabs": "Updating restarts Cyber CTF. Wait until your labs finish starting, stopping or pausing.",
+    "busyUnknown": "Couldn't tell whether a lab is starting or stopping, so the update waits. Try again in a moment."
+  },
+  "error": {
+    "title": "Something went wrong",
+    "description": "Cyber CTF hit an unexpected error. Your labs keep running. Try again, and if it happens again, copy the details and send them to us.",
+    "stepDescription": "This step hit an unexpected error. Try again, or go back a step. If it keeps happening, copy the details and send them to us.",
+    "unknown": "Unknown error",
+    "tryAgain": "Try again",
+    "reload": "Reload",
+    "copied": "Copied",
+    "copyDetails": "Copy details"
+  },
+  "terminal": {
+    "connecting": "connecting…",
+    "open": "attack box",
+    "ended": "session ended",
+    "failed": "couldn't connect",
+    "noLab": "This window wasn’t opened for a lab: open the shell from the lab’s page.",
+    "systemTerminal": "System terminal",
+    "systemTerminalHint": "Open this shell in your own terminal app",
+    "systemTerminalFailed": "Couldn't open the system terminal",
+    "shellEnded": "The shell ended.",
+    "shellEndedWithCode": "The shell ended (exit {code}).",
+    "reconnect": "Reconnect",
+    "close": "Close"
+  },
+  "vmScreen": {
+    "state": {
+      "connecting": "connecting…",
+      "showing": "screen",
+      "rdp": "remote desktop",
+      "unavailable": "no screen",
+      "failed": "connection lost",
+      "ended": "closed"
+    },
+    "connecting": "Connecting to the machine's screen…",
+    "noViewer": "The window couldn't start its screen viewer.",
+    "securityFailure": "The machine's screen refused the password it was given.",
+    "lost": "The connection to the machine's screen was lost.",
+    "noAnswer": "The VM's screen didn't answer at {address}.",
+    "noAnswerAnywhere": "The VM's screen didn't answer.",
+    "unavailable": "This machine has no screen to show",
+    "retry": "Try again",
+    "passwordCopied": "Password copied: paste it when the Remote Desktop asks.",
+    "rdpTitle": "This machine's screen opens in Remote Desktop",
+    "rdpHint": "It opens in {client}. Keep this window open while you use it: closing it ends the connection.",
+    "noClient": "No Remote Desktop app is installed. On a Mac, install Windows App from the App Store; on Linux, FreeRDP (xfreerdp) or Remmina. Then try again.",
+    "tunnelled": "It goes through an encrypted SSH tunnel from this computer, which closes with this window.",
+    "tunnelClosed": "The console's tunnel closed: {reason}",
+    "openFailed": "Couldn't open the Remote Desktop app",
+    "openRdp": "Open in {client}",
+    "copyPassword": "Copy password",
+    "closed": "The screen was closed.",
+    "signIn": "Sign-in",
+    "signInTitle": "Sign in to the attack box",
+    "signInHint": "Where its screen asks for a password (a lock, a login), sign in as {user} with this password.",
+    "user": "User",
+    "password": "Password",
+    "shareClipboard": "Share this computer's clipboard with the machine",
+    "shareClipboardHint": "Off by default: the machine could read what you copy here (passwords, tokens) and change it. For this window only; drives, printers and other devices are never shared."
+  }
+}

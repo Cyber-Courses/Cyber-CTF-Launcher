@@ -1,0 +1,439 @@
+{
+  "errors": {
+    "openSetup": "Rechner-Einrichtung konnte nicht geöffnet werden",
+    "copy": "Kopieren in die Zwischenablage fehlgeschlagen",
+    "switchEngine": "Docker Engine konnte nicht gewechselt werden",
+    "stopWorkload": "Konnte nicht gestoppt werden"
+  },
+  "screen": {
+    "title": "Rechner",
+    "lead": "Was dieser Computer ausführen kann und was gerade darauf läuft.",
+    "needsSetup": {
+      "one": "{count} Lab-Typ muss eingerichtet werden",
+      "other": "{count} Lab-Typen müssen eingerichtet werden"
+    },
+    "readyForLabs": "Bereit für Labs",
+    "uptime": "läuft seit {uptime}",
+    "addProvider": "Anbieter hinzufügen",
+    "cpu": "CPU",
+    "cores": {
+      "one": "{count} Kern",
+      "other": "{count} Kerne"
+    },
+    "memory": "Arbeitsspeicher",
+    "disk": "Festplatte",
+    "lowDisk": {
+      "title": "Wenig Speicherplatz",
+      "meta": "{free} frei",
+      "body": "Nur {free} frei. Allein die Attack box braucht etwa 3,4 GB, und jedes Lab-Image kommt dazu. Schaffe Platz, bevor du ein Lab startest."
+    },
+    "providers": "Anbieter",
+    "providersMeta": "führt Labs auf diesem Rechner aus",
+    "test": "Testen",
+    "hideTest": "Test ausblenden",
+    "fix": "Beheben",
+    "useServer": "Server nutzen",
+    "useDefault": "Als Standard verwenden",
+    "defaultMark": "Standard",
+    "defaultHint": {
+      "docker": "Container-Labs laufen auf dieser Engine.",
+      "vm": "VM-Labs laufen auf diesem Hypervisor."
+    },
+    "notTestedYet": "noch nicht getestet",
+    "tested": "getestet {ago}",
+    "lastTestFailed": "letzter Test fehlgeschlagen {ago}",
+    "freeHintDocker": "Container-Labs brauchen etwa {want} freien Arbeitsspeicher; aktuell {free} frei.",
+    "freeHintVm": "VM-Labs brauchen etwa {want} freien Arbeitsspeicher; aktuell {free} frei.",
+    "status": {
+      "ready": "Bereit",
+      "testFailed": "Test fehlgeschlagen",
+      "noPermission": "Keine Berechtigung",
+      "stopped": "Gestoppt",
+      "needsSetup": "Einrichtung nötig",
+      "cantRunHere": "Kann hier nicht laufen"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "Die Engine läuft und dein Konto darf sie nutzen: Container-Labs können darauf laufen.",
+        "vm": "Installiert, mit Vagrant und seinem Plugin: VM-Labs können darauf laufen."
+      },
+      "testFailed": "Wirkt bereit, aber der letzte Selbsttest ist fehlgeschlagen: Testen zeigt, warum.",
+      "noPermission": "Die Engine läuft, aber dein Konto darf sie noch nicht nutzen.",
+      "stopped": "Installiert, aber die Engine läuft nicht: Starte sie, um Labs darauf auszuführen.",
+      "needsSetup": "Etwas, das es braucht, fehlt noch: Beheben richtet es ein.",
+      "cantRunHere": "Installiert, aber dieser Rechner kann es nicht ausführen: Die Zeile unter dem Namen sagt, warum."
+    },
+    "docker": {
+      "denied": "Docker läuft, aber dieser Benutzer darf es nicht nutzen: Füge dich der Gruppe docker hinzu, dann melde dich ab und wieder an.",
+      "stopped": "Eine Container-Engine ist installiert, läuft aber nicht. Starte sie, um Labs auszuführen."
+    },
+    "vm": {
+      "automatic": " (automatisch, in den Einstellungen änderbar)",
+      "vagrantMissing": "Vagrant oder das Vagrant-Plugin des Hypervisors fehlt."
+    },
+    "details": "Details",
+    "detail": {
+      "containerEngine": "Container-Engine",
+      "installed": "installiert",
+      "notInstalled": "nicht installiert",
+      "running": "läuft",
+      "notRunning": "läuft nicht",
+      "builtIn": "integriert",
+      "installedWithPlugin": "installiert · {plugin}",
+      "pluginMissing": "Plugin {plugin} fehlt",
+      "utilityMissing": "installiert · {plugin} · Vagrant VMware Utility läuft nicht"
+    }
+  },
+  "empty": {
+    "title": "Kein Anbieter installiert",
+    "description": "Installiere eine Container-Engine oder einen Hypervisor, um Labs auf diesem Rechner auszuführen."
+  },
+  "running": {
+    "title": "Läuft gerade",
+    "inUse": "{size} belegt",
+    "empty": "Nichts läuft.",
+    "readFailed": "Es ließ sich nicht lesen, was auf diesem Rechner läuft ({why}).",
+    "setupTest": "Einrichtungstest",
+    "containers": {
+      "one": "{count} Container",
+      "other": "{count} Container"
+    },
+    "vms": {
+      "one": "{count} VM",
+      "other": "{count} VMs"
+    },
+    "stopping": "Wird gestoppt…",
+    "stop": "Stoppen"
+  },
+  "downloads": {
+    "title": "Downloads",
+    "cleanUp": "Aufräumen",
+    "total": "{size} an Lab-Downloads",
+    "empty": "Noch keine Lab-Downloads",
+    "containerImages": {
+      "one": "{count} Container-Image",
+      "other": "{count} Container-Images"
+    },
+    "vmImages": {
+      "one": "{count} VM-Image",
+      "other": "{count} VM-Images"
+    },
+    "removing": "Wird entfernt…",
+    "remove": "Entfernen",
+    "freed": "{size} freigegeben.",
+    "nothingFreed": "Nichts konnte entfernt werden (alles in Benutzung).",
+    "cleanFailed": "Die Downloads konnten nicht entfernt werden",
+    "readFailed": "Was Cyber CTF heruntergeladen hat, konnte nicht gelesen werden: {why}",
+    "confirmTitle": "{size} an Lab-Downloads entfernen?",
+    "confirmBody": "Labs laden beim nächsten Start erneut herunter, was sie brauchen. Alles, was in Benutzung ist, bleibt erhalten."
+  },
+  "selfTest": {
+    "containerTitle": "Test für Container-Labs",
+    "vmTitle": "Test für VM-Labs",
+    "machineDockerDescription": "Zwei Container in einem Lab-Netzwerk, danach entfernt.",
+    "machineVmDescription": "Startet eine echte Test-VM, prüft sie und löscht sie dann.",
+    "testing": "Wird getestet",
+    "passed": "Bestanden",
+    "failed": "Fehlgeschlagen",
+    "runAgain": "Erneut ausführen",
+    "retry": "Wiederholen",
+    "run": "Test starten",
+    "skipped": "übersprungen",
+    "docker": {
+      "engine": "Container-Engine antwortet",
+      "pull": "Test-Image herunterladen",
+      "start": "Test-Lab mit zwei Containern starten",
+      "network": "Container erreichen sich gegenseitig",
+      "port": "Lab-Port von diesem Rechner erreichbar",
+      "cleanup": "Aufräumen"
+    },
+    "vm": {
+      "vagrant": "Vagrant ist installiert",
+      "provider": "Ein Hypervisor ist bereit",
+      "hypervisor": "Hypervisor antwortet",
+      "box": "Kleines Test-VM-Image holen",
+      "boot": "Test-VM booten",
+      "exec": "Befehl in der VM ausführen",
+      "network": "VM im Lab-Netzwerk erreichbar",
+      "cleanup": "Test-VM löschen"
+    }
+  },
+  "setup": {
+    "checking": "Dieser Rechner wird geprüft…",
+    "title": "Diesen <em>Rechner</em> einrichten",
+    "lead": "Mach {os} Schritt für Schritt bereit für Labs.",
+    "stepOf": "Schritt {current} von {total}",
+    "stepFailed": "Dieser Schritt konnte nicht geladen werden",
+    "pathTitle": "Was möchtest du ausführen?",
+    "pathDescription": "Jeder Lab-Typ hat seinen eigenen kurzen Pfad. Wähle einen: Er beginnt dort, wo dieser Rechner steht, und du kannst jederzeit für die anderen zurückkommen.",
+    "back": "Zurück",
+    "done": "Fertig",
+    "readyTitle": "Alles eingerichtet",
+    "readyDescription": "Du kannst diese Anleitung jederzeit über die Seite Rechner erneut ausführen.",
+    "paths": {
+      "docker": "Container-Labs",
+      "vm": "VM-Labs",
+      "dockerNote": "Container auf diesem Rechner, mit der Angriffsbox daneben.",
+      "vmNote": "Vollständige virtuelle Maschinen auf einem Hypervisor: Domänen, Windows-Hosts, Multi-Host-Netzwerke.",
+      "ready": "bereit",
+      "review": "Ansehen",
+      "progress": "{done} von {total} erledigt",
+      "setUp": "Einrichten"
+    }
+  },
+  "add": {
+    "title": "<em>Anbieter</em> hinzufügen",
+    "lead": "Was {os} ausführen kann, aber noch nicht hat. Installiere einen, teste ihn und mach ihn dann zu dem, den Labs nutzen.",
+    "engines": "Container-Engines",
+    "enginesMeta": "für Container-Labs",
+    "hypervisors": "Hypervisoren",
+    "hypervisorsMeta": "für VM-Labs",
+    "nothing": "Alles, was {os} ausführen kann, ist installiert.",
+    "installed": "Installiert. Teste ihn und mach ihn dann zum Standard."
+  },
+  "steps": {
+    "aPackageManager": "einen Paketmanager",
+    "macLocalNetwork": "macOS fragt eventuell, ob Cyber CTF Geräte in deinem lokalen Netzwerk finden und Mitteilungen anzeigen darf (Lab bereit, Fehler): Wähle Erlauben, Labs brauchen Ersteres.",
+    "macTerminal": "Seine Shell öffnet sich im Terminal: Beim ersten Mal fragt macOS, ob Cyber CTF das Terminal steuern darf; wähle OK.",
+    "macInstallerVm": "Sein Installationsprogramm öffnet sich in einem eigenen Fenster und fragt nach deinem Passwort; VirtualBox muss eventuell auch unter Systemeinstellungen > Datenschutz & Sicherheit erlaubt werden.",
+    "macInstaller": "Sein Installationsprogramm öffnet sich in einem eigenen Fenster und fragt nach deinem Passwort.",
+    "pkgmgr": {
+      "title": "Paketmanager",
+      "description": "Cyber CTF installiert alles Weitere für dich über {pm}, den Paketmanager deines Systems. Er muss nur einmal eingerichtet werden."
+    },
+    "virtualization": {
+      "title": "Virtualisierung aktivieren (WSL 2)",
+      "description": "Docker Desktop führt Linux-Container über WSL 2 aus. Schalte es einmal ein; diesen Schritt übersehen unter Windows die meisten."
+    },
+    "docker": {
+      "title": "Container-Engine",
+      "descriptionWindows": "Container-Labs brauchen eine Docker-kompatible Engine (unter Windows läuft sie auf WSL 2). Wähle deine bevorzugte.",
+      "description": "Container-Labs brauchen eine Docker-kompatible Engine. Wähle deine bevorzugte, sie funktionieren alle."
+    },
+    "attack": {
+      "title": "Angriffsmaschine",
+      "description": "Die Maschine, von der aus du Labs angreifst: ein Container, der neben jedem Lab in dessen Netzwerk startet. Wähle ein Toolset; du kannst es später in den Einstellungen ändern."
+    },
+    "vm": {
+      "title": "Virtuelle Maschinen",
+      "description": "Labs aus vollständigen VMs (Active-Directory-Domänen, Windows-Hosts, Router, Multi-Host-Netzwerke) brauchen einen Hypervisor, egal welchen. Du kannst ihn auch später über die Seite Rechner hinzufügen."
+    },
+    "vagrant": {
+      "title": "Provisionierung",
+      "description": "Cyber CTF erstellt und startet die virtuellen Maschinen jedes Labs mit Vagrant, einem kostenlosen Tool, auf deinem Hypervisor. Die meisten Hypervisoren brauchen dafür zusätzlich eine kleine Erweiterung (Plugin)."
+    },
+    "dockerTest": {
+      "title": "Container-Labs testen",
+      "description": "Startet ein winziges Lab mit zwei Containern, prüft, ob es funktioniert, und löscht es dann. Etwa 2 MB Download."
+    },
+    "vmTest": {
+      "title": "VM-Labs testen",
+      "description": "Startet eine echte Test-VM, prüft, ob sie funktioniert, und löscht sie dann. Dauert ein paar Minuten; beim ersten Mal wird ein kleines VM-Image heruntergeladen (danach zwischengespeichert)."
+    },
+    "next": {
+      "done": "Erledigt",
+      "skip": "Vorerst überspringen",
+      "continue": "Weiter",
+      "restartLater": "Ich starte später neu"
+    }
+  },
+  "body": {
+    "installed": "Installiert",
+    "installLog": "Installation",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "pkgmgr": {
+      "macRun": "Führe das im Terminal aus und komm dann zurück, es wird automatisch erkannt:",
+      "winget": "App-Installer (winget)",
+      "wingetHint": "Installiere ihn aus dem Microsoft Store und komm dann zurück.",
+      "get": "Holen",
+      "linux": "Installiere den Paketmanager deiner Distribution, um die Ein-Klick-Installationen zu nutzen.",
+      "linuxNamed": "Installiere den Paketmanager deiner Distribution ({name}), um die Ein-Klick-Installationen zu nutzen.",
+      "intelMac": "Dies ist ein Intel-Mac. Homebrew liefert dafür keine vorkompilierten Pakete mehr, daher können Installationen aus dem Quellcode bauen und mehrere Minuten länger dauern."
+    },
+    "wsl": {
+      "intro": "Cyber CTF schaltet WSL 2 für dich ein. Windows fragt einmal nach der Berechtigung (die übliche Administrator-Abfrage) und braucht danach einen Neustart.",
+      "log": "WSL 2 wird eingeschaltet. Bestätige die Windows-Abfrage, um fortzufahren…",
+      "turningOn": "WSL 2 wird eingeschaltet…",
+      "turnOn": "WSL 2 einschalten",
+      "restart": "WSL 2 ist aktiviert. Starte Windows neu, um die Aktivierung abzuschließen.",
+      "byHand": "Stattdessen manuell erledigen",
+      "step1": "Öffne <b>PowerShell</b> als Administrator (Rechtsklick, dann „Als Administrator ausführen“).",
+      "step2": "Führe das aus und starte danach neu:",
+      "step3": "Wenn Docker später meldet, dass die Virtualisierung aus ist: Öffne „Windows-Features aktivieren oder deaktivieren“, aktiviere <b>VM-Plattform</b> und <b>Windows-Subsystem für Linux</b> und stelle sicher, dass die Virtualisierung im BIOS/UEFI aktiviert ist.",
+      "guide": "Microsofts Installationsanleitung für WSL",
+      "readyTitle": "WSL 2",
+      "readyDetail": "Aktiviert und läuft",
+      "restartNow": "Jetzt neu starten",
+      "restarting": "Neustart in wenigen Sekunden…",
+      "confirmTitle": "Windows jetzt neu starten?",
+      "confirmBody": "Windows startet in wenigen Sekunden neu, und geöffnete Apps werden ohne Speichern geschlossen: Speichere vorher deine Arbeit.",
+      "reopens": "Cyber CTF öffnet sich wieder, wenn du dich erneut anmeldest. Die Einrichtung beginnt wieder beim ersten Schritt, und was schon erledigt ist, wird als erledigt angezeigt.",
+      "reopenByHand": "Öffne Cyber CTF nach der Anmeldung erneut. Die Einrichtung beginnt wieder beim ersten Schritt, und was schon erledigt ist, wird als erledigt angezeigt.",
+      "restartReason": "Cyber CTF: Neustart, um die Aktivierung von WSL 2 abzuschließen.",
+      "restartFailed": "Windows konnte nicht neu gestartet werden",
+      "unknown": "Cyber CTF konnte nicht feststellen, ob WSL 2 aktiviert ist. Wenn du es schon aktiviert und neu gestartet hast, mach weiter.",
+      "recheck": "Erneut prüfen",
+      "firmware": "WSL 2 ist aktiviert, aber Windows führt auch nach dem Neustart keinen Hypervisor aus. Die Virtualisierung ist wahrscheinlich in der Firmware deines PCs ausgeschaltet: Aktiviere Intel VT-x oder AMD-V (SVM) in den BIOS/UEFI-Einstellungen und starte dann neu. Ein weiterer Neustart von hier aus behebt das nicht."
+    },
+    "dockerTestDescription": "busybox, zwei Container in einem Lab-Netzwerk.",
+    "vmTestDescription": "Bootet, führt einen Befehl aus, pingt sie im Lab-Netzwerk an, löscht sie.",
+    "nothingToTest": "Noch nichts zu testen",
+    "noEngine": "Es läuft keine Container-Engine. Geh zurück, um eine einzurichten, oder überspringe den Schritt vorerst.",
+    "noHypervisor": "Es ist kein Hypervisor installiert. Geh zurück, um einen zu installieren, oder überspringe den Schritt vorerst.",
+    "outcome": {
+      "containerLabs": "Container-Labs",
+      "vmLabs": "VM-Labs",
+      "ready": "Getestet und einsatzbereit.",
+      "failed": "Der Test ist fehlgeschlagen. Geh zurück, um ihn erneut auszuführen.",
+      "engineRunning": "Engine läuft, nicht getestet.",
+      "setUpEngine": "Richte eine Container-Engine ein, um sie auszuführen.",
+      "notTested": "Nicht getestet.",
+      "installHypervisor": "Installiere einen Hypervisor, um sie auszuführen."
+    },
+    "distribution": "Diese Distribution wird von der geführten Einrichtung noch nicht unterstützt: Installiere {name} selbst und prüfe dann erneut."
+  },
+  "engine": {
+    "notes": {
+      "dockerDesktop": "Die offizielle App. Am einfachsten einzurichten; in größeren Unternehmen kostenpflichtig.",
+      "dockerEngine": "Der native Daemon, ohne Desktop-App.",
+      "orbstack": "Schnell und sparsam beim Arbeitsspeicher. Kostenlos für den privaten Gebrauch.",
+      "colima": "Open Source, nur Kommandozeile."
+    },
+    "otherRunning": "{engine} läuft, aber Docker nutzt gerade {current}.",
+    "anotherEngine": "eine andere Engine",
+    "switching": "Wird gewechselt…",
+    "use": "{engine} nutzen",
+    "starting": "{engine} wird gestartet… der erste Start kann eine Minute dauern.",
+    "notRunning": "{engine} ist installiert, läuft aber nicht.",
+    "get": "{name} holen",
+    "startingButton": "Startet…",
+    "startingDockerDesktop": "Wenn Docker Desktop sein Subscription Service Agreement zeigt, akzeptiere es in seinem Fenster: Cyber CTF akzeptiert es nie für dich.",
+    "start": "{engine} starten",
+    "canInstall": "Cyber CTF kann {name} für dich installieren.",
+    "dockerDesktopLicence": "Docker Desktop braucht in größeren Unternehmen ein kostenpflichtiges Abonnement (mehr als 250 Beschäftigte oder 10 Millionen US-Dollar Jahresumsatz). Cyber CTF führt Labs auch auf Colima und Podman aus, die kostenlos sind, und auf OrbStack (kostenlos für den privaten Gebrauch).",
+    "installLog": "Container-Engine wird installiert…",
+    "installing": "Wird installiert…",
+    "install": "{name} installieren",
+    "recheck": "Erneut prüfen",
+    "installThenRecheck": "Installiere {engine}, starte es und prüfe dann erneut.",
+    "finishDockerDesktop": "Starte Docker Desktop, akzeptiere sein Subscription Service Agreement in seinem Fenster und klicke dann auf Erneut prüfen.",
+    "finishOther": "Schließe die Installation von {engine} ab, starte es und klicke dann auf Erneut prüfen.",
+    "windowsReboot": "Nach dem Aktivieren von WSL ist eventuell ein Neustart nötig. Meldet Docker, dass die Virtualisierung aus ist, geh einen Schritt zurück.",
+    "linuxPostInstall": "Erlaube nach der Installation von Docker Engine deinem Benutzer, es zu nutzen, und starte den Dienst:",
+    "linuxRelog": "Melde dich dann ab und wieder an.",
+    "trademarks": "Docker und das Docker-Logo sind Marken von Docker, Inc. Andere Engine-Namen gehören ihren jeweiligen Inhabern. Cyber CTF ist mit keinem davon verbunden."
+  },
+  "vm": {
+    "noHypervisor": "Für diesen Rechner gibt es keinen passenden lokalen Hypervisor. Du kannst VM-Labs stattdessen auf einem Server (ESXi / Proxmox) ausführen.",
+    "cantRunHere": "Installiert, kann hier aber nicht laufen.",
+    "installedHere": "Auf diesem Rechner installiert.",
+    "canInstall": "Cyber CTF kann ihn für dich installieren.",
+    "vendorSite": "Installiere ihn von der Website des Herstellers.",
+    "canInstallNamed": "Cyber CTF kann {name} für dich installieren.",
+    "installLog": "{name} wird installiert…",
+    "installing": "Wird installiert…",
+    "install": "{name} installieren",
+    "installThenRecheck": "Installiere {name} und prüfe dann erneut.",
+    "get": "{name} holen",
+    "recheck": "Erneut prüfen",
+    "trademarks": "VirtualBox ist eine Marke von Oracle. QEMU und andere Hypervisor-Namen gehören ihren jeweiligen Inhabern. Cyber CTF ist mit keinem davon verbunden.",
+    "vagrantNothing": "Für diesen Rechner gibt es keinen passenden lokalen Hypervisor, also kann Vagrant hier nichts steuern. VM-Labs können stattdessen auf einem Server laufen.",
+    "vagrantDetail": "Erstellt und startet die VMs des Labs.",
+    "installVagrantLog": "Vagrant wird installiert…",
+    "installVagrant": "Vagrant installieren",
+    "pluginTitle": "{name}-Erweiterung für Vagrant",
+    "pluginLater": "{plugin}, sobald Vagrant installiert ist.",
+    "pluginLog": "Vagrant-Plugin {plugin} wird installiert…",
+    "shareNote": "KVM belegt die Virtualisierung des Prozessors, daher kann VirtualBox keine VMs starten. Cyber CTF kann sie beide teilen lassen: KVM nutzt sie dann nur, solange eine eigene VM läuft. Fragt nach deinem Passwort.",
+    "share": "VirtualBox nutzen lassen",
+    "sharing": "Wird eingerichtet…",
+    "shareLog": "KVM teilt die Virtualisierung des Prozessors mit VirtualBox…",
+    "installPlugin": "Plugin installieren",
+    "utilityDetail": "Dienst von HashiCorp, über den das VMware-Plugin VMware steuert. Aus dem signierten Paket von HashiCorp installiert; fragt nach deinem Passwort.",
+    "utilityTitle": "Vagrant VMware Utility",
+    "utilityStopped": "Installiert, aber der Dienst läuft nicht. Erneut installieren startet ihn neu, ein Neustart des Computers ebenfalls.",
+    "utilityInstall": "Installieren",
+    "utilityRestart": "Erneut installieren",
+    "utilityLog": "Vagrant VMware Utility wird installiert…",
+    "installFailed": "Die Installation ist fehlgeschlagen: {why}",
+    "installYourself": "Installiere ihn selbst.",
+    "restartToFinish": "{name} ist aktiviert. Starte Windows neu, um die Aktivierung abzuschließen.",
+    "restartReason": "Cyber CTF: Neustart, um die Aktivierung von {name} abzuschließen."
+  },
+  "attack": {
+    "download": "{size} Download",
+    "largeDownload": "großer Download",
+    "custom": "Eigenes Image aus den Einstellungen: <mono>{image}</mono>",
+    "autoStart": "Mit jedem Lab starten",
+    "autoStartHint": "Sonst startest du sie bei Bedarf auf der Seite des Labs.",
+    "needsEngine": "Sie läuft auf deiner Container-Engine und funktioniert, sobald eine eingerichtet ist.",
+    "firstStart": "Das Image wird heruntergeladen, wenn ein Lab sie zum ersten Mal startet."
+  },
+  "unavailable": {
+    "vagrantMissing": "Vagrant ist nicht installiert.",
+    "virtualboxStuck": "VirtualBox antwortet nicht (sein Hintergrunddienst hängt). Beende VirtualBox und alle VM-Fenster oder starte den Computer neu und prüfe dann erneut.",
+    "hypervOff": "Hyper-V ist nicht aktiviert (Windows-Features > Hyper-V), oder diese Windows-Edition hat es nicht.",
+    "hypervNeedsAdmin": "Vagrant steuert Hyper-V nur für einen Administrator oder ein Mitglied der Hyper-V-Administratoren: Wähle „Mein Konto zulassen“ (melde dich dann bei Windows ab und wieder an) oder starte Cyber CTF als Administrator.",
+    "hypervisorStopped": "Hyper-V ist aktiviert, aber der Hypervisor von Windows läuft nicht: Aktiviere die Virtualisierung in der Firmware oder führe als Administrator bcdedit /set hypervisorlaunchtype auto aus, und starte Windows dann neu.",
+    "mkisofsMissing": "QEMU-VMs brauchen mkisofs, das nicht installiert ist: Vagrant erstellt damit das Laufwerk, das jeder VM ihr Lab-Netzwerk gibt. Installiere QEMU erneut (das fügt es hinzu) oder führe sudo apt-get install genisoimage aus und prüfe dann erneut.",
+    "virtiofsdMissing": "{hypervisor} braucht virtiofsd, das nicht installiert ist, um einen Ordner dieses Computers mit einer VM zu teilen (den geteilten Ordner der Attack box). Installiere {hypervisor} erneut (das fügt es hinzu) oder führe sudo apt-get install virtiofsd aus (sudo dnf install virtiofsd unter Fedora) und prüfe dann erneut.",
+    "notInstalled": "`{program}` wurde nicht gefunden.",
+    "notInstalledNoProgram": "Nicht installiert.",
+    "newLogin": "Du wurdest seit deiner Anmeldung zur Gruppe {group} hinzugefügt: Melde dich ab und wieder an (oder starte neu), damit es gilt.",
+    "noKvm": "KVM ist auf diesem Rechner nicht verfügbar (kein /dev/kvm): Aktiviere die Virtualisierung in der Firmware oder nutze einen anderen Hypervisor.",
+    "kvmDenied": "Du kannst /dev/kvm noch nicht nutzen: Füge dich der Gruppe {group} hinzu, melde dich dann ab und wieder an.",
+    "kvmUnusable": "/dev/kvm lässt sich nicht öffnen: {error}. Starte den Rechner neu und prüfe dann erneut.",
+    "hypervisorTooOld": "{name} {version} ist zu alt: {min} oder neuer wird benötigt. Aktualisiere {name} und prüfe dann erneut.",
+    "pluginTooOld": "Das Vagrant-Plugin `{plugin}` {version} ist zu alt: {min} oder neuer wird benötigt. Installiere es erneut, um es zu aktualisieren.",
+    "pluginMissing": "Das Vagrant-Plugin `{plugin}` ist nicht installiert.",
+    "pluginsUnknown": "Ob das Vagrant-Plugin `{plugin}` installiert ist, lässt sich nicht feststellen: `vagrant plugin list` ist fehlgeschlagen ({reason}). Führe es in einem Terminal aus, um den Grund zu sehen, und prüfe dann erneut.",
+    "vmwareUtilityStopped": "Das Vagrant VMware Utility ist installiert, aber sein Dienst läuft nicht: Installiere es erneut (das startet ihn neu) oder starte den Computer neu.",
+    "vmwarePluginWithoutUtility": "Das VMware-Plugin von Vagrant (vagrant-vmware-desktop) ist ohne das Vagrant VMware Utility installiert, und das legt Vagrant für jeden Hypervisor lahm. Installiere das Vagrant VMware Utility oder entferne das Plugin (vagrant plugin uninstall vagrant-vmware-desktop) und prüfe dann erneut.",
+    "vmwareUtilityMissing": "Das Vagrant VMware Utility ist nicht installiert: der Dienst von HashiCorp, über den das VMware-Plugin VMware steuert.",
+    "virtualboxDriver": "Der Kerneltreiber von VirtualBox (vboxdrv) ist auf diesem Kernel ({kernel}) nicht geladen, daher kann VirtualBox keine VMs starten. Installiere die Header des Kernels (linux-headers-{kernel} auf Debian und Ubuntu), baue den Treiber (sudo /sbin/vboxconfig für das VirtualBox von Oracle, sudo dpkg-reconfigure virtualbox-dkms für das deiner Distribution) und prüfe dann erneut. Mit aktivem Secure Boot muss der Treiber signiert sein, bevor er geladen wird.",
+    "kernelRestart": "Der Kerneltreiber von VirtualBox wird für den neueren Kernel gebaut, der mit ihm installiert wurde ({kernel}): Starte den Computer neu, damit dieser Kernel läuft, und prüfe dann erneut.",
+    "kvmHoldsVirtualization": "KVM belegt die Hardware-Virtualisierung dieses Computers (VT-x oder AMD-V): Linux schaltet sie ein, sobald das KVM-Modul geladen wird (Standard seit Linux 6.12), daher kann VirtualBox keine VMs starten („VT-x is being used by another hypervisor“). Verwende libvirt oder QEMU, die auf KVM laufen, oder lass KVM sie mit VirtualBox teilen: KVM nutzt sie dann nur, solange eine eigene VM läuft.",
+    "kvmSharesAfterRestart": "KVM ist so eingestellt, dass es die Hardware-Virtualisierung dieses Computers ab dem nächsten Laden mit VirtualBox teilt: Starte den Computer neu, damit es wirkt."
+  },
+  "asks": {
+    "title": "Bevor {name} installiert wird",
+    "lead": "Das passiert gleich, damit dich nichts überrascht:",
+    "before": {
+      "passwordMac": "macOS fragt nach deinem Passwort, in einem eigenen Fenster.",
+      "passwordUac": "Windows fragt, ob du die Änderungen zulässt (Benutzerkontensteuerung).",
+      "passwordPkexec": "Dein System fragt nach deinem Passwort, in einem eigenen Fenster.",
+      "vendorAgreement": "{app} zeigt beim ersten Start das {agreement}. Akzeptiere es dort, um es zu nutzen: Cyber CTF akzeptiert es nie für dich.",
+      "vendorWindow": "{app} öffnet ein eigenes Fenster: folge ihm bis zum Ende.",
+      "systemExtension": "Du musst die Systemerweiterung von {vendor} in Systemeinstellungen › Datenschutz & Sicherheit erlauben.",
+      "restart": "Danach musst du deinen Computer neu starten.",
+      "relogin": "Danach musst du dich ab- und wieder anmelden.",
+      "longBuild": "Das wird aus dem Quellcode gebaut und kann etwa {minutes} Minuten dauern.",
+      "downloadByHand": "{vendor} bietet es nur auf seiner eigenen Seite an: Du lädst es herunter und installierst es selbst."
+    },
+    "readAgreement": "{agreement} lesen",
+    "install": "Installieren",
+    "cancel": "Abbrechen",
+    "nowTitle": "Gerade jetzt",
+    "now": {
+      "passwordMac": "macOS fragt in einem gerade geöffneten Fenster nach deinem Passwort.",
+      "passwordUac": "Windows fragt in einem gerade geöffneten Fenster, ob du die Änderungen zulässt.",
+      "passwordPkexec": "Dein System fragt in einem gerade geöffneten Fenster nach deinem Passwort.",
+      "vendorAgreement": "Beim ersten Start zeigt {app} das {agreement}: Akzeptiere es in seinem Fenster.",
+      "agreementWaiting": "{app} wartet darauf, dass du seine Vereinbarung in seinem Fenster akzeptierst. Akzeptiere sie dort und prüfe dann erneut.",
+      "vendorWindow": "{app} hat ein eigenes Fenster geöffnet: schließ die Installation dort ab.",
+      "systemExtension": "Wenn es fertig ist, erlaube die Systemerweiterung von {vendor} in Systemeinstellungen › Datenschutz & Sicherheit.",
+      "restart": "Wenn es fertig ist, starte deinen Computer neu.",
+      "relogin": "Wenn es fertig ist, melde dich ab und wieder an.",
+      "longBuild": "Wird aus dem Quellcode gebaut: Das kann etwa {minutes} Minuten dauern. Du kannst dieses Fenster offen lassen.",
+      "downloadByHand": "Lade es von der Seite von {vendor} herunter, installiere es und prüfe dann erneut."
+    },
+    "byHand": {
+      "steps": "{vendor} bietet {name} nur auf seiner eigenen Seite an. Lade es dort herunter, installiere es und komm dann hierher zurück, um erneut zu prüfen.",
+      "open": "Downloadseite von {vendor} öffnen",
+      "check": "Erneut prüfen",
+      "checking": "Dieser Computer wird geprüft…",
+      "notYet": "{name} ist noch nicht installiert. Schließ die Installation ab und prüfe dann erneut."
+    }
+  }
+}

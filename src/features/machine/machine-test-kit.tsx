@@ -1,0 +1,53 @@
+// The Machine page and the setup steps as their tests read them. Not part of the app: only tests
+// import it.
+
+import { render, screen, within } from "@testing-library/react";
+import type userEvent from "@testing-library/user-event";
+import { expect, vi } from "vitest";
+import { MachineScreen } from "@/features/machine/machine-screen";
+import { must } from "@/components/test-support";
+import { readyReport } from "@/test/fixtures";
+import type { Call } from "@/test/tauri";
+import { button, flush } from "@/test/ui";
+import { agreeToInstall } from "@/test/install-consent";
+
+/** The choice card (a radio) whose text includes `label`. */
+export const radioWith = (label: string) =>
+  must(
+    screen.getAllByRole("radio").find((r) => r.textContent.includes(label)),
+    `a choice showing ${label}`,
+  );
+
+/** The Machine page on a ready machine, once its first reads have settled. */
+export async function renderMachineScreen() {
+  render(<MachineScreen report={readyReport()} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
+  await flush(50);
+}
+
+/** Presses Test on the first provider of the Providers panel (the engine labs use). */
+export async function pressFirstTest(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(within(screen.getByRole("list", { name: "Providers" })).getAllByRole("button", { name: /^test$/i })[0]);
+}
+
+/** A provider row as it reads, column by column: its name, status, default slot (the Default
+ *  mark, "Use by default", or nothing) and detail line. */
+export type RowReading = { name: string; status: string; slot: string; detail: string };
+
+/** Every provider row on screen, in order, as it reads. */
+export function providerRows(): RowReading[] {
+  const cell = (row: Element, slot: string) => row.querySelector(`[data-slot="${slot}"]`)?.textContent ?? "";
+  return Array.from(document.querySelectorAll('[role="listitem"]')).map((row) => ({
+    name: cell(row, "name"),
+    status: cell(row, "status"),
+    slot: cell(row, "mark") || (row.querySelector('[data-slot="default"] button')?.textContent ?? ""),
+    detail: cell(row, "detail"),
+  }));
+}
+
+/** Presses "Install Docker Desktop": the launcher asks for Docker's install (`calls` records it). */
+export async function installDockerDesktop(user: ReturnType<typeof userEvent.setup>, calls: Call[]) {
+  await user.click(button(/install docker desktop/i));
+  await agreeToInstall(user);
+  await flush();
+  expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
+}

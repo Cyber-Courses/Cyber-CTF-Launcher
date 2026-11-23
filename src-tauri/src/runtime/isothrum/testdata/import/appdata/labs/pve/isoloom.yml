@@ -1,0 +1,9 @@
+version: 1
+name: pve
+networks:
+  lab: { cidr: 10.31.0.0/24 }
+machines:
+  web:
+    os: debian@12
+    networks: { lab: 10 }
+    app: { steps: [{ run: web.sh }] }

@@ -1,0 +1,113 @@
+"use client";
+
+import { useCallback } from "react";
+import { labRunOptions, type ActiveOperation, type DockerEngine, type Park } from "@/lib/tauri";
+import { getPortMode, type PortMode } from "@/lib/settings";
+import { askPortMode } from "@/features/labs/port-mode-prompt";
+import type { Lab } from "@/features/labs/use-labs";
+import { endDeploy, useDeploy, type DeployRun } from "@/features/labs/runs/deploy-runs";
+import { getLastPlace } from "@/features/labs/runs/last-run";
+import {
+  cloudLaunch,
+  launchAgain,
+  localLaunch,
+  type LocalVmPick,
+  parking,
+  provisioning,
+  resuming,
+  runOperation,
+  stopping,
+  type OperationBody,
+} from "@/features/labs/lab-operations";
+
+/**
+ * Start/stop actions for labs, shared across screens. The busy lab, its streamed log lines
+ * and which lab they belong to live in a module store (runs/deploy-runs), so a deploy started
+ * here keeps streaming and stays visible even after the labs screen unmounts (e.g. the user
+ * opens Settings) and comes back. Keyed per lab, so two deploys at once keep separate logs; the
+ * UI reads each lab's run from `runs[labId]`. The operations themselves are in lab-operations.
+ * A launch's "ready" notice names where it runs from its placement (a server, a cloud account).
+ */
+/** The player said no to the ports question: no start. */
+const CANCELLED = Symbol("cancelled");
+
+/** The host ports a container lab here starts on: `picked`, else Settings' choice, else asked;
+ *  none (the rule's) when every port the lab publishes is fixed, so there is nothing to ask. */
+async function portsHere(lab: Lab, picked: PortMode | undefined): Promise<PortMode | null | typeof CANCELLED> {
+  const known = picked ?? getPortMode();
+  if (known) return known;
+  if (await portsFixed(lab)) return null;
+  return (await askPortMode(lab.title)) ?? CANCELLED;
+}
+
+/** Whether no host port of `lab`'s is picked at its start (`portsFixed`, from its spec); false
+ *  when that can't be read (no source known, the spec unreadable): then the player is asked. */
+async function portsFixed(lab: Lab): Promise<boolean> {
+  const rt = lab.runtime;
+  if (!rt?.repository || !rt.commit) return false;
+  return labRunOptions(lab.id, rt.runtime, rt.repository, rt.commit).then(
+    (o) => o.portsFixed,
+    () => false,
+  );
+}
+
+export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void) {
+  // By lab id: none for a lab not run since the app started.
+  const { runs }: { runs: Partial<Record<string, DeployRun>> } = useDeploy();
+
+  // An operation stays busy until the lab's status after it has been read: cleared earlier, the
+  // page showed the old status's buttons (Shut down on a lab just shut down) for a few seconds,
+  // and a click there started the same operation again. Capped, so a hung read never pins it.
+  const settle = useCallback(
+    async (lab: Lab) => {
+      await Promise.race([Promise.resolve(refresh(lab, { fresh: true })), new Promise((r) => setTimeout(r, 20_000))]);
+      endDeploy(lab.id);
+    },
+    [refresh],
+  );
+  const operate = useCallback((lab: Lab, op: ActiveOperation["op"], body: OperationBody) => runOperation(lab, op, body, settle), [settle]);
+
+  /**
+   * `host` = a saved server or cloud account to run the lab on, null for this machine. Omitted
+   * (Home's "start again"), nothing is newly picked: the lab starts where it was last started
+   * here, the player's own earlier choice; never started, their saved preference decides. Either
+   * way by the backend's one rule (`labPlacement`: for a lab never started, a VM lab on the saved
+   * hypervisor or the first ready one, else the default server; a container lab here). `vm` runs a VM lab here on that hypervisor (none: the rule's),
+   * or a container lab with VM recipes as one VM per machine there (`perMachine`; a cloud
+   * account's cloud-vm form with no hypervisor). The launch sends the rule's answer as it is.
+   * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
+   * `chosenPorts` = the host ports for a container lab here, already chosen ("Where should it run?").
+   */
+  const launch = useCallback(
+    async (lab: Lab, host?: string | null, vm?: LocalVmPick, here?: { ports?: PortMode; engine?: DockerEngine | null }) => {
+      if (!lab.runtime) return;
+      if (lab.runtime.runtime === "CLOUD") {
+        await operate(lab, "launch", cloudLaunch(lab, host));
+        return;
+      }
+      const last = host === undefined && !vm ? getLastPlace(lab.id) : null;
+      if (last) {
+        await operate(lab, "launch", launchAgain(lab, last));
+        return;
+      }
+      // A container lab on this machine publishes its services here: on random free ports or
+      // on the lab's own, the player's call (asked unless Settings remember it, or every port it
+      // publishes is fixed: nothing to decide). Cancel = no start.
+      const containersHere = lab.runtime.runtime !== "VM" && host == null && !vm;
+      const ports = containersHere ? await portsHere(lab, here?.ports) : null;
+      if (ports === CANCELLED) return;
+      await operate(lab, "launch", localLaunch(lab, { host, vmProvider: vm?.provider, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine }));
+    },
+    [operate],
+  );
+
+  const stop = useCallback((lab: Lab) => operate(lab, "stop", stopping(lab)), [operate]);
+  /** Pause (state saved) or shut down (powered off) a lab, keeping its machines for `resume`. */
+  const park = useCallback((lab: Lab, mode: Park) => operate(lab, mode, parking(lab, mode)), [operate]);
+  /** Bring a parked lab back as it was: no rebuild, no new launch. */
+  const resume = useCallback((lab: Lab) => operate(lab, "resume", resuming(lab)), [operate]);
+  /** Re-run a VM lab's provisioning on one machine (or all), streamed into its deploy log. */
+  const provision = useCallback((lab: Lab, machine: string | null) => operate(lab, "provision", provisioning(lab, machine)), [operate]);
+
+  return { runs, launch, stop, park, resume, provision };
+}

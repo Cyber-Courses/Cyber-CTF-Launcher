@@ -1,0 +1,116 @@
+//! The account's commands: the sign-in, the backend's queries, and the agent.
+
+use serde_json::Value;
+use tauri::ipc::Channel;
+
+use crate::AppHandle;
+use crate::account::agent::{self, AgentInfo};
+use crate::account::api;
+use crate::account::api_operation::ApiOperation;
+use crate::account::auth::{self, AuthStatus, DeviceCode};
+use crate::app::window;
+use crate::error::Result;
+use crate::platform::AppDirs;
+
+/// Signs in through the system browser, the sign-in link sent on `events` (see [`auth::auth_login`]).
+/// Once through, the app comes forward from the browser: the player is back where they started.
+#[tauri::command]
+pub async fn auth_login(app: AppHandle, events: Channel<String>) -> Result<AuthStatus> {
+    use tauri_plugin_opener::OpenerExt;
+    let status = auth::auth_login(|url| {
+        let _ = events.send(url.to_string());
+        if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
+            log::warn!("no browser opened for sign-in ({e}); the link is offered to copy");
+        }
+    })
+    .await?;
+    window::reveal_main(&app);
+    Ok(status)
+}
+
+/// Signs in with a code entered on any device, the code sent on `events` (see
+/// [`auth::auth_login_device`]). Once approved, the app comes forward like after a browser sign-in.
+#[tauri::command]
+pub async fn auth_login_device(app: AppHandle, events: Channel<DeviceCode>) -> Result<AuthStatus> {
+    let status = auth::auth_login_device(|code| {
+        let _ = events.send(code);
+    })
+    .await?;
+    window::reveal_main(&app);
+    Ok(status)
+}
+
+/// Ends the sign-in waiting for the browser (or for a code's approval), if any.
+#[tauri::command]
+pub fn auth_login_cancel() {
+    auth::auth_login_cancel();
+}
+
+/// Whether the player is signed in, and as whom.
+#[tauri::command]
+pub async fn auth_status() -> AuthStatus {
+    auth::auth_status().await
+}
+
+/// Signs out; fails when the keychain still holds the session. The values the account's runs
+/// were launched with go too (`runtime::launch_values`).
+#[tauri::command]
+pub async fn auth_logout(app: AppHandle) -> Result<()> {
+    auth::auth_logout().await?;
+    crate::runtime::launch_values::forget_all(&AppDirs::from(&app));
+    Ok(())
+}
+
+/// One of the backend's known queries, with the player's token (see [`api::api_query`]).
+#[tauri::command]
+pub async fn api_query(operation: ApiOperation, variables: Option<Value>) -> Result<Value> {
+    api::api_query(operation, variables).await
+}
+
+/// This launcher as the website's agent sees it.
+#[tauri::command]
+pub fn agent_info(app: AppHandle) -> Result<AgentInfo> {
+    agent::agent_info(&AppDirs::from(&app))
+}
+
+/// The player's answer to a launch the website asked for; whether the launch still waited for it.
+#[tauri::command]
+pub fn confirm_launch(session_id: &str, approve: bool) -> bool {
+    agent::confirm_launch(session_id, approve)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    /// What a webview calling `api_query` with `args` gets back, through Tauri's IPC.
+    fn invoke_api_query(args: serde_json::Value) -> Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![super::api_query])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default()).build().unwrap();
+        let request = tauri::webview::InvokeRequest {
+            cmd: "api_query".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            // The app's own origin, which Tauri trusts: `http://tauri.localhost` on Windows.
+            url: if cfg!(windows) { "http://tauri.localhost" } else { "tauri://localhost" }.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::Json(args),
+            headers: tauri::http::HeaderMap::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        };
+        tauri::test::get_ipc_response(&webview, request)
+    }
+
+    #[test]
+    fn a_webview_can_run_named_operations_only() {
+        // Refused while reading the arguments: nothing is sent, with or without a token.
+        for operation in ["deleteAccount", "{ me { email } }"] {
+            let err = invoke_api_query(json!({ "operation": operation })).unwrap_err().to_string();
+            assert!(err.contains("unknown variant"), "{err}");
+        }
+        let err = invoke_api_query(json!({ "query": "{ me { email } }" })).unwrap_err().to_string();
+        assert!(err.contains("missing required key operation"), "{err}");
+    }
+}

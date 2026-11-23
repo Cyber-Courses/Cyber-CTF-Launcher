@@ -1,0 +1,41 @@
+# The desktop end-to-end's cases, in the order run.mjs runs them (a need's provider before the
+# cases needing it): a case's id, its spec (specs/<spec>.mjs), the form it runs a lab in (- for
+# none), the knobs it reads (- for none) and the groups it belongs to (--group: a group holds the
+# providers of its cases' needs, so `launch` is in two). The specs declare their needs (`export
+# const needs`, runner/plan.mjs). --list prints it; tests/e2e/desktop/runner/run.test.ts holds it to the specs.
+# Tab-separated.
+smoke	smoke	-	-	shell
+title-bar	title-bar	-	-	shell
+settings	settings	-	-	shell
+onboarding	onboarding	-	-	shell
+setup-screens	setup-screens	-	-	shell
+labs	labs	-	CYBERCTF_TEST_LOCAL_LAB CYBERCTF_TEST_CATALOGUE_LAB	shell
+deep-link	deep-link	-	-	shell
+fail-offline	fail-offline	-	-	shell
+fail-badlab	fail-badlab	-	-	shell
+fail-signedout	fail-signedout	-	-	shell
+fail-docker	fail-docker	-	CYBERCTF_TEST_LOCAL_LAB	shell
+attack-on-stopped	attack-on-stopped	-	-	shell
+launch	launch	-	CYBERCTF_TEST_LOCAL_LAB	lab resilience
+restart	restart	-	CYBERCTF_TEST_LOCAL_LAB	lab
+stop	stop	-	CYBERCTF_TEST_LOCAL_LAB	lab
+launch-ui	launch-ui	-	CYBERCTF_TEST_LOCAL_LAB	lab
+attack-box	attack-box	-	CYBERCTF_TEST_LOCAL_LAB	lab
+attack-shell	attack-shell	-	CYBERCTF_TEST_LOCAL_LAB	lab
+stop-with-box	stop-with-box	-	CYBERCTF_TEST_LOCAL_LAB	lab
+kill-mid-deploy	kill-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+stop-during-start	stop-during-start	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+double-start	double-start	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+close-mid-deploy	close-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+kill-runner-service	kill-runner-service	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+park-resume	park-resume	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+reimport-running	reimport-running	-	CYBERCTF_TEST_LOCAL_LAB	resilience
+machine	machine	-	CYBERCTF_TEST_VM_PROVIDER	vm
+lab-form-container	lab-form	container	CYBERCTF_TEST_LAB_FORM CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER	vm
+lab-actions	lab-actions	-	CYBERCTF_TEST_CATALOGUE_LAB	vm
+offline-start	offline-start	-	CYBERCTF_TEST_CATALOGUE_LAB	vm
+lab-form-per-machine	lab-form	per-machine	CYBERCTF_TEST_LAB_FORM CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER	vm
+lab-form-vm	lab-form	vm	CYBERCTF_TEST_LAB_FORM CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER	vm
+screens	screens	-	CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_BOX_DESKTOP	vm
+server-lab	server-lab	-	CYBERCTF_TEST_SERVER_ENV CYBERCTF_TEST_SERVER_LAB CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_PVE_HOST CYBERCTF_TEST_PVE_TOKEN_ID CYBERCTF_TEST_PVE_TOKEN_SECRET CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_STORAGE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD CYBERCTF_TEST_ESXI_USER CYBERCTF_TEST_ESXI_DATASTORE CYBERCTF_TEST_ESXI_NETWORK	vm
+cleanup	cleanup	-	CYBERCTF_TEST_CLEANUP_TOOL	vm
