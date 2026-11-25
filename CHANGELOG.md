@@ -92,6 +92,9 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **Links and support mail point at cyberctf.org.** The site and its mail live there; Send to
+  support, the README, the support pages and the Store listings named cyberctf.com, which has
+  neither.
 - **A VM lab starts on a Proxmox server whose lab bridge only its node reaches.** Terraform signs
   in to the lab's router to wait for each machine's set-up, and on such a bridge (a NAT bridge)
   the router was out of the launcher's reach: the start waited until it timed out. While a start,

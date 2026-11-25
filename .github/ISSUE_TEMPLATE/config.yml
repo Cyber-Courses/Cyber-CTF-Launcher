@@ -4,7 +4,7 @@ contact_links:
     url: https://github.com/Cyber-Courses/Cyber-CTF-Launcher/security/advisories/new
     about: Privately, never in a public issue (see SECURITY.md).
   - name: Account, subscription or lab content
-    url: https://www.cyberctf.com/contact
+    url: https://www.cyberctf.org/contact
     about: Questions about your Cyber CTF account or a lab itself go to Cyber CTF support.
   - name: Deploying the launcher in a company
     url: https://github.com/Cyber-Courses/Cyber-CTF-Launcher/blob/main/docs/admins/admin-guide.md

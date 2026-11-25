@@ -2,7 +2,7 @@
 
 [![Gate](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/gate.yml/badge.svg?branch=main)](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/gate.yml?query=branch%3Amain)
 
-The desktop launcher for [Cyber CTF](https://www.cyberctf.com) labs: hands-on, deliberately
+The desktop launcher for [Cyber CTF](https://www.cyberctf.org) labs: hands-on, deliberately
 vulnerable environments for learning offensive and defensive security. It runs each lab, with an
 attack box to work from, on your own computer (Docker or virtual machines), on your own Proxmox or
 ESXi server, or in your own cloud account (AWS, Azure, Google Cloud, DigitalOcean, Linode, Oracle

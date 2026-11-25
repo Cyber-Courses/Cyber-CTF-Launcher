@@ -480,7 +480,7 @@ or cloud account by name) and whether it has privileged machines. A decline, or 
 three minutes, refuses it and tells the website why. The [policy reference](policy.md) says how an administrator
 controls this.
 
-Cyber CTF's privacy policy: <https://www.cyberctf.com/privacy>.
+Cyber CTF's privacy policy: <https://www.cyberctf.org/privacy>.
 
 ## Logs and diagnostics
 
