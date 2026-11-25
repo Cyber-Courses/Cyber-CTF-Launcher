@@ -171,7 +171,7 @@ pub(crate) fn proxmox_target(name: &str, place: &ServerPlace, vm: &str) -> Resul
         reached: name.to_owned(),
         prepared: place.node.as_ref().map(|n| format!("on node {n}")),
     };
-    Ok(Target { server: Server::Proxmox(p), words })
+    Ok(Target { server: Server::Proxmox(Box::new(p)), words })
 }
 
 /// The test on the ESXi host whose settings are `env` (`lab::esxi_env`'s names), this computer's
