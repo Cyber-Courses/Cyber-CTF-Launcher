@@ -17,7 +17,7 @@
 // Exit status: the first failing command's, else 1 when something was left, 0 when nothing was;
 // 2 when a command couldn't start.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -55,12 +55,25 @@ export function leftovers(dir: string): string[] {
     .sort();
 }
 
+/**
+ * Whether `program` starts through cmd on `platform`. On Windows a `.cmd` shim (pnpm's) needs it;
+ * a program that is an `.exe` (node, bash, cargo; found on `path`, or named by its path) doesn't,
+ * and must not: cmd would split its arguments again on their spaces, quotes and new lines (a
+ * `node -e` script, a `bash -c` function).
+ */
+export function needsShell(program: string, platform: NodeJS.Platform = process.platform, path = process.env.PATH ?? ""): boolean {
+  if (platform !== "win32") return false;
+  if (/[\\/]/.test(program)) return /\.(cmd|bat)$/i.test(program);
+  const exe = /\.exe$/i.test(program) ? program : `${program}.exe`;
+  return !path.split(";").some((dir) => dir !== "" && existsSync(join(dir, exe)));
+}
+
 /** Runs `commands` one after the other with a fresh temp folder; the exit status. */
 export function run(commands: readonly (readonly string[])[], keep: boolean, base = tempBase()): number {
   const dir = mkdtempSync(join(base, "cyberctf-tests-"));
   let status = 0;
   for (const [program, ...args] of commands) {
-    const ran = spawnSync(program, args, { stdio: "inherit", env: withTemp(process.env, dir), shell: process.platform === "win32" });
+    const ran = spawnSync(program, args, { stdio: "inherit", env: withTemp(process.env, dir), shell: needsShell(program) });
     if (ran.error) {
       console.error(`check:temp-leaks: ${program} couldn't start: ${ran.error.message}`);
       status = 2;
