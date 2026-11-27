@@ -24,7 +24,7 @@ import {
 import { answersDialog, commands, dialogsAsked, installTauri, progressLines, rejectWith, stream } from "@/test/tauri";
 import { agreeToInstall } from "@/test/install-consent";
 import { button, flush, settle } from "@/test/ui";
-import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
+import { installDockerDesktop, radioWith, turnOnWsl } from "@/features/machine/machine-test-kit";
 
 const text = () => document.body.textContent;
 
@@ -111,9 +111,7 @@ describe("WSL step", () => {
     const onRefresh = vi.fn();
     render(<Step step="virtualization" report={freshReport("windows")} onRefresh={onRefresh} />);
     expect(screen.queryByRole("status")).toBeNull();
-    await user.click(button(/turn on wsl 2/i));
-    await agreeToInstall(user);
-    await flush();
+    await turnOnWsl(user);
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "wsl" });
     expect(text()).toContain("Enabling feature");
     expect(screen.getByRole("status").textContent).toContain("Restart Windows to finish");
@@ -128,9 +126,7 @@ describe("WSL step", () => {
     });
     const user = userEvent.setup();
     render(<Step step="virtualization" report={freshReport("windows")} />);
-    await user.click(button(/turn on wsl 2/i));
-    await agreeToInstall(user);
-    await flush();
+    await turnOnWsl(user);
     expect(text()).toContain("✗ elevation refused");
   });
 });
@@ -210,9 +206,7 @@ describe("WSL step, from the machine check", () => {
     installTauri({ install_dependency: (a) => (stream(a, ...progressLines("The requested operation is successful.")), null) });
     const user = userEvent.setup();
     render(<SetupAtWsl report={windows("missing")} />);
-    await user.click(button(/turn on wsl 2/i));
-    await agreeToInstall(user);
-    await flush();
+    await turnOnWsl(user);
     expect(button(/restart now/i)).toBeTruthy();
     expect(button(/restart later/i)).toBeTruthy();
     expect(text()).toContain("The requested operation is successful.");
@@ -226,9 +220,7 @@ describe("WSL step, from the machine check", () => {
     });
     const user = userEvent.setup();
     render(<SetupAtWsl report={windows("missing")} />);
-    await user.click(button(/turn on wsl 2/i));
-    await agreeToInstall(user);
-    await flush();
+    await turnOnWsl(user);
     expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
   });
 
