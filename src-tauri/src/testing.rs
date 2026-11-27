@@ -60,19 +60,51 @@ impl Drop for TempDir {
     }
 }
 
-/// The test folders [`remove_dir`] couldn't remove yet: Windows refuses to remove a file that is
-/// still open, and a test's runner service holds its store (`state.db`) open until it has ended,
-/// which is after the test's own body (with its runtime, or once idle).
-static PENDING: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+/// The test folders [`remove_dir`] couldn't remove yet, with the thread that dropped each:
+/// Windows refuses to remove a file that is still open, and a test's runner service holds its
+/// store (`state.db`) open until it has ended, which is after the test's own body (its tasks go
+/// with the test's runtime, or once idle).
+static PENDING: Mutex<Vec<(std::thread::ThreadId, PathBuf)>> = Mutex::new(Vec::new());
+
+/// How long a test's thread, as it ends, waits for the folders it dropped to go.
+const LAST_TRY_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
+thread_local! {
+    /// Tries this thread's pending folders once more as the thread ends ([`LastTry`]).
+    static LAST_TRY: LastTry = const { LastTry };
+}
+
+/// Dropped as its thread ends: a unit test's thread, after its runtime (and every task of it:
+/// a runner service's own) has gone, so nothing of the test holds its folders any more. It removes
+/// those [`remove_dir`] couldn't, waiting [`LAST_TRY_WITHIN`] at most for a store another thread
+/// is still closing: the test's process may exit right after (nextest runs each test in its own).
+struct LastTry;
+
+impl Drop for LastTry {
+    fn drop(&mut self) {
+        let me = std::thread::current().id();
+        let started = std::time::Instant::now();
+        loop {
+            retry_removals();
+            let mine = PENDING.lock().unwrap_or_else(PoisonError::into_inner).iter().any(|(t, _)| *t == me);
+            if !mine || started.elapsed() >= LAST_TRY_WITHIN {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+}
 
 /// Removes test folder `dir` with what it holds, the launcher's stores in it closed first. One
 /// Windows won't remove yet (a file in it still open: a runner service's store) is removed once
-/// that service has ended ([`retry_removals`]), before the test's process exits. Unix removes it
-/// at once, open files and all.
+/// that service has ended ([`retry_removals`]), or as the test's thread ends ([`LastTry`]),
+/// before the test's process exits. Unix removes it at once, open files and all.
 pub fn remove_dir(dir: &Path) {
     crate::store::forget_under(dir);
     if std::fs::remove_dir_all(dir).is_err() && dir.exists() {
-        PENDING.lock().unwrap_or_else(PoisonError::into_inner).push(dir.to_path_buf());
+        PENDING.lock().unwrap_or_else(PoisonError::into_inner).push((std::thread::current().id(), dir.to_path_buf()));
+        // A thread that is ending already has no last try to make: the folder waits for another's.
+        let _ = LAST_TRY.try_with(|_| ());
     }
 }
 
@@ -85,7 +117,7 @@ pub fn removals_pending() -> bool {
 /// runner service calls it once it has ended (`service`).
 pub fn retry_removals() {
     let pending = std::mem::take(&mut *PENDING.lock().unwrap_or_else(PoisonError::into_inner));
-    let left: Vec<PathBuf> = pending.into_iter().filter(|dir| std::fs::remove_dir_all(dir).is_err() && dir.exists()).collect();
+    let left: Vec<_> = pending.into_iter().filter(|(_, dir)| std::fs::remove_dir_all(dir).is_err() && dir.exists()).collect();
     PENDING.lock().unwrap_or_else(PoisonError::into_inner).extend(left);
 }
 

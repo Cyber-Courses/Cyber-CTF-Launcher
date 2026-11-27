@@ -219,6 +219,11 @@ const SLEEP_ALLOWED: &[(&str, &str, &str)] = &[
         "std::thread::sleep(Duration::from_millis(10));",
         "a test's runtime ending polls, to a 60 s deadline, for its service to have ended, so Windows lets its folders go",
     ),
+    (
+        "testing.rs",
+        "std::thread::sleep(std::time::Duration::from_millis(10));",
+        "a test's thread ending polls, to a 10 s deadline, for the folders Windows refused to go",
+    ),
 ];
 
 #[test]
