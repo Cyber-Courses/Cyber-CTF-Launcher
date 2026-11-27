@@ -66,8 +66,10 @@ impl Drop for TempDir {
 /// with the test's runtime, or once idle).
 static PENDING: Mutex<Vec<(std::thread::ThreadId, PathBuf)>> = Mutex::new(Vec::new());
 
-/// How long a test's thread, as it ends, waits for the folders it dropped to go.
-const LAST_TRY_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+/// How long a test's thread, as it ends, waits for the folders it dropped to go: as long as a
+/// runner service may take to end (`service::ENDS_WITHIN`: a stopping one drains its running
+/// operations for 40 s), one on this host's tools still answering a call the test made.
+const LAST_TRY_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
 thread_local! {
     /// Tries this thread's pending folders once more as the thread ends ([`LastTry`]).
