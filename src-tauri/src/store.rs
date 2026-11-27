@@ -90,6 +90,13 @@ pub(crate) fn forget(data: &Path) {
     opened().lock().unwrap_or_else(PoisonError::into_inner).remove(data);
 }
 
+/// Test-only: closes the stores of the data folders in `dir` (a test's folder about to go:
+/// Windows won't remove a store's file while it is open).
+#[cfg(test)]
+pub(crate) fn forget_under(dir: &Path) {
+    opened().lock().unwrap_or_else(PoisonError::into_inner).retain(|data, _| !data.starts_with(dir));
+}
+
 impl Store {
     /// Opens (creating) the store's file in `data`, in WAL mode, migrated to the current schema.
     fn open_file(data: &Path) -> Result<Store> {
