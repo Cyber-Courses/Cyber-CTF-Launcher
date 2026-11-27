@@ -21,7 +21,7 @@ in full.
 Please don't open a public issue. Report it privately through GitHub:
 **[Report a vulnerability](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/security/advisories/new)**
 (the repository's _Security_ tab, then _Report a vulnerability_). If you can't use GitHub, email
-hello@cyberctf.com (the contact in [cyberctf.com's security.txt][security.txt]) and say it is a
+hello@cyberctf.org (the contact in [cyberctf.org's security.txt][security.txt]) and say it is a
 security report about the launcher.
 
 Include what you can of:
@@ -31,7 +31,7 @@ Include what you can of:
 - steps to reproduce, or a proof of concept;
 - whether it is already public.
 
-[security.txt]: https://www.cyberctf.com/.well-known/security.txt
+[security.txt]: https://www.cyberctf.org/.well-known/security.txt
 
 ## What happens next
 
@@ -52,8 +52,8 @@ In scope: this repository: the desktop launcher, its installers and its release 
 
 Out of scope, report them elsewhere:
 
-- The Cyber CTF website, accounts and API (cyberctf.com, cyberauth.co, cyberbackend.com): use the
-  contact in [cyberctf.com's security.txt][security.txt].
+- The Cyber CTF website, accounts and API (cyberctf.org, cyberauth.co, cyberbackend.com): use the
+  contact in [cyberctf.org's security.txt][security.txt].
 - The labs themselves. Labs are deliberately vulnerable training targets; a flaw inside a lab is
   the exercise. A way for a lab to reach beyond its own machines and networks into the player's
   computer, accounts or servers **is** in scope.

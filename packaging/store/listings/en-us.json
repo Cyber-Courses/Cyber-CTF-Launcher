@@ -1,7 +1,7 @@
 {
   "title": "Cyber CTF",
   "shortDescription": "Hands-on cybersecurity labs on your own machine, server or cloud. Start a lab in one click, get an attack box on its network and practice real attacks safely.",
-  "description": "Cyber CTF is the desktop launcher for hands-on cybersecurity labs. Pick a lab, press Start, and a deliberately vulnerable environment builds itself, with your own attack box already on the lab network. Practice web attacks, Active Directory, containers and cloud misconfigurations on real systems, then submit what you find.\n\nRun labs where it suits you:\n- On this computer, as containers (Docker Desktop) or as virtual machines (VirtualBox or VMware Workstation)\n- On your own server: Proxmox VE or VMware ESXi, for bigger multi-machine labs\n- In your own cloud account: AWS, Microsoft Azure or Google Cloud, stopped automatically so you only pay while you practice\n\nEvery lab comes with a live network map of its machines, services and published ports, and an attack box you open in one click, right inside the app. Labs launched from www.cyberctf.com open straight in the launcher, and your progress follows your Cyber CTF account.\n\nBuilt for students, security professionals and anyone learning ethical hacking. Only attack the labs Cyber CTF builds for you.\n\nRequirements: Docker Desktop for container labs; VirtualBox or VMware Workstation for VM labs on this computer. The launcher helps you install what's missing.",
+  "description": "Cyber CTF is the desktop launcher for hands-on cybersecurity labs. Pick a lab, press Start, and a deliberately vulnerable environment builds itself, with your own attack box already on the lab network. Practice web attacks, Active Directory, containers and cloud misconfigurations on real systems, then submit what you find.\n\nRun labs where it suits you:\n- On this computer, as containers (Docker Desktop) or as virtual machines (VirtualBox or VMware Workstation)\n- On your own server: Proxmox VE or VMware ESXi, for bigger multi-machine labs\n- In your own cloud account: AWS, Microsoft Azure or Google Cloud, stopped automatically so you only pay while you practice\n\nEvery lab comes with a live network map of its machines, services and published ports, and an attack box you open in one click, right inside the app. Labs launched from www.cyberctf.org open straight in the launcher, and your progress follows your Cyber CTF account.\n\nBuilt for students, security professionals and anyone learning ethical hacking. Only attack the labs Cyber CTF builds for you.\n\nRequirements: Docker Desktop for container labs; VirtualBox or VMware Workstation for VM labs on this computer. The launcher helps you install what's missing.",
   "releaseNotes": "- Fedora: the guided setup installs Docker, libvirt, QEMU, VirtualBox and Vagrant through dnf\n- The attack box on every kind of lab (containers, VMs, cloud), its credentials on the lab page, a desktop for a VM attack box\n- A lab machine's screen in its own window, Open in VirtualBox, Remove lab on the lab page, pages for labs imported from a folder\n- An MSI installer for Windows x64, an administrator guide and a machine-wide policy\n- Linux: QEMU labs run with KVM, VirtualBox gets the kernel headers, Docker installs on Kali and other Debian derivatives\n- Stopping a lab leaves no Docker volume behind, a lab removed outside the app imports again, installs wait for apt's lock\n- Every release signed, with checksums and build provenance; licensed Apache-2.0",
   "features": [
     "Hundreds of hands-on labs: web, Active Directory, containers and cloud",
@@ -12,15 +12,15 @@
     "Use your own Proxmox VE or VMware ESXi server for bigger labs",
     "Run labs in your own AWS, Azure or Google Cloud account",
     "Cloud labs stop automatically to keep costs down",
-    "Launch labs from www.cyberctf.com straight into the app",
+    "Launch labs from www.cyberctf.org straight into the app",
     "Progress synced with your Cyber CTF account",
     "Dark, Black and Light themes, in 6 languages"
   ],
   "keywords": ["cybersecurity", "CTF", "ethical hacking", "penetration testing", "hacking labs", "Active Directory", "cybersecurity training"],
   "copyrightAndTrademarkInfo": "© 2026 Cyber CTF",
-  "websiteUrl": "https://www.cyberctf.com",
-  "privacyPolicy": "https://www.cyberctf.com/privacy",
-  "supportContact": "https://www.cyberctf.com/contact",
+  "websiteUrl": "https://www.cyberctf.org",
+  "privacyPolicy": "https://www.cyberctf.org/privacy",
+  "supportContact": "https://www.cyberctf.org/contact",
   "screenshots": [
     {
       "file": "screenshot-1.png",

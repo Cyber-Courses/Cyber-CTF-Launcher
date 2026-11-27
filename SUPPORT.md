@@ -5,7 +5,7 @@
 | Install the launcher or fix a common problem              | the [README](README.md) and [troubleshooting](docs/players/troubleshooting.md)         |
 | Deploy it in a company (network, files, silent install)   | the [administrator guide](docs/admins/admin-guide.md)                                  |
 | Report a bug or ask for a feature                         | [GitHub issues](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/issues/new/choose) |
-| Ask about your account, a subscription or a lab's content | [cyberctf.com/contact](https://www.cyberctf.com/contact)                               |
+| Ask about your account, a subscription or a lab's content | [cyberctf.org/contact](https://www.cyberctf.org/contact)                               |
 | Report a security problem                                 | [SECURITY.md](SECURITY.md), privately: not in an issue                                 |
 
 ## What to send with a bug report
@@ -16,7 +16,7 @@ The launcher gathers it for you, in **Settings > About**:
   launcher's version, the OS, the machine check, the installed labs, the last lab operations and
   the end of the logs, with tokens, passwords, keys, flags and e-mail addresses removed and your
   home folder written `~`. Attach it to the issue. **Send to support** saves it the same way and
-  opens a mail to support@cyberctf.com: attach the file there (a mail link can't attach it for you).
+  opens a mail to support@cyberctf.org: attach the file there (a mail link can't attach it for you).
 - **Diagnostics > Copy**: the launcher's version, the OS and the machine's setup status. Paste it
   into the issue.
 - **Log files > Open folder**: `cyberctf.log`. Attach it, with the lines from when it went wrong.
