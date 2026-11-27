@@ -35,6 +35,8 @@ async fn a_plan_streams_its_lines_says_its_notes_and_stops_at_its_first_failure(
             // A Linux host's package manager, looked up before each step: none here.
             .allow("apt-get --version", Reply::missing())
             .allow("dnf --version", Reply::missing())
+            // A Windows host's PATH, read again from the registry after each step: none here.
+            .allow("reg query", Reply::missing())
             .build(),
     );
     let mut noted = step("first", &["a"]);
@@ -117,6 +119,8 @@ async fn a_step_that_asks_something_says_it_before_it_runs() {
             .expect("second", Reply::ok(""))
             .allow("apt-get --version", Reply::missing())
             .allow("dnf --version", Reply::missing())
+            // A Windows host's PATH, read again from the registry after each step: none here.
+            .allow("reg query", Reply::missing())
             .build(),
     );
     let asks = vec![Interaction::AdminPassword { via: Prompt::Uac }, Interaction::Restart];

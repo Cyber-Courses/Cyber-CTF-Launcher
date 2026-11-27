@@ -707,6 +707,7 @@ mod tests {
     async fn a_new_lab_version_is_installed_unless_the_old_one_still_runs() {
         use crate::runtime::providers::testing::no_tools;
         let t = crate::testing::test_app::TestApp::new();
+        crate::testing::service::serve_silent(&crate::runtime::paths::runner_home(&t.dirs()).unwrap());
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
         let tools = no_tools();
         let lines = std::sync::Mutex::new(Vec::<String>::new());
@@ -749,6 +750,14 @@ mod tests {
     #[tokio::test]
     async fn a_new_lab_version_is_refused_while_a_parked_copy_couldnt_be_taken_down() {
         let t = crate::testing::test_app::TestApp::new();
+        // The runner's engine has no networks, and can't take the parked copy down (its Compose
+        // file is broken below): this host's Docker is never asked.
+        let mut runner = isothrum_runner::RunnerConfig::new(crate::runtime::paths::runner_home(&t.dirs()).unwrap());
+        runner.processes = std::sync::Arc::new(isothrum_runner::fake::FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
+            Some("network") => isothrum_runner::fake::Reply::ok(""),
+            _ => isothrum_runner::fake::Reply::fail(1, "no such service"),
+        }));
+        crate::testing::service::serve_home(runner);
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
         let _tools = crate::runtime::providers::testing::no_tools();
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
@@ -844,6 +853,7 @@ mod tests {
         use crate::runtime::providers::testing::no_tools;
         use crate::runtime::test_support::record_run;
         let t = crate::testing::test_app::TestApp::new();
+        crate::testing::service::serve_silent(&crate::runtime::paths::runner_home(&t.dirs()).unwrap());
         // Removed when the test ends, a failed assertion included (it was left after one).
         let src = crate::testing::temp_dir("import-src");
         std::fs::write(src.join("isoloom.yml"), SPEC).unwrap();
@@ -927,6 +937,7 @@ mod tests {
     async fn lab_ids_at_the_validation_boundaries_install_or_are_refused() {
         use crate::runtime::providers::testing::no_tools;
         let t = crate::testing::test_app::TestApp::new();
+        crate::testing::service::serve_silent(&crate::runtime::paths::runner_home(&t.dirs()).unwrap());
         let _tools = no_tools();
         let log = |_: String| {};
         let max = "A".repeat(63) + "_";
