@@ -159,6 +159,6 @@ mod tests {
         );
         assert_eq!(shown.message.as_deref(), Some("Open http://bucket.example."));
         assert_eq!(log.last().map(String::as_str), Some("Open http://bucket.example."), "the lab's words end the start's log");
-        let _ = std::fs::remove_dir_all(root);
+        crate::testing::remove_dir(&root);
     }
 }

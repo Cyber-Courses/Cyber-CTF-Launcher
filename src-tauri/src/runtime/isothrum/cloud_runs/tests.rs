@@ -95,5 +95,5 @@ async fn a_run_gives_its_module_the_runners_key() {
     let private = std::path::PathBuf::from(value("ssh_private_key_file"));
     assert!(private.is_file() && private.ends_with("ssh/id_ed25519"), "{values:?}");
     assert_eq!(run.key_values().await.unwrap(), values, "the same key each time");
-    let _ = std::fs::remove_dir_all(&home);
+    crate::testing::remove_dir(&home);
 }

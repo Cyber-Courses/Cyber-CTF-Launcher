@@ -52,4 +52,7 @@ jobs:
         env:
           FAST: "1"
           STRICT: "1"
+          # Windows can't start other-platforms' stand-in compilers (shell scripts, "not a valid
+          # Win32 application"); the Linux and macOS legs lint all three systems with them.
+          SKIP: ${{ runner.os == 'Windows' && 'other-platforms' || '' }}
           CYBERCTF_TEST_ISOLOOM_DIR: ${{ runner.temp }}/isoloom
