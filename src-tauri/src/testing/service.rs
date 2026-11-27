@@ -6,7 +6,8 @@
 //! on this host's tools as the app's service is ([`client`]), and stops once idle or once its
 //! home's folder is gone (the test's temporary folder dropped). Only Unix removes that folder while
 //! the service holds its store open: Windows refuses to remove an open file, so there the folder
-//! stays until the service has ended, which it does with its test's runtime or once idle.
+//! is removed once the service has ended (`testing::retry_removals`), which it does with its
+//! test's runtime (whose end waits for it) or once idle.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -147,7 +148,7 @@ fn start(config: RunnerConfig, idle: Option<Duration>, stopped: Option<tokio::sy
     match runtime {
         Ok(runtime) if here == Here::TestRuntime => runtime.spawn(run(config, idle, waits, Box::pin(stopped))),
         _ => {
-            let (ended, gone) = (ended(runtime.ok()), gone(config.home.clone()));
+            let (ended, gone) = (ended(runtime.ok(), config.home.clone()), gone(config.home.clone()));
             let until: Until = Box::pin(async move {
                 tokio::select! {
                     () = stopped => {}
@@ -161,12 +162,14 @@ fn start(config: RunnerConfig, idle: Option<Duration>, stopped: Option<tokio::sy
 }
 
 /// Once `runtime` (the test's) has ended: a task of it holds what this waits on, dropped with
-/// it. Never, with no runtime.
-fn ended(runtime: Option<tokio::runtime::Handle>) -> impl Future<Output = ()> + Send {
+/// it. Never, with no runtime. The runtime's end waits for `home`'s service to have ended too,
+/// and its folders to have gone (see [`Ending`]).
+fn ended(runtime: Option<tokio::runtime::Handle>, home: PathBuf) -> impl Future<Output = ()> + Send {
     let ended = runtime.map(|runtime| {
         let (held, ended) = tokio::sync::oneshot::channel::<()>();
+        let ending = Ending { held: Some(held), home };
         drop(runtime.spawn(async move {
-            let _held = held;
+            let _ending = ending;
             std::future::pending::<()>().await;
         }));
         ended
@@ -176,6 +179,31 @@ fn ended(runtime: Option<tokio::runtime::Handle>) -> impl Future<Output = ()> + 
             Some(ended) => drop(ended.await),
             None => std::future::pending::<()>().await,
         }
+    }
+}
+
+/// Held by a task of a test's runtime for a service it started on the services' runtime: dropped
+/// as that runtime ends, it tells the service to stop, then waits (within [`ENDS_WITHIN`]) for it
+/// to have ended, and removes the test's folders Windows refused while the service held them
+/// (`testing::retry_removals`). A test's process exits right after its runtime ends: the folders
+/// left to the service's own end would stay.
+struct Ending {
+    held: Option<tokio::sync::oneshot::Sender<()>>,
+    home: PathBuf,
+}
+
+impl Drop for Ending {
+    fn drop(&mut self) {
+        drop(self.held.take());
+        // Unix removed every folder at once: nothing to wait for.
+        if !crate::testing::removals_pending() {
+            return;
+        }
+        let started = std::time::Instant::now();
+        while RUNNING.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&self.home) && started.elapsed() < ENDS_WITHIN {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        crate::testing::retry_removals();
     }
 }
 
@@ -242,6 +270,9 @@ pub async fn until_ended(home: &Path) {
 
 /// Serves `config.home` (see [`start`]).
 async fn run(config: RunnerConfig, idle: Option<Duration>, waits: bool, until: Until) {
+    // Dropped last, once the service has let its home go (its end, or its task dropped with a
+    // test's runtime): the test folders Windows wouldn't remove while it held them go then.
+    let _removals = Removals;
     // A service of this home that is still stopping holds it a moment longer.
     let mut looks = 0;
     let service = loop {
@@ -265,6 +296,15 @@ async fn run(config: RunnerConfig, idle: Option<Duration>, waits: bool, until: U
     options.reap_every = None;
     if let Err(e) = service.serve(options).await {
         log::warn!("a test's runner service ended: {e}");
+    }
+}
+
+/// Removes, when dropped, the test folders Windows wouldn't remove before (`testing::retry_removals`).
+struct Removals;
+
+impl Drop for Removals {
+    fn drop(&mut self) {
+        crate::testing::retry_removals();
     }
 }
 
@@ -303,8 +343,8 @@ mod tests {
 
     #[test]
     fn a_service_started_on_demand_ends_with_the_tests_runtime() {
-        let dir = tempfile::tempdir().unwrap();
-        let home = dir.path().join("isothrum");
+        let dir = crate::testing::temp_dir("service-runtime");
+        let home = dir.join("isothrum");
         let test = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         drop(test.block_on(client(&home)).unwrap());
         drop(test);
