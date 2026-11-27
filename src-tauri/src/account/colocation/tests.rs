@@ -98,6 +98,9 @@ fn loopback_origins_read_the_probe_in_dev_builds_only() {
         assert!(origin_allowed_in(site, false) && origin_allowed_in(site, true));
     }
     assert!(!origin_allowed_in("https://evil.example.com", true));
+    // The site lives on cyberctf.org; a look-alike host is still refused.
+    assert!(origin_allowed_in("https://www.cyberctf.org", false));
+    assert!(!origin_allowed_in("https://www.cyberctf.org.evil.example", false));
     assert_eq!(super::origin_allowed("http://localhost:3000"), cfg!(debug_assertions));
 }
 
