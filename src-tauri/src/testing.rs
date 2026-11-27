@@ -108,6 +108,12 @@ pub fn remove_dir(dir: &Path) {
     }
 }
 
+/// Whether `home` is in a folder a test let go that Windows wouldn't remove yet: for the service
+/// serving it, as good as gone.
+pub fn let_go(home: &Path) -> bool {
+    PENDING.lock().unwrap_or_else(PoisonError::into_inner).iter().any(|(_, dir)| home.starts_with(dir))
+}
+
 /// Whether a folder [`remove_dir`] couldn't remove is still waiting to go.
 pub fn removals_pending() -> bool {
     !PENDING.lock().unwrap_or_else(PoisonError::into_inner).is_empty()

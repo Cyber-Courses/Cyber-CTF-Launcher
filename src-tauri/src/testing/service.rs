@@ -207,9 +207,11 @@ impl Drop for Ending {
     }
 }
 
-/// Once `home`'s folder is gone.
+/// Once `home`'s folder is gone, or let go by its test where Windows can't remove it while this
+/// service holds its store (`testing::let_go`): a service started from the app's runtime, which
+/// never ends, would otherwise hold it until it idled, after the test's process had exited.
 async fn gone(home: PathBuf) {
-    while home.exists() {
+    while home.exists() && !crate::testing::let_go(&home) {
         tokio::time::sleep(GONE_EVERY).await;
     }
 }
