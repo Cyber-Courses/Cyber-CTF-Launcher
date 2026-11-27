@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { leftovers, run, tempBase, withTemp } from "./temp-leaks.ts";
+import { leftovers, needsShell, run, tempBase, withTemp } from "./temp-leaks.ts";
 
 const bases: string[] = [];
 afterEach(() => {
@@ -38,6 +38,19 @@ describe("temp-leaks", () => {
     expect(tempBase("darwin")).toBe("/tmp");
     expect(tempBase("linux")).toBe("/tmp");
     expect(tempBase("win32")).toBe(tmpdir());
+  });
+
+  it("starts a Windows .cmd shim through cmd, and an .exe as it is, its arguments untouched", () => {
+    const dir = base();
+    writeFileSync(join(dir, "node.exe"), "");
+    writeFileSync(join(dir, "pnpm.cmd"), "");
+    const path = `;${dir}`;
+    expect(needsShell("node", "win32", path)).toBe(false);
+    expect(needsShell("node.exe", "win32", path)).toBe(false);
+    expect(needsShell("pnpm", "win32", path)).toBe(true);
+    expect(needsShell(String.raw`C:\Program Files\nodejs\node.exe`, "win32", path)).toBe(false);
+    expect(needsShell("C:/tools/pnpm.cmd", "win32", path)).toBe(true);
+    expect(needsShell("pnpm", "linux", path)).toBe(false);
   });
 
   it("passes a run that removes what it made, and fails one that leaves something, removing the folder either way", () => {

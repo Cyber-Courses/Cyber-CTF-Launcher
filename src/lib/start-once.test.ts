@@ -22,9 +22,12 @@ describe("startOnce", () => {
     expect(joined).toEqual(["booting", "ready"]);
     finish();
     await Promise.all([a, b]);
-    // Done: the next start runs again.
-    void startOnce("k", start);
+    // Done: the next start runs again; without a log of its own, its lines go nowhere.
+    const c = startOnce("k", start);
     expect(runs).toBe(2);
+    log("again");
+    expect(first).toEqual(["booting", "ready"]);
     finish();
+    await c;
   });
 });

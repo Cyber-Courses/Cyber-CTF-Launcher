@@ -522,7 +522,7 @@ async fn a_lab_never_generated_reads_as_not_running() {
     std::fs::create_dir_all(&dir).unwrap();
     let s = Deployment::here_with(isothrum_runner::RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap().status().await.unwrap();
     assert!(!s.running && s.machines.is_empty());
-    let _ = std::fs::remove_dir_all(root);
+    crate::testing::remove_dir(&root);
 }
 
 #[tokio::test]
@@ -537,7 +537,7 @@ async fn tearing_down_a_lab_never_generated_is_a_clean_no_op() {
     let mut lines = Vec::new();
     run.down(&mut |l| lines.push(l)).await.unwrap();
     assert_eq!(lines, ["Nothing to remove: the run has no files."]);
-    let _ = std::fs::remove_dir_all(root);
+    crate::testing::remove_dir(&root);
 }
 
 #[test]
