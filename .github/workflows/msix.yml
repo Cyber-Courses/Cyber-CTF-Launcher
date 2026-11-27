@@ -9,7 +9,8 @@ name: MSIX (Microsoft Store)
 #
 # Prereqs:
 #   - packaging/msix/AppxManifest.xml carries the real Identity from Partner Center.
-#   - For submit: repo secrets STORE_TENANT_ID, STORE_CLIENT_ID, STORE_CLIENT_SECRET, and the
+#   - For submit: repo secrets STORE_TENANT_ID, STORE_CLIENT_ID, STORE_CLIENT_SECRET (without
+#     them the submission is skipped with a warning), and the
 #     Azure AD app associated in Partner Center (Manager role).
 #   - The listing must have passed certification once manually (the API cannot complete
 #     the very first submission on an incomplete listing).
@@ -270,6 +271,11 @@ jobs:
           STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
         run: |
           $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:STORE_TENANT_ID)) {
+            Write-Host "::warning::The Partner Center secrets (STORE_TENANT_ID, STORE_CLIENT_ID, STORE_CLIENT_SECRET) are not set; skipping the Microsoft Store submission."
+            "skip=true" >> $env:GITHUB_ENV
+            exit 0
+          }
           $api = "https://manage.devcenter.microsoft.com/v1.0/my/applications/$env:STORE_PRODUCT_ID"
           $inProgress = @("CommitStarted", "PreProcessing", "Certification", "Release", "PendingPublication", "Publishing")
           $deadline = (Get-Date).AddMinutes(330)
@@ -299,7 +305,7 @@ jobs:
             Start-Sleep -Seconds 600
           }
 
-      - if: ${{ !inputs.check_only }}
+      - if: ${{ !inputs.check_only && env.skip != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || github.ref }}
@@ -307,7 +313,7 @@ jobs:
             packaging/store
             .github/scripts
 
-      - if: ${{ !inputs.check_only }}
+      - if: ${{ !inputs.check_only && env.skip != 'true' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: CyberCTF-msixbundle
@@ -316,7 +322,7 @@ jobs:
       # Package and listing together (texts, screenshots, logos, trailers from packaging/store/), through the
       # Partner Center submission API.
       - name: Submit package and listing
-        if: ${{ !inputs.check_only }}
+        if: ${{ !inputs.check_only && env.skip != 'true' }}
         shell: pwsh
         env:
           STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
