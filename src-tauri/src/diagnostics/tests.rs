@@ -216,7 +216,6 @@ fn the_bundle_holds_the_summary_the_report_and_the_logs() {
 /// a service that took web's run down, its launch values as secrets.
 #[tokio::test]
 async fn the_bundle_holds_the_runner_services_operations() {
-    use isothrum_runner::fake::{FakeProcesses, Reply};
     let seeded = Seeded::new();
     let dirs = seeded.sources().dirs;
     let home = crate::runtime::paths::runner_home(&dirs).unwrap();
@@ -225,12 +224,7 @@ async fn the_bundle_holds_the_runner_services_operations() {
     let record = json!({ "version": 0, "name": "cyberctf-web", "project": module, "format": "terraform", "cloud": "aws", "state": "ready", "expires_at": 1 });
     crate::testing::runner::save_run(&home, &record);
     let mut config = isothrum_runner::RunnerConfig::new(&home);
-    config.processes = std::sync::Arc::new(FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
-        Some("version") => Reply::ok(r#"{"terraform_version":"1.10.5"}"#),
-        Some("show") => Reply::ok(r#"{"values":{"root_module":{"resources":[]}}}"#),
-        Some("output") => Reply::ok("{}"),
-        _ => Reply::ok(""),
-    }));
+    config.processes = std::sync::Arc::new(crate::testing::runner::empty_terraform());
     crate::testing::service::serve_home(config);
     let record = crate::runtime::isothrum::records(&home).await.unwrap().into_iter().find(|r| r.name.as_str() == "cyberctf-web").unwrap();
     let launched = [("CTF_LAUNCH_TOKEN".to_owned(), LAUNCH_TOKEN.to_owned())];

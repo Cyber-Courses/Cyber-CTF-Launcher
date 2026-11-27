@@ -5,6 +5,9 @@ import { render, screen, within } from "@testing-library/react";
 import type userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 import { MachineScreen } from "@/features/machine/machine-screen";
+import { MachineStepBody, useMachineSetup, type MachineStep } from "@/features/machine/setup-steps";
+import type { SystemReport } from "@/lib/tauri";
+import { SETUP_SHAPES } from "@/lib/tauri/generated/SetupShapes";
 import { must } from "@/components/test-support";
 import { readyReport } from "@/test/fixtures";
 import type { Call } from "@/test/tauri";
@@ -50,4 +53,21 @@ export async function installDockerDesktop(user: ReturnType<typeof userEvent.set
   await agreeToInstall(user);
   await flush();
   expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
+}
+
+/** A machine the core built for the setup's tests (Rust's `machine::setup::shapes`), a copy of
+ *  its own to change. */
+export const setupShape = (name: keyof typeof SETUP_SHAPES): SystemReport => structuredClone(SETUP_SHAPES[name]);
+
+/** One setup step's body on `report`, with a live setup state. */
+export function PlanStep({ step, report }: { step: MachineStep; report: SystemReport }) {
+  const setup = useMachineSetup(report, () => {});
+  return <MachineStepBody step={step} report={report} setup={setup} />;
+}
+
+/** Presses Turn on WSL 2 and agrees to what the install asks. */
+export async function turnOnWsl(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(button(/turn on wsl 2/i));
+  await agreeToInstall(user);
+  await flush();
 }

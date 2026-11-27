@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DownloadByHand, downloadOf } from "@/features/machine/download-by-hand";
 import { InstallConsent, InstallHint, agreementsOf, asksOf } from "@/features/machine/install-asks";
-import { MachineStepBody, useMachineSetup, type MachineStep } from "@/features/machine/setup-steps";
 import type { Interaction, SystemReport } from "@/lib/tauri";
 import { SETUP_SHAPES } from "@/lib/tauri/generated/SetupShapes";
+import { PlanStep, setupShape } from "@/features/machine/machine-test-kit";
 import { commands, held, installTauri, progressLines, settled, stream } from "@/test/tauri";
 import { button } from "@/test/ui";
 
@@ -18,13 +18,6 @@ import { button } from "@/test/ui";
 const DOCKER_URL = "https://www.docker.com/legal/docker-subscription-service-agreement/";
 const DOCKER_AGREEMENT: Interaction = { kind: "vendorAgreement", app: "Docker Desktop", name: "Docker Subscription Service Agreement", url: DOCKER_URL };
 const MAC_PASSWORD: Interaction = { kind: "adminPassword", via: "mac" };
-
-const shape = (name: keyof typeof SETUP_SHAPES): SystemReport => structuredClone(SETUP_SHAPES[name]);
-
-function Step({ step, report }: { step: MachineStep; report: SystemReport }) {
-  const setup = useMachineSetup(report, () => {});
-  return <MachineStepBody step={step} report={report} setup={setup} />;
-}
 
 describe("the consent before an install", () => {
   it("says each thing the install asks, the agreement Docker Desktop will show to accept there, with nothing to tick", async () => {
@@ -61,12 +54,12 @@ describe("the consent before an install", () => {
   });
 
   it("finds what an install asks in the setup options the core worked out", () => {
-    const windows = shape("bareWindows");
+    const windows = setupShape("bareWindows");
     expect(asksOf(windows, "docker")).toEqual([{ kind: "adminPassword", via: "uac" }, DOCKER_AGREEMENT]);
     expect(asksOf(windows, "wsl")).toEqual([{ kind: "adminPassword", via: "uac" }, { kind: "restart" }]);
-    expect(agreementsOf(asksOf(shape("macDockerWithoutVagrant"), "vagrant"))).toEqual([]);
-    expect(agreementsOf(asksOf(shape("macDockerWithoutVagrant"), "docker"))).toEqual([]);
-    expect(asksOf(shape("macDockerWithoutVagrant"), "vagrant")).toEqual([MAC_PASSWORD]);
+    expect(agreementsOf(asksOf(setupShape("macDockerWithoutVagrant"), "vagrant"))).toEqual([]);
+    expect(agreementsOf(asksOf(setupShape("macDockerWithoutVagrant"), "docker"))).toEqual([]);
+    expect(asksOf(setupShape("macDockerWithoutVagrant"), "vagrant")).toEqual([MAC_PASSWORD]);
     expect(asksOf(null, "docker")).toEqual([]);
   });
 });
@@ -100,7 +93,7 @@ describe("an install from the setup window", () => {
       ),
     });
     const user = userEvent.setup();
-    render(<Step step="docker" report={shape("bareWindows")} />);
+    render(<PlanStep step="docker" report={setupShape("bareWindows")} />);
     await user.click(button(/install docker desktop/i));
     const dialog = await screen.findByRole("dialog", { name: "Before Docker Desktop installs" });
     expect(dialog.textContent).toContain("Windows will ask you to allow the changes (User Account Control).");
@@ -121,7 +114,7 @@ describe("an install from the setup window", () => {
   it("installs nothing when the player cancels", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    render(<Step step="docker" report={shape("bareWindows")} />);
+    render(<PlanStep step="docker" report={setupShape("bareWindows")} />);
     await user.click(button(/install docker desktop/i));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -132,7 +125,7 @@ describe("an install from the setup window", () => {
 
 describe("a tool only its vendor offers", () => {
   it("is a download by hand from its vendor's page on each OS, never left out", () => {
-    const vmware = (name: keyof typeof SETUP_SHAPES) => downloadOf(asksOfVmware(shape(name)));
+    const vmware = (name: keyof typeof SETUP_SHAPES) => downloadOf(asksOfVmware(setupShape(name)));
     expect(vmware("bareWindows")).toMatchObject({ vendor: "Broadcom", url: expect.stringContaining("VMware%20Workstation%20Pro") as string });
     expect(vmware("macDockerWithoutVagrant")).toMatchObject({ vendor: "Broadcom", url: expect.stringContaining("VMware%20Fusion") as string });
   });
@@ -142,7 +135,7 @@ describe("a tool only its vendor offers", () => {
     const user = userEvent.setup();
     const onCheck = vi.fn();
     const page = { kind: "downloadByHand", vendor: "Broadcom", url: "https://support.broadcom.com/group/ecx/downloads" } as const;
-    const report = shape("bareWindows");
+    const report = setupShape("bareWindows");
     const { rerender } = render(<DownloadByHand name="VMware Workstation" page={page} report={report} onCheck={onCheck} />);
     await user.click(screen.getByRole("button", { name: "Open Broadcom's download page" }));
     expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toBe(page.url);
