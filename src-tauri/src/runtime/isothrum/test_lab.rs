@@ -62,7 +62,7 @@ impl Home {
 
 impl Drop for Home {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        crate::testing::remove_dir(&self.root);
     }
 }
 
