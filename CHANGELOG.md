@@ -35,6 +35,9 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
+- **Updates are signed with a new key.** The old updater key is gone, so a 1.x install can't
+  update itself to 2.0.0: download 2.0.0 once from the releases page, and later versions update
+  themselves again.
 - **A Mac's apps install with nothing left to drag.** Docker Desktop, Vagrant, VirtualBox and UTM
   install from their vendor's disk image or package as an administrator (Isothrum's
   `Note::InstallingFromVendor`); the step says so, and Docker Desktop's says it accepts the Docker
