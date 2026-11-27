@@ -361,6 +361,8 @@ mod tests {
         )
         .unwrap();
         let home = dir.join("home");
+        // A runner that never reaches this host's tools: the shell is worked out, nothing runs.
+        crate::testing::service::serve_silent(&home);
         let shell = box_shell(&dir, Target::Docker, isothrum::Deployment::docker(&home, &dir, "t"), false).await;
         let line = shell.args.join(" ");
         assert!(line.contains(&format!(" exec --user {PLAYER} {NAME} sh -c ")), "a container: exec as the account: {line}");
@@ -371,6 +373,7 @@ mod tests {
         let dir = lab("os: debian@12");
         super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, Inside { scripts: &super::super::test_scripts(), shared: None }).unwrap();
         let home = dir.join("home");
+        crate::testing::service::serve_silent(&home);
         let shell = box_shell(&dir, Target::Vagrant, isothrum::Deployment::vm(&home, &dir, "t"), true).await;
         assert_eq!(shell.args[..3], ["ssh", NAME, "-c"], "{:?}", shell.args);
         assert!(shell.args[3].contains(&format!("exec sudo -iu {PLAYER}")), "a VM: a sudo login as the account: {:?}", shell.args);

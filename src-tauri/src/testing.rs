@@ -66,8 +66,10 @@ impl Drop for TempDir {
 /// with the test's runtime, or once idle).
 static PENDING: Mutex<Vec<(std::thread::ThreadId, PathBuf)>> = Mutex::new(Vec::new());
 
-/// How long a test's thread, as it ends, waits for the folders it dropped to go.
-const LAST_TRY_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+/// How long a test's thread, as it ends, waits for the folders it dropped to go: as long as a
+/// runner service may take to end (`service::ENDS_WITHIN`: a stopping one drains its running
+/// operations for 40 s), one on this host's tools still answering a call the test made.
+const LAST_TRY_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
 thread_local! {
     /// Tries this thread's pending folders once more as the thread ends ([`LastTry`]).
@@ -106,6 +108,12 @@ pub fn remove_dir(dir: &Path) {
         // A thread that is ending already has no last try to make: the folder waits for another's.
         let _ = LAST_TRY.try_with(|_| ());
     }
+}
+
+/// Whether `home` is in a folder a test let go that Windows wouldn't remove yet: for the service
+/// serving it, as good as gone.
+pub fn let_go(home: &Path) -> bool {
+    PENDING.lock().unwrap_or_else(PoisonError::into_inner).iter().any(|(_, dir)| home.starts_with(dir))
 }
 
 /// Whether a folder [`remove_dir`] couldn't remove is still waiting to go.
