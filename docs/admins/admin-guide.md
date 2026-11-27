@@ -185,8 +185,8 @@ gh attestation verify <installer> --repo Cyber-Courses/Cyber-CTF-Launcher \
 
 **The operating system's own signatures.** The macOS app and DMG are signed with a Developer ID
 and notarized (`spctl -a -vvv "/Applications/Cyber CTF.app"`). Windows installers are
-Authenticode-signed from the release after 1.8.9 (`Get-AuthenticodeSignature <file>`); up to 1.8.9
-they were not. Linux packages from the apt repository are checked by apt against its signing key;
+not Authenticode-signed yet: check them with steps 1 to 3 (`Get-AuthenticodeSignature <file>`
+reports them `NotSigned`). Linux packages from the apt repository are checked by apt against its signing key;
 a `.deb`, `.rpm` or AppImage downloaded from the release page is checked with steps 1 to 3.
 
 ## Network
