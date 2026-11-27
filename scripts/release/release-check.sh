@@ -83,15 +83,6 @@ bindings_committed() {
 format_check() {
   pnpm format:check && cargo fmt --manifest-path src-tauri/Cargo.toml --check
 }
-# The Rust tests under cargo-nextest (src-tauri/.config/nextest.toml: each test in its own process,
-# nothing retried, a slow test reported), then the doctests, which nextest doesn't run. Both run,
-# so a failure in one doesn't hide the other.
-rust_tests() {
-  local status=0
-  cargo nextest run --manifest-path src-tauri/Cargo.toml || status=$?
-  cargo test --manifest-path src-tauri/Cargo.toml --doc || status=$?
-  return "$status"
-}
 rust_cov() {
   cargo llvm-cov nextest --no-report --manifest-path src-tauri/Cargo.toml &&
     cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --ignore-filename-regex "$RUST_COV_IGNORE" --summary-only --fail-under-lines "$RUST_LINES_FLOOR"
@@ -114,7 +105,8 @@ step quality pnpm quality
 # The unit tests run with a temp folder of their own: what they leave there fails the step.
 step unit-web pnpm check:temp-leaks pnpm exec vitest run --coverage
 step unit-harness pnpm test:harness
-step unit-rust pnpm check:temp-leaks bash -c "$(declare -f rust_tests); rust_tests"
+# The Rust tests: nextest, then the doctests (scripts/check/rust-tests.sh).
+step unit-rust pnpm check:temp-leaks bash scripts/check/rust-tests.sh
 step bindings bindings_committed
 # Every intra-doc link resolves on this machine's items (the other
 # platforms' are other-platforms' -docs steps).

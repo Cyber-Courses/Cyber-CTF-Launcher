@@ -36,7 +36,7 @@ const SECRETS: [&str; 9] = [
 
 /// A seeded computer: a home folder holding the app's data and log folders.
 struct Seeded {
-    _root: tempfile::TempDir,
+    _root: crate::testing::TempDir,
     home: PathBuf,
     data: PathBuf,
     logs: PathBuf,
@@ -52,8 +52,8 @@ impl Drop for Seeded {
 
 impl Seeded {
     fn new() -> Seeded {
-        let root = tempfile::tempdir().unwrap();
-        let home = root.path().join("home").join("ada");
+        let root = crate::testing::temp_dir("diagnostics");
+        let home = root.join("home").join("ada");
         let (data, logs) = (home.join("app-data"), home.join("app-logs"));
         let seeded = Seeded { home, data, logs, _root: root };
         seeded.seed();
@@ -256,9 +256,9 @@ async fn the_bundle_holds_the_runner_services_operations() {
 
 #[test]
 fn an_empty_data_folder_still_makes_a_bundle() {
-    let root = tempfile::tempdir().unwrap();
-    let sources = Sources { dirs: AppDirs::new(Some(root.path().join("data")), None), log_dir: None, home: None, settings: BTreeMap::new() };
-    let out = root.path().join("d.tar.gz");
+    let root = crate::testing::temp_dir("diagnostics");
+    let sources = Sources { dirs: AppDirs::new(Some(root.join("data")), None), log_dir: None, home: None, settings: BTreeMap::new() };
+    let out = root.join("d.tar.gz");
     write(&sources, &json!({}), Ok(Runner::default()), &out).unwrap();
     let files = unpack(&out);
     assert_eq!(files.keys().map(String::as_str).collect::<Vec<_>>(), ["README.txt", "host-report.json", "summary.json"]);

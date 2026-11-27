@@ -12,7 +12,7 @@ use crate::runtime::providers::testing::{Machine, host};
 async fn the_check_says_where_the_ovf_tool_was_found() {
     use crate::machine::tools::ovftool::managed_dir;
     use isothrum_machine::tools::ovftool::Source;
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::testing::temp_dir("system");
     let tools = FakeProcesses::model(|call| {
         if std::path::Path::new(&call.program).file_stem().is_some_and(|s| s == "ovftool") {
             Reply::ok("VMware ovftool 5.1.0 (build-24936374)\n")
@@ -20,7 +20,7 @@ async fn the_check_says_where_the_ovf_tool_was_found() {
             Reply::missing()
         }
     });
-    let _machine = Machine::set(Arc::new(tools), host(root.path()));
+    let _machine = Machine::set(Arc::new(tools), host(&root));
     let t = crate::testing::test_app::TestApp::new();
     let report = super::system_check(t.dirs()).await;
     assert!(report.ovftool_location.is_none() && !report.ovftool.installed, "none placed yet: none found, whatever this computer has");
@@ -37,8 +37,8 @@ async fn the_check_says_where_the_ovf_tool_was_found() {
 
 /// The machine check's report with `tools` as this machine's.
 async fn checked(tools: FakeProcesses) -> super::SystemReport {
-    let root = tempfile::tempdir().unwrap();
-    let _machine = Machine::set(Arc::new(tools), host(root.path()));
+    let root = crate::testing::temp_dir("system");
+    let _machine = Machine::set(Arc::new(tools), host(&root));
     let t = crate::testing::test_app::TestApp::new();
     super::system_check(t.dirs()).await
 }
