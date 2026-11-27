@@ -59,8 +59,8 @@ pub(crate) fn use_the_real_scripts() {
 
 /// The scripts at the pinned commit: from the cache (`<cache>/attack-box/<sha256>`) when there,
 /// else downloaded, checked and kept there (only checked, when the app's cache folder is unknown).
-/// `log` says when a download starts. In the launcher's tests, [`for_tests`] unless the real ones
-/// are asked for ([`use_the_real_scripts`]).
+/// `log` says when a download starts. In the launcher's tests, `for_tests` unless the real ones
+/// are asked for (`use_the_real_scripts`): both are test-only, so not links in the docs.
 pub(crate) async fn fetch(dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Scripts> {
     #[cfg(test)]
     if !REAL.load(std::sync::atomic::Ordering::Relaxed) {

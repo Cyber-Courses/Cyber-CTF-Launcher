@@ -52,7 +52,7 @@ export function bundleFileName(now: Date): string {
 }
 
 /** The launcher's support address, where error reports go. */
-export const SUPPORT_EMAIL = "support@cyberctf.com";
+export const SUPPORT_EMAIL = "support@cyberctf.org";
 
 /** A `mailto:` link to support with `subject` and `body`. A mail link can't attach a file: the
  *  body tells the player to attach the bundle. */

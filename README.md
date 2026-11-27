@@ -2,7 +2,7 @@
 
 [![Gate](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/gate.yml/badge.svg?branch=main)](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/gate.yml?query=branch%3Amain)
 
-The desktop launcher for [Cyber CTF](https://www.cyberctf.com) labs: hands-on, deliberately
+The desktop launcher for [Cyber CTF](https://www.cyberctf.org) labs: hands-on, deliberately
 vulnerable environments for learning offensive and defensive security. It runs each lab, with an
 attack box to work from, on your own computer (Docker or virtual machines), on your own Proxmox or
 ESXi server, or in your own cloud account (AWS, Azure, Google Cloud, DigitalOcean, Linode, Oracle
@@ -109,8 +109,10 @@ missing.
 ## Signed releases
 
 - **macOS**: the app is signed with a Developer ID and notarized by Apple.
-- **Windows**: the installers and the app are Authenticode-signed from the release after 1.8.9,
-  and the release workflow checks each signature it makes. Up to 1.8.9 they were not signed. The Microsoft Store package is signed by Microsoft.
+- **Windows**: the installers and the app are not Authenticode-signed yet, so Windows SmartScreen
+  may warn when you open the installer (**More info**, then **Run anyway**). Each release's
+  Sigstore-signed `SHA256SUMS` and build provenance still let you check what you downloaded. The release
+  workflow signs them, and checks each signature, once its Azure Trusted Signing secrets are set.
 - **Updates**: the in-app updater installs only packages signed with the launcher's own key.
 - **Linux**: the apt repository is signed; each release has `SHA256SUMS` signed through
   Sigstore, build provenance and SBOM attestations, and SBOMs.

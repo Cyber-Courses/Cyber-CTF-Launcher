@@ -12,26 +12,28 @@ use isothrum_client::Client;
 const EXE: &str = env!("CARGO_BIN_EXE_cyberctf-desktop");
 
 /// A home of the test's own, whose service is shut down when it drops, failed assertion or not:
-/// detached, it would serve a deleted folder until it idled out, minutes after the test.
-struct Home(tempfile::TempDir);
+/// detached, it would serve a deleted folder until it idled out, minutes after the test. The
+/// folder goes once the service's process has let it go: Windows won't remove its store while
+/// that process still has it open, which it does a moment after it stopped answering.
+struct Home(std::path::PathBuf);
 
 impl Home {
     fn new() -> Home {
         match tempfile::tempdir() {
-            Ok(dir) => Home(dir),
+            Ok(dir) => Home(dir.keep()),
             Err(e) => panic!("no temporary folder: {e}"),
         }
     }
 
     fn path(&self) -> &Path {
-        self.0.path()
+        &self.0
     }
 }
 
 impl Drop for Home {
     fn drop(&mut self) {
         // The test's runtime is busy dropping it: the shutdown runs on a runtime of its own.
-        let home = self.0.path().to_path_buf();
+        let home = self.0.clone();
         let _ = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().ok()?;
             runtime.block_on(async {
@@ -40,6 +42,11 @@ impl Drop for Home {
             })
         })
         .join();
+        // Tried until it goes, within a minute (a stopping service writes its store as it ends).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while std::fs::remove_dir_all(&self.0).is_err() && self.0.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
 

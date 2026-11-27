@@ -41,9 +41,9 @@ fn vmware_tools(root: &Path) -> Machine {
 #[tokio::test]
 async fn a_placed_copy_is_reported_by_the_next_check() {
     let t = TestApp::new();
-    let root = tempfile::tempdir().unwrap();
-    let picked = download(&root.path().join("download"));
-    let _machine = vmware_tools(root.path());
+    let root = crate::testing::temp_dir("ovftool");
+    let picked = download(&root.join("download"));
+    let _machine = vmware_tools(&root);
     let outcome = place(&t.dirs(), &picked).await.unwrap();
     let placed = managed_dir(t.data()).join(ovftool::exe(isothrum_runner::this_host()));
     assert!(matches!(&outcome, Outcome::Placed { path, .. } if Path::new(path) == placed), "{outcome:?}");
@@ -57,9 +57,9 @@ async fn a_placed_copy_is_reported_by_the_next_check() {
 async fn placing_is_refused_when_the_policy_turns_tool_installs_off() {
     let _policy = crate::platform::policy::Override::with(&[Key::DisableToolInstalls]);
     let t = TestApp::new();
-    let root = tempfile::tempdir().unwrap();
-    let picked = download(&root.path().join("download"));
-    let _machine = vmware_tools(root.path());
+    let root = crate::testing::temp_dir("ovftool");
+    let picked = download(&root.join("download"));
+    let _machine = vmware_tools(&root);
     let err = place(&t.dirs(), &picked).await.unwrap_err();
     assert!(matches!(err.code(), crate::error::Code::TurnedOffByPolicy { .. }), "{err}");
     assert!(!t.data().join("tools").exists());

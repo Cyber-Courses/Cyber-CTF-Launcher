@@ -7,6 +7,18 @@ use std::path::Path;
 use isothrum_runner::store::Store;
 use isothrum_runner::{Desired, RunName, RunRecord, RunState, Runner, RunnerConfig};
 
+/// Terraform as a run of an empty module sees it: its version, no resources, no outputs, and
+/// every other command answered with nothing.
+pub fn empty_terraform() -> isothrum_runner::fake::FakeProcesses {
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+    FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
+        Some("version") => Reply::ok(r#"{"terraform_version":"1.10.5"}"#),
+        Some("show") => Reply::ok(r#"{"values":{"root_module":{"resources":[]}}}"#),
+        Some("output") => Reply::ok("{}"),
+        _ => Reply::ok(""),
+    })
+}
+
 /// Saves `record` (a run record, as the runner's JSON) in the store of the runner whose home is
 /// `home`, in the state the record says its last operation left it in, wanted as that state
 /// says (gone when absent, parked when parked, else running). A run already recorded is replaced.

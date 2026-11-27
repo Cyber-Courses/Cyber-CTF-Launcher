@@ -76,15 +76,9 @@ struct Expired {
 
 impl Expired {
     fn new(runs: &[(&str, Option<&str>)]) -> Expired {
-        use isothrum_runner::fake::{FakeProcesses, Reply};
         let root = crate::testing::temp_dir("reap");
         let home = root.join("isothrum");
-        let fake = std::sync::Arc::new(FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
-            Some("version") => Reply::ok(r#"{"terraform_version":"1.10.5"}"#),
-            Some("show") => Reply::ok(r#"{"values":{"root_module":{"resources":[]}}}"#),
-            Some("output") => Reply::ok("{}"),
-            _ => Reply::ok(""),
-        }));
+        let fake = std::sync::Arc::new(crate::testing::runner::empty_terraform());
         let mut config = isothrum_runner::RunnerConfig::new(&home);
         config.processes = std::sync::Arc::clone(&fake) as std::sync::Arc<dyn isothrum_runner::ProcessRunner>;
         for (lab, host) in runs {

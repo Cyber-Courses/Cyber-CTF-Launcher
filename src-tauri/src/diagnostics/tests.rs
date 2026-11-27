@@ -36,7 +36,7 @@ const SECRETS: [&str; 9] = [
 
 /// A seeded computer: a home folder holding the app's data and log folders.
 struct Seeded {
-    _root: tempfile::TempDir,
+    _root: crate::testing::TempDir,
     home: PathBuf,
     data: PathBuf,
     logs: PathBuf,
@@ -52,8 +52,8 @@ impl Drop for Seeded {
 
 impl Seeded {
     fn new() -> Seeded {
-        let root = tempfile::tempdir().unwrap();
-        let home = root.path().join("home").join("ada");
+        let root = crate::testing::temp_dir("diagnostics");
+        let home = root.join("home").join("ada");
         let (data, logs) = (home.join("app-data"), home.join("app-logs"));
         let seeded = Seeded { home, data, logs, _root: root };
         seeded.seed();
@@ -216,7 +216,6 @@ fn the_bundle_holds_the_summary_the_report_and_the_logs() {
 /// a service that took web's run down, its launch values as secrets.
 #[tokio::test]
 async fn the_bundle_holds_the_runner_services_operations() {
-    use isothrum_runner::fake::{FakeProcesses, Reply};
     let seeded = Seeded::new();
     let dirs = seeded.sources().dirs;
     let home = crate::runtime::paths::runner_home(&dirs).unwrap();
@@ -225,12 +224,7 @@ async fn the_bundle_holds_the_runner_services_operations() {
     let record = json!({ "version": 0, "name": "cyberctf-web", "project": module, "format": "terraform", "cloud": "aws", "state": "ready", "expires_at": 1 });
     crate::testing::runner::save_run(&home, &record);
     let mut config = isothrum_runner::RunnerConfig::new(&home);
-    config.processes = std::sync::Arc::new(FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
-        Some("version") => Reply::ok(r#"{"terraform_version":"1.10.5"}"#),
-        Some("show") => Reply::ok(r#"{"values":{"root_module":{"resources":[]}}}"#),
-        Some("output") => Reply::ok("{}"),
-        _ => Reply::ok(""),
-    }));
+    config.processes = std::sync::Arc::new(crate::testing::runner::empty_terraform());
     crate::testing::service::serve_home(config);
     let record = crate::runtime::isothrum::records(&home).await.unwrap().into_iter().find(|r| r.name.as_str() == "cyberctf-web").unwrap();
     let launched = [("CTF_LAUNCH_TOKEN".to_owned(), LAUNCH_TOKEN.to_owned())];
@@ -256,9 +250,9 @@ async fn the_bundle_holds_the_runner_services_operations() {
 
 #[test]
 fn an_empty_data_folder_still_makes_a_bundle() {
-    let root = tempfile::tempdir().unwrap();
-    let sources = Sources { dirs: AppDirs::new(Some(root.path().join("data")), None), log_dir: None, home: None, settings: BTreeMap::new() };
-    let out = root.path().join("d.tar.gz");
+    let root = crate::testing::temp_dir("diagnostics");
+    let sources = Sources { dirs: AppDirs::new(Some(root.join("data")), None), log_dir: None, home: None, settings: BTreeMap::new() };
+    let out = root.join("d.tar.gz");
     write(&sources, &json!({}), Ok(Runner::default()), &out).unwrap();
     let files = unpack(&out);
     assert_eq!(files.keys().map(String::as_str).collect::<Vec<_>>(), ["README.txt", "host-report.json", "summary.json"]);

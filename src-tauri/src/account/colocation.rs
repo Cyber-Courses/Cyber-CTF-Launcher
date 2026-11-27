@@ -20,7 +20,14 @@ use crate::platform::loopback_http::{ct_eq, header};
 
 /// Site origins allowed to read the probe. Loopback origins are allowed too, in dev builds only
 /// (the site's dev server): in a release any local web page could otherwise read it.
-const ALLOWED_ORIGINS: [&str; 4] = ["https://www.cybercourses.com", "https://cybercourses.com", "https://www.cyberctf.com", "https://cyberctf.com"];
+const ALLOWED_ORIGINS: [&str; 6] = [
+    "https://www.cybercourses.com",
+    "https://cybercourses.com",
+    "https://www.cyberctf.org",
+    "https://cyberctf.org",
+    "https://www.cyberctf.com",
+    "https://cyberctf.com",
+];
 
 /// A loopback dev origin, by exact host match (not a prefix): `http(s)://localhost` or
 /// `127.0.0.1`, with an optional numeric port. A prefix match would also accept

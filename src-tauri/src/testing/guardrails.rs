@@ -214,6 +214,16 @@ const SLEEP_ALLOWED: &[(&str, &str, &str)] = &[
         "a service on the services' runtime looking for its home's folder to go, the test's end, for as long as it serves",
     ),
     ("screen/native.rs", "tokio::time::sleep(Duration::from_millis(20)).await;", "polls to a 120 s deadline for the viewer to start, then to warn"),
+    (
+        "testing/service.rs",
+        "std::thread::sleep(Duration::from_millis(10));",
+        "a test's runtime ending polls, to a 60 s deadline, for its service to have ended, so Windows lets its folders go",
+    ),
+    (
+        "testing.rs",
+        "std::thread::sleep(std::time::Duration::from_millis(10));",
+        "a test's thread ending polls, to a 60 s deadline, for the folders Windows refused to go",
+    ),
 ];
 
 #[test]
