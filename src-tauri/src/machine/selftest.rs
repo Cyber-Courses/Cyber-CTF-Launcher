@@ -334,6 +334,9 @@ mod tests {
     }
 
     #[tokio::test]
+    // Windows on Arm offers only Hyper-V, and Hyper-V has no test box for Arm
+    // (isothrum-machine's `box_for`), so no VM boots there.
+    #[cfg_attr(all(windows, target_arch = "aarch64"), ignore = "no Hyper-V test box for Arm")]
     async fn the_vm_test_says_each_step_in_the_apps_words_boots_pings_and_deletes_a_vm() {
         let (ran, seen, tools, t) = vm_test(true).await;
         let done: Vec<String> = seen
