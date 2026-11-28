@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/app-shell";
 import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { setAttackDesktop } from "@/lib/settings";
+import { exposeTerminalText, WDIO_TERMINAL_TEXT } from "@/lib/wdio";
 import { installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { choiceState, terminalText, TITLE_BAR } from "./page.mjs";
@@ -86,6 +87,23 @@ describe("the terminal's text", () => {
     // What the spec read before: "no answer to `whoami`" with the answer on screen.
     expect(block.textContent).toContain("└─$ whoamiplayer┌──(");
     expect(block.textContent.split("\n").some((l) => l.trim() === "player")).toBe(false);
+  });
+
+  it("reads xterm's buffer where the build exposes it: a locked screen leaves the drawn rows blank", () => {
+    // The M4 with its screen locked (11-23, 11-28): the prompt in the buffer, 25 blank rows drawn.
+    const host = document.createElement("div");
+    const xterm = document.createElement("div");
+    xterm.className = "xterm";
+    host.append(xterm);
+    document.body.append(host);
+    xterm.append(xtermRows([[""], [""]]));
+    const lines = ["┌──(player㉿attackbox)-[~]", "└─$ whoami", "player\u00a0\u00a0", ""];
+    exposeTerminalText(host, {
+      rows: lines.length,
+      buffer: { active: { viewportY: 0, getLine: (y: number) => ({ translateToString: () => lines[y] }) } },
+    });
+    expect(WDIO_TERMINAL_TEXT in host).toBe(true);
+    expect(terminalText().split("\n")).toEqual(["┌──(player㉿attackbox)-[~]", "└─$ whoami", "player", ""]);
   });
 
   it("reads a no-break space as a space, and is empty with no terminal on the page", () => {

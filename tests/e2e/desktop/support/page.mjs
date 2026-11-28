@@ -15,17 +15,23 @@
 export const TITLE_BAR = "main > [data-tauri-drag-region]";
 
 /**
- * The text of the terminal on this page (xterm.js's DOM renderer: a `.xterm-rows` block of one
- * `<div>` per row), one line per row, each without its trailing blanks; "" when the page has no
- * terminal. Run in the page (`b.execute(terminalText)`), so it names nothing outside itself.
+ * The text of the terminal on this page, one line per row, each without its trailing blanks; ""
+ * when the page has no terminal. From xterm's buffer where the build exposes it on the terminal's
+ * element (`__wdioTerminalText`, src/lib/wdio.ts): a locked screen or a sleeping display stops
+ * xterm drawing its rows, not filling its buffer. Else from xterm.js's DOM renderer, a
+ * `.xterm-rows` block of one `<div>` per row. Run in the page (`b.execute(terminalText)`), so it
+ * names nothing outside itself.
  * @param {Document} [doc]
  * @returns {string}
  */
 export function terminalText(doc = document) {
+  const line = (/** @type {string} */ text) => text.replace(/\u00a0/g, " ").replace(/\s+$/, "");
+  const host = /** @type {(Element & { __wdioTerminalText?: () => string }) | null | undefined} */ (doc.querySelector(".xterm")?.parentElement);
+  if (typeof host?.__wdioTerminalText === "function") return host.__wdioTerminalText().split("\n").map(line).join("\n");
   const rows = doc.querySelector(".xterm-rows");
   if (!rows) return "";
   return Array.from(rows.children)
-    .map((row) => (row.textContent || "").replace(/\u00a0/g, " ").replace(/\s+$/, ""))
+    .map((row) => line(row.textContent || ""))
     .join("\n");
 }
 
