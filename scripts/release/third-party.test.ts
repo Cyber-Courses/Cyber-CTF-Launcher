@@ -2,7 +2,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cdxLicense, licenseFiles, npmNotice, npmSbomOf, parseArgs, purl, sbomTimestamp, type NpmLicensed, type NpmNode } from "./third-party.ts";
+import {
+  cdxLicense,
+  licenseFiles,
+  npmNotice,
+  npmSbomOf,
+  parseArgs,
+  purl,
+  sbomTimestamp,
+  withSerialNumber,
+  type NpmLicensed,
+  type NpmNode,
+} from "./third-party.ts";
 
 const dirs: string[] = [];
 /** A package folder holding `files` (name: text), removed after the test. */
@@ -102,6 +113,26 @@ describe("third-party: the npm SBOM", () => {
       { ref: "pkg:npm/cyber-ctf-desktop@1.8.9", dependsOn: ["pkg:npm/%40scope/opt@0.1.0", "pkg:npm/a@2.0.0", "pkg:npm/b@2.1.0"] },
       { ref: "pkg:npm/mid@3.0.0", dependsOn: ["pkg:npm/leaf@1.0.0"] },
     ]);
+  });
+});
+
+describe("third-party: the serial number", () => {
+  const bom = { bomFormat: "CycloneDX", specVersion: "1.5", version: 1, components: [{ name: "a" }] };
+
+  it("is added, as a UUID, after the format and the version GitHub's attestation reads first", () => {
+    const out = withSerialNumber(bom);
+    expect(out.serialNumber).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(Object.keys(out)).toEqual(["bomFormat", "specVersion", "serialNumber", "version", "components"]);
+  });
+
+  it("is the same for the same SBOM, and another for another", () => {
+    expect(withSerialNumber({ ...bom }).serialNumber).toBe(withSerialNumber(bom).serialNumber);
+    expect(withSerialNumber({ ...bom, version: 2 }).serialNumber).not.toBe(withSerialNumber(bom).serialNumber);
+  });
+
+  it("is kept when the SBOM has one", () => {
+    const own = { ...bom, serialNumber: "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79" };
+    expect(withSerialNumber(own)).toBe(own);
   });
 });
 

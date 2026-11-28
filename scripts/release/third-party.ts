@@ -15,7 +15,8 @@
 // frontend bundles (Next.js's server-only packages, such as its image library, are listed though
 // the app doesn't ship them).
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { helpAsked } from "../lib/cli.ts";
@@ -119,14 +120,14 @@ export function cdxLicense(license: string): Record<string, unknown> {
 }
 
 /** The npm SBOM of this checkout: its resolved production tree, with the packages' licences. */
-function npmSbom(timestamp: string): unknown {
+function npmSbom(timestamp: string): Record<string, unknown> {
   const [root] = JSON.parse(run("pnpm", ["list", "--prod", "--depth", "Infinity", "--json"])) as (NpmNode & { name: string })[];
   return npmSbomOf(root, npmPackages(), timestamp);
 }
 
 /** The npm SBOM of the tree under `root` (`pnpm list`'s): every package once, with its licence
  *  (`packages`, `pnpm licenses list`'s) and what it depends on. */
-export function npmSbomOf(root: NpmNode & { name: string }, packages: NpmLicensed[], timestamp: string): unknown {
+export function npmSbomOf(root: NpmNode & { name: string }, packages: NpmLicensed[], timestamp: string): Record<string, unknown> {
   const licenses = new Map<string, string>();
   for (const p of packages) for (const v of p.versions) licenses.set(`${p.name}@${v}`, p.license);
   const components = new Map<string, Record<string, unknown>>();
@@ -194,9 +195,26 @@ function sbom(dir: string): void {
     "cyberctf-rust.cdx",
     "-q",
   ]);
-  renameSync("src-tauri/cyberctf-rust.cdx.json", join(dir, "cyberctf-rust.cdx.json"));
-  writeFileSync(join(dir, "cyberctf-npm.cdx.json"), `${JSON.stringify(npmSbom(sbomTimestamp(process.env.SOURCE_DATE_EPOCH, new Date())), null, 2)}\n`);
+  const rust = JSON.parse(readFileSync("src-tauri/cyberctf-rust.cdx.json", "utf8")) as Record<string, unknown>;
+  writeFileSync(join(dir, "cyberctf-rust.cdx.json"), `${JSON.stringify(withSerialNumber(rust), null, 2)}\n`);
+  rmSync("src-tauri/cyberctf-rust.cdx.json");
+  const npm = npmSbom(sbomTimestamp(process.env.SOURCE_DATE_EPOCH, new Date()));
+  writeFileSync(join(dir, "cyberctf-npm.cdx.json"), `${JSON.stringify(withSerialNumber(npm), null, 2)}\n`);
   console.log(`Wrote ${join(dir, "cyberctf-rust.cdx.json")} and ${join(dir, "cyberctf-npm.cdx.json")}`);
+}
+
+/** `bom` with a serial number, which GitHub's SBOM attestation (actions/attest) requires of a
+ *  CycloneDX SBOM. cargo-cyclonedx leaves it out when SOURCE_DATE_EPOCH is set, and the npm SBOM
+ *  has none, so it is a UUID taken from the SBOM's own content: the same SBOM, the same serial.
+ *  One the SBOM already has is kept. */
+export function withSerialNumber(bom: Record<string, unknown>): Record<string, unknown> {
+  if (typeof bom.serialNumber === "string" && bom.serialNumber) return bom;
+  const hex = createHash("sha256").update(JSON.stringify(bom)).digest("hex");
+  // A version-5-shaped UUID (name-based, RFC 4122 variant) over the first 128 bits of the hash.
+  const variant = ((parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16);
+  const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  const { bomFormat, specVersion, ...rest } = bom;
+  return { bomFormat, specVersion, serialNumber: `urn:uuid:${uuid}`, ...rest };
 }
 
 /** The SBOM's timestamp: `SOURCE_DATE_EPOCH` (seconds) when set, for a reproducible one, else `now`. */
