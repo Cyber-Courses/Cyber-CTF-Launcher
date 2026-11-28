@@ -95,6 +95,9 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **A Windows Docker Engine just after boot is found running.** Its first `docker info` could
+  run past the time the launcher waits, and Docker was reported missing. Isothrum 3.0.1 asks once
+  more when a Docker call runs out of time.
 - **Links and support mail point at cyberctf.org.** The site and its mail live there; Send to
   support, the README, the support pages and the Store listings named cyberctf.com, which has
   neither.
