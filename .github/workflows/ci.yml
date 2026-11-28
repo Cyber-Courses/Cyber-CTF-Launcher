@@ -42,7 +42,7 @@ jobs:
           # other-platforms lints the core for the systems the runner isn't.
           targets: x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-nextest
       # The Rust contract tests run Isoloom's own example labs (spec_run.rs), from its dev: cloned
