@@ -986,7 +986,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -2711,9 +2711,9 @@ dependencies = [
 
 [[package]]
 name = "isothrum-client"
-version = "3.0.0"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9c40b0573401fda0e41e86003cab2f441fc93b8ba69fdd78ca1348e8cbf2951"
+checksum = "004de2ec7c7aba78ebc4e3a6411c4194c9329c8491296036728c90403b91d311"
 dependencies = [
  "futures-core",
  "interprocess",
@@ -2728,9 +2728,9 @@ dependencies = [
 
 [[package]]
 name = "isothrum-machine"
-version = "3.0.0"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2c234e91b46b6b9e333a461eb07ac9e4f4dd8de57bbd2167e0dfdd3dcd5f5dd"
+checksum = "f992d4d68b238d119fb0cad4748ac9560e779dbddf01a57ed1cfb95de13b09a0"
 dependencies = [
  "isothrum-runner",
  "reqwest",
@@ -2745,9 +2745,9 @@ dependencies = [
 
 [[package]]
 name = "isothrum-runner"
-version = "3.0.0"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2504ae2f07d407a92a8f5e22ae94952c7e8d0c231e52bfc9429b1e072a9b140c"
+checksum = "e8a659261b07279243c63633a0b174ee3cb1e241eff942cbec7297868e4eb9db"
 dependencies = [
  "getrandom 0.4.3",
  "hcl-rs",
@@ -2772,9 +2772,9 @@ dependencies = [
 
 [[package]]
 name = "isothrum-service"
-version = "3.0.0"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a15c0d2aac292bcb8b833ef4bc85a58142f3d0f2f4cd937e78e0e64dc7459a9d"
+checksum = "128e39847eeb6c1f566e2a082254501a58fb965c89eb75332b6f60970840e806"
 dependencies = [
  "getrandom 0.4.3",
  "interprocess",
@@ -5919,7 +5919,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
