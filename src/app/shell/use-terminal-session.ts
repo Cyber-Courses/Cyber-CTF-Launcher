@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { ignore } from "@/lib/failure";
 import { terminalClose, terminalOpen, terminalResize, terminalWrite, type Runtime } from "@/lib/tauri";
 import { describeError } from "@/lib/errors";
+import { exposeTerminalText } from "@/lib/wdio";
 
 /** Reads a CSS custom property from the page, so the terminal follows the app's theme. */
 const cssVar = (name: string, fallback: string) =>
@@ -39,9 +40,11 @@ function mountTerminal(element: HTMLDivElement): { term: Terminal; unmount: () =
     fit.fit();
   });
   observer.observe(element);
+  const unexpose = exposeTerminalText(element, term);
   return {
     term,
     unmount: () => {
+      unexpose();
       observer.disconnect();
       term.dispose();
     },

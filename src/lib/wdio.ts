@@ -24,3 +24,31 @@ export function wdioAnswer(key: string): string | null {
 export const WDIO_PICK = "__wdio_pick__";
 /** How the specs answer every destructive confirmation (`confirmSystemDialogs`): `confirm` or `cancel`. */
 export const WDIO_CONFIRM = "__wdio_confirm__";
+
+/**
+ * The property a terminal's element carries in a build with the hooks: what the terminal shows,
+ * read from xterm's buffer, one line per row of its viewport (tests/e2e/desktop/support/page.mjs,
+ * `terminalText`). xterm draws its rows in animation frames, which a webview doesn't run while
+ * the screen is locked or the display asleep: the rows stay blank there, the buffer doesn't.
+ */
+export const WDIO_TERMINAL_TEXT = "__wdioTerminalText";
+
+/** The part of an xterm.js terminal its text is read from. */
+type TerminalBuffer = {
+  rows: number;
+  buffer: { active: { viewportY: number; getLine(y: number): { translateToString(trimRight?: boolean): string } | undefined } };
+};
+
+/** In a build with the hooks, lets the specs read `term`'s text on `element`
+ *  ([`WDIO_TERMINAL_TEXT`]); what takes it away again. Nothing without the hooks. */
+export function exposeTerminalText(element: HTMLElement, term: TerminalBuffer): () => void {
+  if (!WDIO_HOOKS) return () => {};
+  const read = () => {
+    const { viewportY } = term.buffer.active;
+    return Array.from({ length: term.rows }, (_, row) => term.buffer.active.getLine(viewportY + row)?.translateToString(true) ?? "").join("\n");
+  };
+  Object.defineProperty(element, WDIO_TERMINAL_TEXT, { value: read, configurable: true });
+  return () => {
+    Reflect.deleteProperty(element, WDIO_TERMINAL_TEXT);
+  };
+}
